@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("admin")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Client {
+  id        Int        @id @default(autoincrement())
+  name      String
+  email     String     @unique
+  phone     String?
+  company   String?
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  campaigns Campaign[]
+
+  @@map("clients")
+}
+
+model Campaign {
+  id        Int      @id @default(autoincrement())
+  clientId  Int      @map("client_id")
+  client    Client   @relation(fields: [clientId], references: [id])
+  name      String
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ads       Ad[]
+  metrics   Metric[]
+
+  @@map("campaigns")
+}
+
+enum AdType {
+  video
+  image
+}
+
+model Ad {
+  id          Int          @id @default(autoincrement())
+  campaignId  Int          @map("campaign_id")
+  campaign    Campaign     @relation(fields: [campaignId], references: [id])
+  name        String
+  type        AdType
+  fileUrl     String       @map("file_url")
+  filename    String
+  durationS   Int          @map("duration_s")
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  playlistAds PlaylistAd[]
+  metrics     Metric[]
+
+  @@map("ads")
+}
+
+model Playlist {
+  id          Int          @id @default(autoincrement())
+  name        String
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  playlistAds PlaylistAd[]
+  tablets     Tablet[]
+
+  @@map("playlists")
+}
+
+model PlaylistAd {
+  id         Int      @id @default(autoincrement())
+  playlistId Int      @map("playlist_id")
+  playlist   Playlist @relation(fields: [playlistId], references: [id])
+  adId       Int      @map("ad_id")
+  ad         Ad       @relation(fields: [adId], references: [id])
+  order      Int
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("playlist_ads")
+}
+
+enum TabletStatus {
+  online
+  offline
+  syncing
+}
+
+model Tablet {
+  id         Int          @id @default(autoincrement())
+  deviceId   String       @unique @map("device_id")
+  token      String       @unique
+  name       String
+  zone       String?
+  playlistId Int?         @map("playlist_id")
+  playlist   Playlist?    @relation(fields: [playlistId], references: [id])
+  lastSync   DateTime?    @map("last_sync")
+  status     TabletStatus @default(offline)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  metrics    Metric[]
+  errorLogs  ErrorLog[]
+
+  @@map("tablets")
+}
+
+model Metric {
+  id              Int      @id @default(autoincrement())
+  tabletId        Int      @map("tablet_id")
+  tablet          Tablet   @relation(fields: [tabletId], references: [id])
+  adId            Int      @map("ad_id")
+  ad              Ad       @relation(fields: [adId], references: [id])
+  campaignId      Int      @map("campaign_id")
+  campaign        Campaign @relation(fields: [campaignId], references: [id])
+  playedAt        DateTime @map("played_at")
+  durationPlayedS Int      @map("duration_played_s")
+  completed       Boolean
+  error           Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("metrics")
+}
+
+model ErrorLog {
+  id         Int      @id @default(autoincrement())
+  tabletId   Int      @map("tablet_id")
+  tablet     Tablet   @relation(fields: [tabletId], references: [id])
+  errorType  String   @map("error_type")
+  message    String
+  occurredAt DateTime @map("occurred_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("error_logs")
+}

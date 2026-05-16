@@ -1,0 +1,61 @@
+# ── Node.js ──────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+
+# ── Variables de entorno (NUNCA commitear) ────────────────────────────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# ── Next.js ───────────────────────────────────────────────────────────────────
+.next/
+out/
+build/
+
+# ── Backend — uploads y Prisma engine ─────────────────────────────────────────
+icon-ads-backend/uploads/
+icon-ads-backend/prisma/migrations/*.db
+
+# ── Android ───────────────────────────────────────────────────────────────────
+*.iml
+.gradle/
+icon-ads-android/local.properties
+icon-ads-android/app/build/
+icon-ads-android/build/
+icon-ads-android/.idea/
+icon-ads-android/captures/
+icon-ads-android/.externalNativeBuild/
+icon-ads-android/.cxx/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# ── Editores ──────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# ── Logs y temporales ─────────────────────────────────────────────────────────
+logs/
+*.log
+tmp/
+temp/
+.cache/
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
