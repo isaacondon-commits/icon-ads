@@ -21,8 +21,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.load
-import coil.transform.RoundedCornersTransformation
-import com.iconads.player.data.db.entity.AdEntity
+import com.iconads.player.data.model.Ad
 import com.iconads.player.data.repository.MetricRepository
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.databinding.ActivityPlayerBinding
@@ -31,6 +30,7 @@ import com.iconads.player.work.SyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -41,14 +41,14 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var metricRepo: MetricRepository
 
     private val imageHandler = Handler(Looper.getMainLooper())
-    private var ads: List<AdEntity> = emptyList()
+    private var ads: List<Ad> = emptyList()
     private var currentIndex = 0
     private var adStartTime = 0L
+    private var failCount = 0
 
-    // ── BroadcastReceiver: recarga playlist cuando SyncWorker termina ────────
     private val playlistUpdatedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            Log.i(TAG, "Playlist actualizada, recargando...")
+            Log.i(TAG, "Playlist actualizada — recargando")
             loadAndPlay()
         }
     }
@@ -66,19 +66,13 @@ class PlayerActivity : AppCompatActivity() {
 
         setupWindow()
         setupExoPlayer()
-
-        // Registro en background + sync inmediato si hay internet
         SyncWorker.scheduleImmediate(this)
-
         loadAndPlay()
     }
 
     override fun onStart() {
         super.onStart()
-        registerReceiver(
-            playlistUpdatedReceiver,
-            IntentFilter(SyncWorker.ACTION_PLAYLIST_UPDATED),
-        )
+        registerReceiver(playlistUpdatedReceiver, IntentFilter(SyncWorker.ACTION_PLAYLIST_UPDATED))
     }
 
     override fun onStop() {
@@ -114,13 +108,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun setupWindow() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-
-        // Kiosco si el dispositivo es Device Owner
-        try {
-            startLockTask()
-        } catch (e: Exception) {
-            Log.w(TAG, "Lock task no disponible: ${e.message}")
-        }
+        try { startLockTask() } catch (e: Exception) { Log.w(TAG, "Lock task no disponible") }
     }
 
     private fun hideSystemUI() {
@@ -135,7 +123,6 @@ class PlayerActivity : AppCompatActivity() {
             binding.playerView.player = it
             binding.playerView.useController = false
         }
-
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
@@ -143,25 +130,16 @@ class PlayerActivity : AppCompatActivity() {
                     playNext()
                 }
             }
-
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "ExoPlayer error: ${error.message}")
                 recordMetric(completed = false, error = true)
-                // Intento con el siguiente; si hay error generalizado → fallback
                 failCount++
-                if (failCount >= ads.size && ads.size > 1) {
-                    Log.e(TAG, "Demasiados errores, activando fallback")
-                    activateFallback()
-                } else {
-                    playNext()
-                }
+                if (failCount >= ads.size && ads.size > 1) activateFallback() else playNext()
             }
         })
     }
 
     // ── Carga de playlist ────────────────────────────────────────────────────
-
-    private var failCount = 0
 
     private fun loadAndPlay() {
         lifecycleScope.launch {
@@ -170,8 +148,7 @@ class PlayerActivity : AppCompatActivity() {
             failCount = 0
             currentIndex = 0
             showLoading(false)
-            if (ads.isEmpty()) return@launch
-            playAd(ads[currentIndex])
+            if (ads.isNotEmpty()) playAd(ads[0])
         }
     }
 
@@ -191,36 +168,29 @@ class PlayerActivity : AppCompatActivity() {
         playAd(ads[currentIndex])
     }
 
-    private fun playAd(ad: AdEntity) {
+    private fun playAd(ad: Ad) {
         adStartTime = System.currentTimeMillis()
         imageHandler.removeCallbacksAndMessages(null)
-
         when (ad.type) {
             "video" -> playVideo(ad)
             "image" -> showImage(ad)
-            else -> playNext()
+            else    -> playNext()
         }
     }
 
-    private fun playVideo(ad: AdEntity) {
+    private fun playVideo(ad: Ad) {
         binding.playerView.visibility = View.VISIBLE
         binding.imageView.visibility = View.GONE
 
         val uri = if (ad.localPath.startsWith("android.resource://")) {
             Uri.parse(ad.localPath)
         } else {
-            Uri.fromFile(java.io.File(ad.localPath))
+            Uri.fromFile(File(ad.localPath))
         }
-
-        exoPlayer.apply {
-            stop()
-            setMediaItem(MediaItem.fromUri(uri))
-            prepare()
-            play()
-        }
+        exoPlayer.apply { stop(); setMediaItem(MediaItem.fromUri(uri)); prepare(); play() }
     }
 
-    private fun showImage(ad: AdEntity) {
+    private fun showImage(ad: Ad) {
         binding.playerView.visibility = View.GONE
         binding.imageView.visibility = View.VISIBLE
         exoPlayer.stop()
@@ -229,7 +199,6 @@ class PlayerActivity : AppCompatActivity() {
             crossfade(300)
             error(android.R.color.black)
         }
-
         imageHandler.postDelayed({
             recordMetric(completed = true)
             playNext()
@@ -240,11 +209,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun recordMetric(completed: Boolean, error: Boolean = false) {
         val ad = ads.getOrNull(currentIndex) ?: return
-        if (ad.campaignId < 0) return  // no registrar institucional
-
+        if (ad.campaignId < 0) return
         val playedAt = adStartTime
         val duration = ((System.currentTimeMillis() - adStartTime) / 1000).toInt()
-
         lifecycleScope.launch(Dispatchers.IO) {
             metricRepo.record(
                 adId = ad.id,
@@ -256,8 +223,6 @@ class PlayerActivity : AppCompatActivity() {
             )
         }
     }
-
-    // ── UI helpers ───────────────────────────────────────────────────────────
 
     private fun showLoading(show: Boolean) {
         binding.loadingView.visibility = if (show) View.VISIBLE else View.GONE

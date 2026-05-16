@@ -2,21 +2,20 @@ package com.iconads.player.data.repository
 
 import android.content.Context
 import com.iconads.player.data.api.NetworkModule
-import com.iconads.player.data.db.AppDatabase
-import com.iconads.player.data.db.entity.MetricEntity
+import com.iconads.player.data.model.MetricRecord
 import com.iconads.player.data.model.MetricUpload
+import com.iconads.player.data.storage.MetricStorage
 import com.iconads.player.util.DevicePrefs
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
 
-class MetricRepository(private val context: Context) {
+class MetricRepository(context: Context) {
 
-    private val db = AppDatabase.get(context)
+    private val storage = MetricStorage(context)
     private val prefs = DevicePrefs(context)
 
-    suspend fun record(
+    fun record(
         adId: Int,
         campaignId: Int,
         playedAt: Long,
@@ -24,8 +23,8 @@ class MetricRepository(private val context: Context) {
         completed: Boolean,
         error: Boolean = false,
     ) {
-        db.metricDao().insert(
-            MetricEntity(
+        storage.append(
+            MetricRecord(
                 adId = adId,
                 campaignId = campaignId,
                 playedAt = playedAt,
@@ -38,7 +37,7 @@ class MetricRepository(private val context: Context) {
 
     suspend fun uploadPending(): Int {
         val token = prefs.getToken() ?: return 0
-        val pending = db.metricDao().getPending()
+        val pending = storage.readAll()
         if (pending.isEmpty()) return 0
 
         val api = NetworkModule.provideDeviceApi(token)
@@ -56,12 +55,7 @@ class MetricRepository(private val context: Context) {
         }
 
         api.uploadMetrics(payload)
-        db.metricDao().markUploaded(pending.map { it.id })
-
-        // Limpiar métricas viejas ya subidas (>30 días)
-        val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
-        db.metricDao().deleteOldUploaded(cutoff)
-
+        storage.clear()
         return pending.size
     }
 }

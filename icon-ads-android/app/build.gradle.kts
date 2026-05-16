@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp")
 }
 
 android {
@@ -26,7 +25,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Reemplazar con la IP del servidor en producción
             buildConfigField("String", "BASE_URL", "\"http://192.168.1.100:3000\"")
         }
         debug {
@@ -53,11 +51,6 @@ dependencies {
     // Media3 (ExoPlayer)
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
-
-    // Room
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
 
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
