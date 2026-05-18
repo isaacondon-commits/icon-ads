@@ -82,11 +82,12 @@ class PlayerActivity : AppCompatActivity() {
             syncNow()
             uploadMetricsNow()
         }
-        // Ciclo periódico cada 30 s
+        // Ciclo periódico cada 30 s — reintenta registro si todavía no hay token
         lifecycleScope.launch {
             while (true) {
                 delay(30_000L)
                 Log.d(TAG, "ciclo periódico 30s")
+                if (prefs.getToken() == null) registerNow()  // retry si el registro falló al arrancar
                 syncNow()
                 uploadMetricsNow()
             }

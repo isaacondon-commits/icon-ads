@@ -19,7 +19,10 @@ router.get('/', async (req, res, next) => {
   try {
     const campaigns = await prisma.campaign.findMany({
       where: { deletedAt: null },
-      include: { client: { select: { id: true, name: true } } },
+      include: {
+        client: { select: { id: true, name: true } },
+        _count: { select: { metrics: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
     res.json(campaigns);

@@ -77,6 +77,13 @@ app.get('/api/health', async (req, res) => {
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version ?? '1.0.0',
+    env: {
+      NODE_ENV: process.env.NODE_ENV ?? 'unset',
+      FRONTEND_URL: process.env.FRONTEND_URL ? 'set' : 'UNSET — CORS will block Vercel',
+      JWT_SECRET: process.env.JWT_SECRET ? 'set' : 'UNSET — auth will fail',
+      DATABASE_URL: process.env.DATABASE_URL ? 'set' : 'UNSET — DB unavailable',
+      DIRECT_URL: process.env.DIRECT_URL ? 'set' : 'unset (schema migrations may fail)',
+    },
   });
 });
 

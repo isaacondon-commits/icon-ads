@@ -11,8 +11,8 @@ object NetworkModule {
 
     fun provideDeviceApi(token: String?): DeviceApi {
         val client = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)  // largo para descargas
+            .connectTimeout(60, TimeUnit.SECONDS)  // Render free tier puede tardar ~50s en despertar
+            .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .apply {
                 if (token != null) {
