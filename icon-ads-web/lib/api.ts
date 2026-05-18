@@ -190,10 +190,10 @@ export interface PlaylistVersion {
   createdAt: string;
 }
 export interface Tablet {
-  id: number; deviceId: string; token: string; name: string; zone?: string;
-  timezone?: string; scheduleAt?: string;
-  playlistId?: number; playlist?: { id: number; name: string; version: number };
-  lastSync?: string; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
+  id: number; deviceId: string; token: string; name: string; zone?: string | null;
+  timezone?: string | null; scheduleAt?: string | null;
+  playlistId?: number | null; playlist?: { id: number; name: string; version: number };
+  lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
 }
 export interface TabletDetail extends Tablet {
   errorLogs: { id: number; errorType: string; message: string; occurredAt: string }[];
