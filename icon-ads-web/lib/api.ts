@@ -61,8 +61,52 @@ export const api = {
 
   // Ads
   getAds: () => request<Ad[]>('/api/ads'),
-  uploadAdWithProgress: (formData: FormData, onProgress: (pct: number) => void): Promise<Ad> =>
-    new Promise((resolve, reject) => {
+  uploadAdWithProgress: async (formData: FormData, onProgress: (pct: number) => void): Promise<Ad> => {
+    const file = formData.get('file') as File | null;
+
+    // Try R2 presigned URL flow first
+    if (file) {
+      try {
+        const presign = await request<{ uploadUrl: string; key: string; publicUrl: string }>(
+          `/api/ads/presign?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
+        );
+        // Upload directly to R2 with progress
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', presign.uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90));
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`R2 upload failed: HTTP ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error('Error de red'));
+          xhr.send(file);
+        });
+        onProgress(95);
+        const ad = await request<Ad>('/api/ads/confirm', {
+          method: 'POST',
+          body: JSON.stringify({
+            key: presign.key,
+            publicUrl: presign.publicUrl,
+            campaignId: formData.get('campaignId'),
+            name: formData.get('name'),
+            type: formData.get('type'),
+            durationS: formData.get('durationS'),
+          }),
+        });
+        onProgress(100);
+        return ad;
+      } catch (err: unknown) {
+        // If R2 is not configured (503), fall through to direct upload
+        if (!(err instanceof Error) || !err.message.includes('R2 not configured')) throw err;
+      }
+    }
+
+    // Fallback: direct upload through backend (local dev / R2 not configured)
+    return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${BASE}/api/ads/upload`);
       xhr.withCredentials = true;
@@ -73,7 +117,8 @@ export const api = {
       };
       xhr.onerror = () => reject(new Error('Error de red'));
       xhr.send(formData);
-    }),
+    });
+  },
   deleteAd: (id: number) => request<void>(`/api/ads/${id}`, { method: 'DELETE' }),
   approveAd: (id: number) => request<Ad>(`/api/ads/${id}/approve`, { method: 'PATCH' }),
   rejectAd: (id: number) => request<Ad>(`/api/ads/${id}/reject`, { method: 'PATCH' }),

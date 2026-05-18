@@ -15,6 +15,7 @@ const deviceRoutes = require('./routes/device');
 const statsRoutes = require('./routes/stats');
 const logsRoutes = require('./routes/logs');
 const prisma = require('./lib/prisma');
+const r2 = require('./lib/r2');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
 const syslog = require('./lib/systemLog');
 
@@ -50,10 +51,19 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.get('/api/health', async (req, res) => {
   let dbStatus = 'ok';
-  try { await prisma.$queryRaw`SELECT 1`; } catch { dbStatus = 'error'; }
+  let dbError = null;
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (err) {
+    dbStatus = 'error';
+    dbError = err.message;
+    console.error('[health] DB connection error:', err);
+  }
   res.json({
     status: dbStatus === 'ok' ? 'ok' : 'degraded',
     db: dbStatus,
+    dbError,
+    r2: r2.isConfigured,
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version ?? '1.0.0',

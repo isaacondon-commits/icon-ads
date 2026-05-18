@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const prisma = require('../lib/prisma');
+const r2 = require('../lib/r2');
 const { requireAuth } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
@@ -66,6 +67,46 @@ router.get('/storage-stats', async (req, res, next) => {
     const adCount = await prisma.ad.count({ where: { deletedAt: null, active: true } });
     res.json({ totalBytes, totalMB: Math.round(totalBytes / 1024 / 1024), fileCount, adCount });
   } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/ads/presign — returns a presigned R2 upload URL (requires R2 configured)
+router.get('/presign', async (req, res, next) => {
+  try {
+    if (!r2.isConfigured) return res.status(503).json({ error: 'R2 not configured' });
+    const { filename, contentType } = req.query;
+    if (!filename || !contentType) return res.status(400).json({ error: 'filename and contentType required' });
+    if (!ALLOWED_EXT.test(filename)) return res.status(400).json({ error: 'Tipo de archivo no permitido' });
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(filename);
+    const key = `uploads/${unique}${ext}`;
+    const uploadUrl = await r2.getPresignedUploadUrl(key, contentType);
+    const publicUrl = r2.getPublicUrl(key);
+    res.json({ uploadUrl, key, publicUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ads/confirm — registers an ad after direct R2 upload
+router.post('/confirm', async (req, res, next) => {
+  try {
+    if (!r2.isConfigured) return res.status(503).json({ error: 'R2 not configured' });
+    const { key, publicUrl, campaignId, name, type, durationS } = adSchema.extend({
+      key: z.string().min(1),
+      publicUrl: z.string().url(),
+    }).parse(req.body);
+    const filename = path.basename(key);
+    const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
+    const ad = await prisma.ad.create({
+      data: { campaignId, name, type, fileUrl: publicUrl, filename, durationS, approvalStatus },
+      include: { campaign: { select: { id: true, name: true } } },
+    });
+    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" via R2 (${approvalStatus})`);
+    res.status(201).json(ad);
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);
   }
 });
