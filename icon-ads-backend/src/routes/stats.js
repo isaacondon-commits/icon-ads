@@ -4,45 +4,40 @@ const { requireAuth } = require('../middleware/auth');
 
 router.use(requireAuth);
 
-// #58 — GET /api/stats — global system stats + chart data
+// GET /api/stats — global stats + chart data (#35 enhanced)
 router.get('/', async (req, res, next) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
-    const [tabletList, clientCount, campaignCount, adCount, dailyRows, campaignRows] =
+    // Expiring campaigns: active, not deleted, ending within 7 days
+    const inSevenDays = new Date(today);
+    inSevenDays.setDate(inSevenDays.getDate() + 7);
+
+    const [tabletList, clientCount, campaignCount, adCount, dailyRows, campaignRows, totalPlays, expiringCampaigns] =
       await Promise.all([
         prisma.tablet.findMany({ select: { lastSync: true } }),
-        prisma.client.count({ where: { active: true } }),
-        prisma.campaign.count({ where: { active: true } }),
-        prisma.ad.count({ where: { active: true } }),
-
-        // plays grouped by day (last 7 days)
+        prisma.client.count({ where: { active: true, deletedAt: null } }),
+        prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+        prisma.ad.count({ where: { active: true, deletedAt: null } }),
         prisma.$queryRaw`
-          SELECT
-            DATE(played_at AT TIME ZONE 'UTC') AS date,
-            COUNT(*)::int AS count
-          FROM metrics
-          WHERE played_at >= ${sevenDaysAgo}
-          GROUP BY DATE(played_at AT TIME ZONE 'UTC')
-          ORDER BY date ASC
+          SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
+          FROM metrics WHERE played_at >= ${sevenDaysAgo}
+          GROUP BY DATE(played_at AT TIME ZONE 'UTC') ORDER BY date ASC
         `,
-
-        // plays grouped by campaign (top 10)
         prisma.$queryRaw`
-          SELECT
-            c.id AS "campaignId",
-            c.name AS "campaignName",
-            COUNT(m.id)::int AS count
-          FROM metrics m
-          JOIN campaigns c ON m.campaign_id = c.id
-          GROUP BY c.id, c.name
-          ORDER BY count DESC
-          LIMIT 10
+          SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
+          FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+          GROUP BY c.id, c.name ORDER BY count DESC LIMIT 10
         `,
+        prisma.metric.count(),
+        prisma.campaign.findMany({
+          where: { active: true, deletedAt: null, endDate: { lte: inSevenDays, gte: today } },
+          include: { client: { select: { name: true } } },
+          orderBy: { endDate: 'asc' },
+        }),
       ]);
 
     const now = Date.now();
@@ -50,9 +45,8 @@ router.get('/', async (req, res, next) => {
       (t) => t.lastSync && now - new Date(t.lastSync).getTime() < 70 * 60000
     ).length;
 
-    // Fill missing days with 0
     const dayMap = Object.fromEntries(
-      (dailyRows).map((r) => [String(r.date).slice(0, 10), Number(r.count)])
+      dailyRows.map((r) => [String(r.date).slice(0, 10), Number(r.count)])
     );
     const dailyPlays = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(sevenDaysAgo);
@@ -66,11 +60,19 @@ router.get('/', async (req, res, next) => {
       clients: clientCount,
       campaigns: campaignCount,
       ads: adCount,
+      totalPlays,
       dailyPlays,
       playsByCampaign: campaignRows.map((r) => ({
         campaignId: Number(r.campaignId),
         campaignName: r.campaignName,
         count: Number(r.count),
+      })),
+      expiringCampaigns: expiringCampaigns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        clientName: c.client?.name ?? '—',
+        endDate: c.endDate,
+        daysLeft: Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000),
       })),
     });
   } catch (err) {
@@ -78,7 +80,72 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// #16 — GET /api/stats/metrics/export — download all metrics as CSV
+// GET /api/stats/weekly — week-over-week for last N weeks (#20)
+router.get('/weekly', async (req, res, next) => {
+  try {
+    const weeks = Math.min(8, parseInt(req.query.weeks) || 4);
+    const result = [];
+    for (let w = weeks - 1; w >= 0; w--) {
+      const from = new Date();
+      from.setDate(from.getDate() - (w + 1) * 7);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(from);
+      to.setDate(to.getDate() + 7);
+      const count = await prisma.metric.count({ where: { playedAt: { gte: from, lt: to } } });
+      result.push({
+        week: `Sem -${w}`,
+        from: from.toISOString().slice(0, 10),
+        to: to.toISOString().slice(0, 10),
+        count,
+      });
+    }
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stats/range?from=&to= — plays filtered by date range (#13)
+router.get('/range', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+
+    const [dailyRows, campaignRows, tabletRows] = await Promise.all([
+      prisma.$queryRaw`
+        SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
+        FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
+        GROUP BY DATE(played_at AT TIME ZONE 'UTC') ORDER BY date ASC
+      `,
+      prisma.$queryRaw`
+        SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
+        FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+        WHERE m.played_at BETWEEN ${from} AND ${to}
+        GROUP BY c.id, c.name ORDER BY count DESC LIMIT 10
+      `,
+      prisma.$queryRaw`
+        SELECT t.id AS "tabletId", t.name AS "tabletName", COUNT(m.id)::int AS count
+        FROM metrics m JOIN tablets t ON m.tablet_id = t.id
+        WHERE m.played_at BETWEEN ${from} AND ${to}
+        GROUP BY t.id, t.name ORDER BY count DESC LIMIT 10
+      `,
+    ]);
+
+    res.json({
+      from: from.toISOString(),
+      to: to.toISOString(),
+      totalPlays: dailyRows.reduce((s, r) => s + Number(r.count), 0),
+      dailyPlays: dailyRows.map((r) => ({ date: String(r.date).slice(0, 10), count: Number(r.count) })),
+      playsByCampaign: campaignRows.map((r) => ({ campaignId: Number(r.campaignId), campaignName: r.campaignName, count: Number(r.count) })),
+      playsByTablet: tabletRows.map((r) => ({ tabletId: Number(r.tabletId), tabletName: r.tabletName, count: Number(r.count) })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stats/metrics/export — CSV download
 router.get('/metrics/export', async (req, res, next) => {
   try {
     const metrics = await prisma.metric.findMany({
@@ -89,7 +156,6 @@ router.get('/metrics/export', async (req, res, next) => {
       },
       orderBy: { playedAt: 'desc' },
     });
-
     const header = 'id,tablet,device_id,ad,campaign,played_at,duration_s,completed,error';
     const rows = metrics.map((m) =>
       [
@@ -104,11 +170,9 @@ router.get('/metrics/export', async (req, res, next) => {
         m.error ? 1 : 0,
       ].join(',')
     );
-
-    const csv = [header, ...rows].join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="metrics_${new Date().toISOString().slice(0, 10)}.csv"`);
-    res.send(csv);
+    res.send([header, ...rows].join('\n'));
   } catch (err) {
     next(err);
   }

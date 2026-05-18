@@ -88,7 +88,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
   }
 });
 
-// GET /api/device/package/:version — download ZIP with playlist.json + media files
+// GET /api/device/package/:version — download ZIP (cached by content hash) (#31)
 router.get('/package/:version', requireDevice, async (req, res, next) => {
   try {
     const tablet = req.tablet;
@@ -96,27 +96,17 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: tablet.playlistId },
-      include: {
-        playlistAds: {
-          include: { ad: true },
-          orderBy: { order: 'asc' },
-        },
-      },
+      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
     });
-
     if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 
     const uploadDir = path.join(__dirname, '../../uploads');
+    const cacheDir = path.join(__dirname, '../../cache');
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Build playlist.json — hash is over the ads content (not the ZIP)
     const adsPayload = playlist.playlistAds.map(({ ad, order }) => ({
-      id: ad.id,
-      name: ad.name,
-      type: ad.type,
-      filename: ad.filename,
-      duration_s: ad.durationS,
-      order,
-      campaignId: ad.campaignId,
+      id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
+      duration_s: ad.durationS, order, campaignId: ad.campaignId,
     }));
 
     const hash = crypto
@@ -124,31 +114,43 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       .update(JSON.stringify({ version: playlist.version, ads: adsPayload }))
       .digest('hex');
 
-    const playlistJson = JSON.stringify(
-      { version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload },
-      null,
-      2
-    );
+    const cachedZip = path.join(cacheDir, `playlist_${playlist.id}_${hash}.zip`);
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="playlist_v${playlist.version}.zip"`
-    );
+    res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
     res.setHeader('X-Playlist-Hash', hash);
 
-    const archive = archiver('zip', { zlib: { level: 6 } });
-    archive.on('error', next);
-    archive.pipe(res);
-    archive.append(playlistJson, { name: 'playlist.json' });
-
-    for (const { ad } of playlist.playlistAds) {
-      const filePath = path.join(uploadDir, ad.filename);
-      if (fs.existsSync(filePath)) {
-        archive.file(filePath, { name: `media/${ad.filename}` });
-      }
+    // Serve from cache if hash matches (#31)
+    if (playlist.contentHash === hash && fs.existsSync(cachedZip)) {
+      return fs.createReadStream(cachedZip).pipe(res);
     }
 
+    const playlistJson = JSON.stringify(
+      { version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
+    );
+
+    // Build ZIP and cache it
+    const archive = archiver('zip', { zlib: { level: 6 } });
+    archive.on('error', next);
+
+    const cacheStream = fs.createWriteStream(cachedZip);
+    const passThrough = require('stream').PassThrough;
+    // Tee: write to cache file AND response simultaneously
+    archive.pipe(cacheStream);
+    archive.on('end', async () => {
+      try {
+        // Update contentHash in DB so next request uses cache
+        await prisma.playlist.update({ where: { id: playlist.id }, data: { contentHash: hash } });
+        // Send cached file
+        if (!res.headersSent) fs.createReadStream(cachedZip).pipe(res);
+      } catch { /* non-fatal */ }
+    });
+
+    archive.append(playlistJson, { name: 'playlist.json' });
+    for (const { ad } of playlist.playlistAds) {
+      const filePath = path.join(uploadDir, ad.filename);
+      if (fs.existsSync(filePath)) archive.file(filePath, { name: `media/${ad.filename}` });
+    }
     await archive.finalize();
   } catch (err) {
     next(err);

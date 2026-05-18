@@ -13,14 +13,15 @@ const playlistRoutes = require('./routes/playlists');
 const tabletRoutes = require('./routes/tablets');
 const deviceRoutes = require('./routes/device');
 const statsRoutes = require('./routes/stats');
+const logsRoutes = require('./routes/logs');
 const prisma = require('./lib/prisma');
+const { sendTabletOfflineAlert } = require('./lib/mailer');
+const syslog = require('./lib/systemLog');
 
 const app = express();
 
-// #52 — gzip all responses
 app.use(compression());
 
-// #51 — 60 req/min per IP on API routes (devices get a tighter limit via their own middleware)
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
@@ -38,14 +39,9 @@ app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// #55 — health endpoint (no auth required)
 app.get('/api/health', async (req, res) => {
   let dbStatus = 'ok';
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-  } catch {
-    dbStatus = 'error';
-  }
+  try { await prisma.$queryRaw`SELECT 1`; } catch { dbStatus = 'error'; }
   res.json({
     status: dbStatus === 'ok' ? 'ok' : 'degraded',
     db: dbStatus,
@@ -63,10 +59,34 @@ app.use('/api/playlists', playlistRoutes);
 app.use('/api/tablets', tabletRoutes);
 app.use('/api/device', deviceRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/logs', logsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
+
+// #7 — Offline tablet alert check every 30 minutes
+const alertedTablets = new Set();
+setInterval(async () => {
+  try {
+    const tablets = await prisma.tablet.findMany({ select: { id: true, name: true, deviceId: true, zone: true, lastSync: true } });
+    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+    for (const t of tablets) {
+      const lastSyncMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
+      const isOffline = lastSyncMs < twoHoursAgo;
+      if (isOffline && !alertedTablets.has(t.id)) {
+        alertedTablets.add(t.id);
+        syslog.addEvent('TABLET_OFFLINE', 'tablet', t.id, `${t.name} offline >2h`);
+        await sendTabletOfflineAlert(t);
+      } else if (!isOffline && alertedTablets.has(t.id)) {
+        alertedTablets.delete(t.id);
+        syslog.addEvent('TABLET_BACK_ONLINE', 'tablet', t.id, `${t.name} came back online`);
+      }
+    }
+  } catch (err) {
+    console.warn('[offline-check]', err.message);
+  }
+}, 30 * 60 * 1000);
 
 module.exports = app;

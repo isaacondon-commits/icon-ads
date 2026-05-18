@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const { audit } = require('../lib/auditLog');
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -17,7 +18,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// #4/#5 — only mp4/jpg/png/webp; max 100 MB
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const upload = multer({
   storage,
@@ -40,10 +40,30 @@ const adSchema = z.object({
 router.get('/', async (req, res, next) => {
   try {
     const ads = await prisma.ad.findMany({
+      where: { deletedAt: null },
       include: { campaign: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
     res.json(ads);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stats/storage — storage usage from uploads dir (#28)
+router.get('/storage-stats', async (req, res, next) => {
+  try {
+    let totalBytes = 0;
+    let fileCount = 0;
+    if (fs.existsSync(uploadDir)) {
+      const files = fs.readdirSync(uploadDir);
+      fileCount = files.length;
+      for (const f of files) {
+        try { totalBytes += fs.statSync(path.join(uploadDir, f)).size; } catch { /* skip */ }
+      }
+    }
+    const adCount = await prisma.ad.count({ where: { deletedAt: null, active: true } });
+    res.json({ totalBytes, totalMB: Math.round(totalBytes / 1024 / 1024), fileCount, adCount });
   } catch (err) {
     next(err);
   }
@@ -55,10 +75,13 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const { campaignId, name, type, durationS } = adSchema.parse(req.body);
     const fileUrl = `/uploads/${req.file.filename}`;
+    // Approval: superadmin → approved immediately; admin → pending (#26)
+    const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl, filename: req.file.filename, durationS },
+      data: { campaignId, name, type, fileUrl, filename: req.file.filename, durationS, approvalStatus },
       include: { campaign: { select: { id: true, name: true } } },
     });
+    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus})`);
     res.status(201).json(ad);
   } catch (err) {
     if (req.file) fs.unlink(req.file.path, () => {});
@@ -70,7 +93,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const ad = await prisma.ad.findUnique({
-      where: { id: Number(req.params.id) },
+      where: { id: Number(req.params.id), deletedAt: null },
       include: { campaign: { select: { id: true, name: true } } },
     });
     if (!ad) return res.status(404).json({ error: 'Ad not found' });
@@ -83,10 +106,8 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const data = adSchema.omit({ campaignId: true }).partial().parse(req.body);
-    const ad = await prisma.ad.update({
-      where: { id: Number(req.params.id) },
-      data,
-    });
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
+    await audit(req, 'UPDATE', 'ad', ad.id, `Updated "${ad.name}"`);
     res.json(ad);
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
@@ -95,13 +116,39 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
+// DELETE — soft delete (#33)
 router.delete('/:id', async (req, res, next) => {
   try {
-    await prisma.ad.update({
-      where: { id: Number(req.params.id) },
-      data: { active: false },
+    const ad = await prisma.ad.update({
+      where: { id: Number(req.params.id), deletedAt: null },
+      data: { active: false, deletedAt: new Date() },
     });
+    await audit(req, 'DELETE', 'ad', ad.id, `Deleted "${ad.name}"`);
     res.status(204).send();
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
+    next(err);
+  }
+});
+
+// PATCH /:id/approve — approve pending ad (#26)
+router.patch('/:id/approve', async (req, res, next) => {
+  try {
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id) }, data: { approvalStatus: 'approved', active: true } });
+    await audit(req, 'APPROVE', 'ad', ad.id, `Approved "${ad.name}"`);
+    res.json(ad);
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
+    next(err);
+  }
+});
+
+// PATCH /:id/reject — reject pending ad (#26)
+router.patch('/:id/reject', async (req, res, next) => {
+  try {
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id) }, data: { approvalStatus: 'rejected', active: false } });
+    await audit(req, 'REJECT', 'ad', ad.id, `Rejected "${ad.name}"`);
+    res.json(ad);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
     next(err);
