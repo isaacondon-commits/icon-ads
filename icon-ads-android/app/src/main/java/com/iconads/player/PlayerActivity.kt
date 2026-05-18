@@ -5,10 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
@@ -126,6 +131,18 @@ class PlayerActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemUI()
+    }
+
+    // Kiosco: bloquear botón back
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() { /* bloqueado en modo kiosco */ }
+
+    // Kiosco: consumir HOME y RECENTS para evitar salida accidental
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_APP_SWITCH, KeyEvent.KEYCODE_MENU -> true
+            else -> super.onKeyDown(keyCode, event)
+        }
     }
 
     // ── Configuración ────────────────────────────────────────────────────────
@@ -325,8 +342,25 @@ class PlayerActivity : AppCompatActivity() {
             prefs.setToken(response.token)
             prefs.setTabletId(response.tabletId)
             Log.i(TAG, "registerNow: OK — tabletId=${response.tabletId} token=${response.token.take(8)}…")
+            withContext(Dispatchers.Main) { vibrate(300) }
         } catch (e: Exception) {
-            Log.e(TAG, "registerNow: FALLÓ ${e.javaClass.simpleName}: ${e.message}", e)
+            Log.e(TAG, "registerNow: FALLÓ [${e.javaClass.simpleName}] ${e.message} — backend=${BuildConfig.BASE_URL}", e)
+        }
+    }
+
+    private fun vibrate(ms: Long) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager)
+                    .defaultVibrator
+                    .vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                (getSystemService(Context.VIBRATOR_SERVICE) as Vibrator)
+                    .vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "vibrate: ${e.message}")
         }
     }
 

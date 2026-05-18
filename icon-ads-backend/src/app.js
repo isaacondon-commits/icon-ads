@@ -3,6 +3,8 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const morgan = require('morgan');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
@@ -14,6 +16,7 @@ const tabletRoutes = require('./routes/tablets');
 const deviceRoutes = require('./routes/device');
 const statsRoutes = require('./routes/stats');
 const logsRoutes = require('./routes/logs');
+const adminRoutes = require('./routes/admin');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
@@ -21,6 +24,10 @@ const syslog = require('./lib/systemLog');
 
 const app = express();
 
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
+  skip: (req) => req.path === '/api/health',
+}));
 app.use(compression());
 
 const apiLimiter = rateLimit({
@@ -79,6 +86,7 @@ app.use('/api/tablets', tabletRoutes);
 app.use('/api/device', deviceRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

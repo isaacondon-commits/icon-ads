@@ -162,6 +162,7 @@ export interface Campaign {
   id: number; clientId: number; client?: { id: number; name: string };
   name: string; startDate: string; endDate: string; active: boolean;
   deletedAt?: string; createdAt: string; updatedAt: string;
+  _count?: { metrics: number };
 }
 export interface CampaignDetail extends Campaign {
   ads: Ad[];
