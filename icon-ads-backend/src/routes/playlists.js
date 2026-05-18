@@ -121,4 +121,35 @@ router.post('/:id/ads', async (req, res, next) => {
   }
 });
 
+// #14 — POST /api/playlists/:id/duplicate
+router.post('/:id/duplicate', async (req, res, next) => {
+  try {
+    const source = await prisma.playlist.findUnique({
+      where: { id: Number(req.params.id) },
+      include: { playlistAds: true },
+    });
+    if (!source) return res.status(404).json({ error: 'Playlist not found' });
+
+    const copy = await prisma.$transaction(async (tx) => {
+      const newPlaylist = await tx.playlist.create({
+        data: { name: `${source.name} (copia)` },
+      });
+      if (source.playlistAds.length > 0) {
+        await tx.playlistAd.createMany({
+          data: source.playlistAds.map((pa) => ({
+            playlistId: newPlaylist.id,
+            adId: pa.adId,
+            order: pa.order,
+          })),
+        });
+      }
+      return newPlaylist;
+    });
+
+    res.status(201).json(copy);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

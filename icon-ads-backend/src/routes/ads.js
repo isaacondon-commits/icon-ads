@@ -17,13 +17,15 @@ const storage = multer.diskStorage({
   },
 });
 
+// #4/#5 — only mp4/jpg/png/webp; max 100 MB
+const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    if (/\.(mp4|webm|jpg|jpeg|png|gif|webp)$/i.test(file.originalname)) cb(null, true);
-    else cb(new Error('Invalid file type. Allowed: mp4, webm, jpg, jpeg, png, gif, webp'));
+    if (ALLOWED_EXT.test(file.originalname)) cb(null, true);
+    else cb(new Error('Tipo de archivo no permitido. Aceptados: mp4, jpg, png, webp'));
   },
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 router.use(requireAuth);

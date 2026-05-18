@@ -6,6 +6,7 @@ const fs = require('fs');
 const archiver = require('archiver');
 const prisma = require('../lib/prisma');
 const { requireDevice } = require('../middleware/deviceAuth');
+const forceSyncFlags = require('../lib/forceSyncFlags');
 
 const metricsSchema = z.array(
   z.object({
@@ -69,7 +70,11 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       return res.json({ needsUpdate: false, version: 0 });
     }
 
-    if (playlist.version <= currentVersion) {
+    // #48 — if admin forced a sync, override version check
+    const forced = forceSyncFlags.has(tablet.id);
+    if (forced) forceSyncFlags.delete(tablet.id);
+
+    if (!forced && playlist.version <= currentVersion) {
       return res.json({ needsUpdate: false, version: playlist.version });
     }
 

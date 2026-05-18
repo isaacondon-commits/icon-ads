@@ -3,6 +3,7 @@ const { z } = require('zod');
 const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const forceSyncFlags = require('../lib/forceSyncFlags');
 
 router.use(requireAuth);
 
@@ -106,6 +107,19 @@ router.put('/:id', async (req, res, next) => {
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     if (err.code === 'P2025') return res.status(404).json({ error: 'Tablet not found' });
+    next(err);
+  }
+});
+
+// #48 — POST /api/tablets/:id/force-sync — admin triggers next device sync
+router.post('/:id/force-sync', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id } });
+    if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
+    forceSyncFlags.add(id);
+    res.json({ ok: true, message: 'La tablet re-sincronizará en la próxima conexión.' });
+  } catch (err) {
     next(err);
   }
 });
