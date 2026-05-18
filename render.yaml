@@ -20,4 +20,4 @@ services:
       - key: DIRECT_URL
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: https://icon-ads.vercel.app

@@ -24,6 +24,9 @@ const syslog = require('./lib/systemLog');
 
 const app = express();
 
+// Trust Render's/Vercel's reverse proxy so rate limiting and IP logging use real client IPs
+app.set('trust proxy', 1);
+
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
   skip: (req) => req.path === '/api/health',

@@ -64,7 +64,11 @@ router.post('/login', loginLimiter, async (req, res, next) => {
 
 router.post('/logout', requireAuth, async (req, res) => {
   await audit(req, 'LOGOUT', 'user', req.user.id, 'Logout').catch(() => {});
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  });
   res.json({ message: 'Logged out' });
 });
 
