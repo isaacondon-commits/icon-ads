@@ -38,7 +38,7 @@ export default function TabletsPage() {
     const q = search.toLowerCase();
     const matchSearch = t.name.toLowerCase().includes(q) || t.deviceId.toLowerCase().includes(q) || (t.zone ?? '').toLowerCase().includes(q);
     const lastMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
-    const isOnline = lastMs && (now - lastMs) < 70 * 60000;
+    const isOnline = lastMs && (now - lastMs) < 10 * 60000;
     const matchStatus =
       statusFilter === 'all' ||
       (statusFilter === 'online' && isOnline) ||
@@ -139,7 +139,7 @@ export default function TabletsPage() {
             <tbody>
               {paged.map((t) => {
                 const lastMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
-                const isOnline = lastMs && (now - lastMs) < 70 * 60000;
+                const isOnline = lastMs && (now - lastMs) < 10 * 60000;
                 return (
                   <tr key={t.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
                     <td className="px-5 py-3 font-medium">

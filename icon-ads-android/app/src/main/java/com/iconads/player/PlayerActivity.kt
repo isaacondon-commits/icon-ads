@@ -22,13 +22,17 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.load
+import com.iconads.player.BuildConfig
+import com.iconads.player.data.api.NetworkModule
 import com.iconads.player.data.model.Ad
+import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.repository.MetricRepository
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.databinding.ActivityPlayerBinding
 import com.iconads.player.util.DevicePrefs
 import com.iconads.player.work.SyncWorker
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -67,7 +71,22 @@ class PlayerActivity : AppCompatActivity() {
 
         setupWindow()
         setupExoPlayer()
-        SyncWorker.scheduleImmediate(this)
+        // Registro + sync + upload de métricas inmediatos, sin esperar WorkManager
+        lifecycleScope.launch {
+            registerNow()
+            syncNow()
+            uploadMetricsNow()
+        }
+        // Ciclo periódico cada 30 s
+        lifecycleScope.launch {
+            while (true) {
+                delay(30_000L)
+                Log.d(TAG, "ciclo periódico 30s")
+                syncNow()
+                uploadMetricsNow()
+            }
+        }
+        SyncWorker.schedule(this)
         loadAndPlay()
     }
 
@@ -243,6 +262,72 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun showLoading(show: Boolean) {
         binding.loadingView.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    // ── Registro + sync inmediatos ───────────────────────────────────────────
+
+    private suspend fun syncNow() {
+        val token = prefs.getToken() ?: run {
+            Log.w(TAG, "syncNow: sin token — abortando")
+            return
+        }
+        Log.i(TAG, "syncNow: versión local=${prefs.getPlaylistVersion()}")
+        try {
+            val api = NetworkModule.provideDeviceApi(token)
+            val syncResp = withContext(Dispatchers.IO) { api.sync(prefs.getPlaylistVersion()) }
+            Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
+            if (!syncResp.needsUpdate) return
+
+            val packageUrl = syncResp.packageUrl ?: "api/device/package/${syncResp.version}"
+            Log.i(TAG, "syncNow: descargando $packageUrl")
+            val dlResp = withContext(Dispatchers.IO) { api.downloadPackage(packageUrl) }
+            if (!dlResp.isSuccessful) {
+                Log.e(TAG, "syncNow: HTTP ${dlResp.code()} descargando paquete")
+                return
+            }
+            val body = dlResp.body() ?: run { Log.e(TAG, "syncNow: body vacío"); return }
+            val hash = dlResp.headers()["X-Playlist-Hash"] ?: ""
+            Log.i(TAG, "syncNow: instalando v${syncResp.version} hash=${hash.take(8)}")
+            withContext(Dispatchers.IO) { playlistRepo.installPackage(body, syncResp.version, hash) }
+            prefs.setPlaylistVersion(syncResp.version)
+            Log.i(TAG, "syncNow: instalación OK — difundiendo actualización")
+            sendBroadcast(Intent(SyncWorker.ACTION_PLAYLIST_UPDATED).apply { setPackage(packageName) })
+        } catch (e: Exception) {
+            Log.e(TAG, "syncNow: FALLÓ ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+    }
+
+    private suspend fun uploadMetricsNow() {
+        try {
+            val uploaded = withContext(Dispatchers.IO) { metricRepo.uploadPending() }
+            if (uploaded > 0) Log.i(TAG, "uploadMetricsNow: $uploaded métricas subidas")
+        } catch (e: Exception) {
+            Log.w(TAG, "uploadMetricsNow: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private suspend fun registerNow() {
+        if (prefs.getToken() != null) {
+            Log.i(TAG, "registerNow: ya registrado — tabletId=${prefs.getTabletId()}, omitiendo")
+            return
+        }
+        val deviceId = DevicePrefs.getDeviceId(this)
+        Log.i(TAG, "registerNow: iniciando — deviceId=$deviceId url=${BuildConfig.BASE_URL}/api/device/register")
+        try {
+            val response = withContext(Dispatchers.IO) {
+                NetworkModule.provideDeviceApi(null).register(
+                    RegisterRequest(
+                        deviceId = deviceId,
+                        name = "Tablet ${deviceId.take(8)}",
+                    )
+                )
+            }
+            prefs.setToken(response.token)
+            prefs.setTabletId(response.tabletId)
+            Log.i(TAG, "registerNow: OK — tabletId=${response.tabletId} token=${response.token.take(8)}…")
+        } catch (e: Exception) {
+            Log.e(TAG, "registerNow: FALLÓ ${e.javaClass.simpleName}: ${e.message}", e)
+        }
     }
 
     companion object {

@@ -16,7 +16,7 @@ android {
         versionName = "1.0"
 
         // Emulador: 10.0.2.2 = localhost del host. Cambiar a IP real en producción.
-        buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
+        buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
     }
 
     buildTypes {
@@ -29,7 +29,7 @@ android {
             buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
         }
         debug {
-            buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
+            buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
         }
     }
 

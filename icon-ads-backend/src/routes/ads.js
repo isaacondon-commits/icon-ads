@@ -6,6 +6,7 @@ const multer = require('multer');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
+const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -124,6 +125,7 @@ router.delete('/:id', async (req, res, next) => {
       data: { active: false, deletedAt: new Date() },
     });
     await audit(req, 'DELETE', 'ad', ad.id, `Deleted "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
     res.status(204).send();
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
@@ -148,6 +150,7 @@ router.patch('/:id/reject', async (req, res, next) => {
   try {
     const ad = await prisma.ad.update({ where: { id: Number(req.params.id) }, data: { approvalStatus: 'rejected', active: false } });
     await audit(req, 'REJECT', 'ad', ad.id, `Rejected "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
     res.json(ad);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });

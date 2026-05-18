@@ -34,18 +34,23 @@ class PlaylistRepository(private val context: Context) {
 
     private fun loadFromDir(dir: File, level: Int): List<Ad> {
         val playlistFile = File(dir, "playlist.json")
+        Log.d(TAG, "loadFromDir nivel=$level dir=$dir existe=${dir.exists()} playlist.json=${playlistFile.exists()}")
         if (!playlistFile.exists()) return emptyList()
         return try {
             val json = gson.fromJson(playlistFile.readText(), PlaylistJson::class.java)
             val mediaDir = File(dir, "media")
-            json.ads
+            Log.d(TAG, "loadFromDir v${json.version} ads=${json.ads.size} mediaDir=$mediaDir")
+            val ads = json.ads
                 .map { ad ->
+                    val localPath = File(mediaDir, ad.filename).absolutePath
+                    val exists = File(localPath).exists()
+                    if (!exists) Log.w(TAG, "media no encontrado: $localPath")
                     Ad(
                         id = ad.id,
                         name = ad.name,
                         type = ad.type,
                         filename = ad.filename,
-                        localPath = File(mediaDir, ad.filename).absolutePath,
+                        localPath = localPath,
                         durationS = ad.durationS,
                         sortOrder = ad.order,
                         campaignId = ad.campaignId,
@@ -55,6 +60,8 @@ class PlaylistRepository(private val context: Context) {
                 }
                 .filter { File(it.localPath).exists() }
                 .sortedBy { it.sortOrder }
+            Log.i(TAG, "loadFromDir nivel=$level → ${ads.size}/${json.ads.size} ads con media")
+            ads
         } catch (e: Exception) {
             Log.e(TAG, "Error leyendo playlist de $dir", e)
             emptyList()

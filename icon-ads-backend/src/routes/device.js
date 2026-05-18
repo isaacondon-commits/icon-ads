@@ -56,17 +56,21 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const currentVersion = parseInt(req.query.version) || 0;
     const tablet = req.tablet;
 
+    console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} playlistId=${tablet.playlistId ?? 'ninguna'}`);
+
     await prisma.tablet.update({
       where: { id: tablet.id },
       data: { status: 'online', lastSync: new Date() },
     });
 
     if (!tablet.playlistId) {
+      console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
       return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned' });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
+      console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
       return res.json({ needsUpdate: false, version: 0 });
     }
 
@@ -75,9 +79,11 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     if (forced) forceSyncFlags.delete(tablet.id);
 
     if (!forced && playlist.version <= currentVersion) {
+      console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
       return res.json({ needsUpdate: false, version: playlist.version });
     }
 
+    console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
     res.json({
       needsUpdate: true,
       version: playlist.version,
@@ -104,10 +110,13 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const cacheDir = path.join(__dirname, '../../cache');
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    const adsPayload = playlist.playlistAds.map(({ ad, order }) => ({
-      id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
-      duration_s: ad.durationS, order, campaignId: ad.campaignId,
-    }));
+    // Only include active, non-deleted, non-rejected ads
+    const adsPayload = playlist.playlistAds
+      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus !== 'rejected')
+      .map(({ ad, order }) => ({
+        id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
+        duration_s: ad.durationS, order, campaignId: ad.campaignId,
+      }));
 
     const hash = crypto
       .createHash('sha256')
@@ -120,38 +129,55 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
     res.setHeader('X-Playlist-Hash', hash);
 
+    console.log(`[package] tablet=${tablet.id} playlist=${playlist.id} v${playlist.version} ads=${playlist.playlistAds.length} hash=${hash.slice(0, 8)}`);
+
     // Serve from cache if hash matches (#31)
     if (playlist.contentHash === hash && fs.existsSync(cachedZip)) {
+      console.log(`[package] cache hit — sirviendo desde disco`);
       return fs.createReadStream(cachedZip).pipe(res);
     }
 
+    console.log(`[package] generando ZIP…`);
     const playlistJson = JSON.stringify(
       { version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
     );
 
-    // Build ZIP and cache it
+    // Pipe archive directly to response; collect chunks to cache in background
     const archive = archiver('zip', { zlib: { level: 6 } });
-    archive.on('error', next);
+    archive.on('error', (err) => {
+      console.error('[package] archive error:', err.message);
+      if (!res.writableEnded) next(err);
+    });
 
-    const cacheStream = fs.createWriteStream(cachedZip);
-    const passThrough = require('stream').PassThrough;
-    // Tee: write to cache file AND response simultaneously
-    archive.pipe(cacheStream);
-    archive.on('end', async () => {
-      try {
-        // Update contentHash in DB so next request uses cache
-        await prisma.playlist.update({ where: { id: playlist.id }, data: { contentHash: hash } });
-        // Send cached file
-        if (!res.headersSent) fs.createReadStream(cachedZip).pipe(res);
-      } catch { /* non-fatal */ }
+    // Stream directly to client — this is the fix; never buffer-then-serve
+    archive.pipe(res);
+
+    // Simultaneously collect chunks for disk cache
+    const cacheChunks = [];
+    archive.on('data', (chunk) => cacheChunks.push(Buffer.from(chunk)));
+    archive.on('end', () => {
+      const buf = Buffer.concat(cacheChunks);
+      console.log(`[package] ZIP enviado — ${(buf.length / 1024).toFixed(1)} KB`);
+      fs.writeFile(cachedZip, buf, async (writeErr) => {
+        if (writeErr) { console.warn('[package] no se pudo cachear ZIP:', writeErr.message); return; }
+        try {
+          await prisma.playlist.update({ where: { id: playlist.id }, data: { contentHash: hash } });
+          console.log(`[package] cache guardado`);
+        } catch { /* non-fatal */ }
+      });
     });
 
     archive.append(playlistJson, { name: 'playlist.json' });
     for (const { ad } of playlist.playlistAds) {
       const filePath = path.join(uploadDir, ad.filename);
-      if (fs.existsSync(filePath)) archive.file(filePath, { name: `media/${ad.filename}` });
+      if (fs.existsSync(filePath)) {
+        console.log(`[package] + media/${ad.filename}`);
+        archive.file(filePath, { name: `media/${ad.filename}` });
+      } else {
+        console.warn(`[package] archivo no encontrado: ${filePath}`);
+      }
     }
-    await archive.finalize();
+    archive.finalize();
   } catch (err) {
     next(err);
   }

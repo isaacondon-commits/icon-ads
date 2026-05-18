@@ -3,6 +3,7 @@ const { z } = require('zod');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
+const { bumpPlaylistsForCampaignId } = require('../lib/bumpPlaylists');
 
 router.use(requireAuth);
 
@@ -96,6 +97,7 @@ router.delete('/:id', async (req, res, next) => {
       data: { active: false, deletedAt: new Date() },
     });
     await audit(req, 'DELETE', 'campaign', campaign.id, `Deleted "${campaign.name}"`);
+    await bumpPlaylistsForCampaignId(campaign.id);
     res.status(204).send();
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });
@@ -120,6 +122,7 @@ router.patch('/:id/pause', async (req, res, next) => {
   try {
     const campaign = await prisma.campaign.update({ where: { id: Number(req.params.id) }, data: { active: false } });
     await audit(req, 'PAUSE', 'campaign', campaign.id, `Paused "${campaign.name}"`);
+    await bumpPlaylistsForCampaignId(campaign.id);
     res.json(campaign);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });

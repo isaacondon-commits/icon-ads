@@ -31,8 +31,17 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3001')
+  .split(',').map((s) => s.trim());
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  origin: (origin, cb) => {
+    // Allow server-side requests (no Origin header) and any localhost port in dev
+    if (!origin || origin.startsWith('http://localhost:') || allowedOrigins.includes(origin)) {
+      return cb(null, true);
+    }
+    cb(new Error(`CORS: origin not allowed — ${origin}`));
+  },
   credentials: true,
 }));
 app.use(express.json());

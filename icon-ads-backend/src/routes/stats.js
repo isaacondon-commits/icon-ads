@@ -42,7 +42,7 @@ router.get('/', async (req, res, next) => {
 
     const now = Date.now();
     const onlineCount = tabletList.filter(
-      (t) => t.lastSync && now - new Date(t.lastSync).getTime() < 70 * 60000
+      (t) => t.lastSync && now - new Date(t.lastSync).getTime() < 10 * 60000
     ).length;
 
     const dayMap = Object.fromEntries(

@@ -55,7 +55,7 @@ router.get('/monitor', async (req, res, next) => {
         deviceId: t.deviceId,
         zone: t.zone,
         timezone: t.timezone,
-        status: diffMin < 70 ? 'online' : 'offline',
+        status: diffMin < 10 ? 'online' : 'offline',
         offlineMinutes: Math.floor(diffMin),
         lastSync: t.lastSync,
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
