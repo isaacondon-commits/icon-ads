@@ -1,32 +1,58 @@
 @import "tailwindcss";
 
+/* Dark mode via .dark class on <html> */
+@variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f9fafb;
+  --card: #ffffff;
+  --border: #f3f4f6;
+  --border-md: #e5e7eb;
+  --text: #111827;
+  --text-muted: #6b7280;
+  --text-xs: #9ca3af;
+  --sidebar: #111827;
+  --sidebar-hover: #1f2937;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+.dark {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --border: #1e293b;
+  --border-md: #334155;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-xs: #64748b;
+  --sidebar: #020617;
+  --sidebar-hover: #0f172a;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border-md);
   border-radius: 0.5rem;
   font-size: 0.875rem;
   outline: none;
   transition: box-shadow 0.15s;
-  background: white;
+  background: var(--card);
+  color: var(--text);
 }
 
 .input:focus {
   box-shadow: 0 0 0 2px #3b82f6;
   border-color: transparent;
+}
+
+/* Card utility */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border-md);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }

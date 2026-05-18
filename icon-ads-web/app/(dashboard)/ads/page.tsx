@@ -21,10 +21,11 @@ export default function AdsPage() {
   const [saving, setSaving] = useState(false);
   const [fileError, setFileError] = useState('');
   const [error, setError] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null); // #9
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');  // #33
-  const [search, setSearch] = useState('');  // #6
-  const [page, setPage] = useState(1);       // #8
+  const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () =>
@@ -116,6 +117,20 @@ export default function AdsPage() {
     load();
   };
 
+  // #26 — approve/reject
+  const handleApprove = async (id: number) => {
+    setApprovingId(id);
+    await api.approveAd(id).catch(() => {});
+    setApprovingId(null);
+    load();
+  };
+  const handleReject = async (id: number) => {
+    setApprovingId(id);
+    await api.rejectAd(id).catch(() => {});
+    setApprovingId(null);
+    load();
+  };
+
   return (
     <div>
       {/* Header */}
@@ -175,6 +190,13 @@ export default function AdsPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ad.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
                     {ad.type}
                   </span>
+                  {ad.approvalStatus === 'pending' && (
+                    <div className="flex gap-1 ml-auto">
+                      <button onClick={() => handleApprove(ad.id)} disabled={approvingId === ad.id} className="text-xs text-emerald-600 hover:underline disabled:opacity-40">Aprobar</button>
+                      <button onClick={() => handleReject(ad.id)} disabled={approvingId === ad.id} className="text-xs text-red-500 hover:underline disabled:opacity-40">Rechazar</button>
+                    </div>
+                  )}
+                  {ad.approvalStatus === 'rejected' && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded ml-auto">Rechazado</span>}
                   <button onClick={() => confirmDelete(ad)} className="text-red-500 hover:underline text-xs">Desactivar</button>
                 </div>
               </div>

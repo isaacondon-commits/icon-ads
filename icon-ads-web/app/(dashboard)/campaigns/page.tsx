@@ -5,20 +5,45 @@ import { api, Campaign, Client } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 const PAGE_SIZE = 10;
+const PLAYS_PER_IMPRESSION = 1;
+const CPM = 5; // $5 per 1000 impressions — estimated ROI baseline
 
-function daysLeft(endDate: string): number {
+function daysLeft(endDate: string) {
   return Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000);
 }
 
 function DaysLeftBadge({ endDate, active }: { endDate: string; active: boolean }) {
   if (!active) return null;
   const days = daysLeft(endDate);
-  if (days < 0) return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Vencida</span>;
-  // #32 — warning if < 3 days left
-  if (days <= 3) return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium animate-pulse">⚠ {days}d</span>;
-  // #13 — indicator for ≤ 14 days
-  if (days <= 14) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">{days}d</span>;
-  return <span className="text-xs text-gray-400">{days}d</span>;
+  if (days < 0) return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300 font-medium">Vencida</span>;
+  if (days <= 3) return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300 font-medium animate-pulse">⚠ {days}d</span>;
+  if (days <= 14) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 font-medium">{days}d</span>;
+  return <span className="text-xs font-medium" style={{ color: 'var(--text-xs)' }}>{days}d</span>;
+}
+
+// #10 — campaign progress timeline
+function Timeline({ start, end }: { start: string; end: string }) {
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  const now = Date.now();
+  const total = endMs - startMs;
+  const elapsed = Math.max(0, Math.min(now - startMs, total));
+  const pct = total > 0 ? Math.round((elapsed / total) * 100) : 0;
+  return (
+    <div className="w-full">
+      <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--text-xs)' }}>
+        <span>{new Date(start).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</span>
+        <span className="font-medium" style={{ color: 'var(--text-muted)' }}>{pct}%</span>
+        <span>{new Date(end).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</span>
+      </div>
+      <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--border-md)' }}>
+        <div
+          className={`h-1.5 rounded-full ${pct >= 100 ? 'bg-red-400' : pct > 75 ? 'bg-amber-400' : 'bg-blue-500'}`}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function CampaignsPage() {
@@ -30,9 +55,10 @@ export default function CampaignsPage() {
   const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null); // #9
-  const [search, setSearch] = useState('');  // #6
-  const [page, setPage] = useState(1);       // #8
+  const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const load = () =>
     Promise.all([api.getCampaigns(), api.getClients()])
@@ -56,7 +82,6 @@ export default function CampaignsPage() {
     setError('');
     setShowModal(true);
   };
-
   const openEdit = (c: Campaign) => {
     setEditing(c);
     setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate) });
@@ -91,6 +116,17 @@ export default function CampaignsPage() {
     load();
   };
 
+  // #15 — pause/resume toggle
+  const handleToggle = async (c: Campaign) => {
+    setTogglingId(c.id);
+    try {
+      c.active ? await api.pauseCampaign(c.id) : await api.resumeCampaign(c.id);
+      load();
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -100,7 +136,6 @@ export default function CampaignsPage() {
         </button>
       </div>
 
-      {/* #6 — search */}
       <div className="mb-4">
         <input
           className="input max-w-xs"
@@ -111,67 +146,84 @@ export default function CampaignsPage() {
       </div>
 
       {loading ? (
-        <p className="text-gray-500">Cargando...</p>
+        <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : filtered.length === 0 ? (
-        <p className="text-gray-500">{search ? 'Sin resultados.' : 'No hay campañas.'}</p>
+        <p style={{ color: 'var(--text-muted)' }}>{search ? 'Sin resultados.' : 'No hay campañas.'}</p>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Nombre</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Cliente</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Inicio</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Fin</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Días restantes</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Estado</th>
+              <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Nombre</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Cliente</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Progreso</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Vence</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Estado</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>ROI est.</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Editado</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody>
-              {paged.map((c) => (
-                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium">{c.name}</td>
-                  <td className="px-5 py-3 text-gray-500">{c.client?.name ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-500">{toDateInput(c.startDate)}</td>
-                  <td className="px-5 py-3 text-gray-500">{toDateInput(c.endDate)}</td>
-                  {/* #13 + #32 */}
-                  <td className="px-5 py-3">
-                    <DaysLeftBadge endDate={c.endDate} active={c.active} />
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {c.active ? 'Activa' : 'Inactiva'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 flex gap-3 justify-end">
-                    <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
-                    <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Desactivar</button>
-                  </td>
-                </tr>
-              ))}
+              {paged.map((c) => {
+                // #14 — ROI: estimated value = plays / 1000 * CPM
+                const plays = c._count?.metrics ?? 0;
+                const roi = ((plays / 1000) * CPM).toFixed(2);
+                return (
+                  <tr key={c.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                    <td className="px-5 py-3 font-medium">{c.name}</td>
+                    <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{c.client?.name ?? '—'}</td>
+                    <td className="px-5 py-3 w-44">
+                      <Timeline start={c.startDate} end={c.endDate} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <DaysLeftBadge endDate={c.endDate} active={c.active} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+                        {c.active ? 'Activa' : 'Pausada'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>${roi}</td>
+                    <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
+                      {new Date(c.updatedAt).toLocaleDateString('es-AR')}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex gap-2 justify-end items-center">
+                        <button
+                          onClick={() => handleToggle(c)}
+                          disabled={togglingId === c.id}
+                          className={`text-xs hover:underline disabled:opacity-40 ${c.active ? 'text-amber-600' : 'text-emerald-600'}`}
+                        >
+                          {togglingId === c.id ? '...' : c.active ? 'Pausar' : 'Reanudar'}
+                        </button>
+                        <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
+                        <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Eliminar</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* #8 — pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+        <div className="flex items-center justify-between mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
           <span>{filtered.length} campañas · página {page} de {totalPages}</span>
           <div className="flex gap-1">
-            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">‹ Anterior</button>
-            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Siguiente ›</button>
+            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>‹ Anterior</button>
+            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>Siguiente ›</button>
           </div>
         </div>
       )}
 
-      {/* #9 — confirm dialog */}
       {deleteTarget && (
         <ConfirmDialog
-          title="Desactivar campaña"
-          message={`¿Desactivar "${deleteTarget.name}"? Los anuncios asociados dejarán de estar disponibles.`}
-          confirmLabel="Desactivar"
+          title="Eliminar campaña"
+          message={`¿Eliminar "${deleteTarget.name}"? Los anuncios asociados dejarán de estar disponibles.`}
+          confirmLabel="Eliminar"
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
         />
@@ -196,7 +248,7 @@ export default function CampaignsPage() {
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
                 {saving ? 'Guardando...' : 'Guardar'}
               </button>
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 hover:bg-gray-50 py-2 rounded-lg text-sm">
+              <button onClick={() => setShowModal(false)} className="flex-1 border hover:bg-gray-50 dark:hover:bg-gray-800 py-2 rounded-lg text-sm" style={{ borderColor: 'var(--border-md)' }}>
                 Cancelar
               </button>
             </div>
@@ -210,10 +262,10 @@ export default function CampaignsPage() {
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      <div className="rounded-xl shadow-xl w-full max-w-md p-6" style={{ background: 'var(--card)' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-lg">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
         </div>
         {children}
       </div>
@@ -224,7 +276,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
       {children}
     </div>
   );

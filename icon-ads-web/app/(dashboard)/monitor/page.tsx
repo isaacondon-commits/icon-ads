@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { api, TabletMonitorEntry } from '@/lib/api';
 
 const POLL_INTERVAL = 15;
@@ -39,22 +40,14 @@ export default function MonitorPage() {
     setCountdown(POLL_INTERVAL);
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) return POLL_INTERVAL;
-        return c - 1;
-      });
+      setCountdown((c) => (c <= 1 ? POLL_INTERVAL : c - 1));
     }, 1000);
   };
 
   useEffect(() => {
     fetchData();
     resetCountdown();
-
-    const poll = setInterval(() => {
-      fetchData();
-      resetCountdown();
-    }, POLL_INTERVAL * 1000);
-
+    const poll = setInterval(() => { fetchData(); resetCountdown(); }, POLL_INTERVAL * 1000);
     return () => {
       clearInterval(poll);
       if (countdownRef.current) clearInterval(countdownRef.current);
@@ -65,76 +58,67 @@ export default function MonitorPage() {
   const online = entries.filter((e) => e.status === 'online').length;
   const offline = entries.length - online;
   const totalPlays = entries.reduce((s, e) => s + e.todayPlays, 0);
+  const alerts = entries.filter((e) => e.status === 'offline' && e.offlineMinutes > 120);
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Monitor en vivo</h1>
           {updatedAt && (
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
               Actualizado a las {updatedAt.toLocaleTimeString('es-AR')}
             </p>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => { fetchData(); resetCountdown(); }}
-            className="text-sm text-blue-600 hover:underline"
-          >
+          <button onClick={() => { fetchData(); resetCountdown(); }} className="text-sm text-blue-600 hover:underline">
             Actualizar
           </button>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
+          <span className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
             Auto en {countdown}s
           </span>
         </div>
       </div>
 
+      {/* #4 — offline >2h alert banner */}
+      {alerts.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-orange-200 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-800">
+          <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
+            ⚠ {alerts.length} tablet{alerts.length > 1 ? 's' : ''} offline &gt;2h: {alerts.map(t => t.name).join(', ')}
+          </p>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <SummaryCard label="Online" value={online} color="text-emerald-600" bg="bg-emerald-50" dot="bg-emerald-500" />
-        <SummaryCard label="Offline" value={offline} color="text-gray-600" bg="bg-gray-50" dot="bg-gray-400" />
-        <SummaryCard label="Reproducciones hoy" value={totalPlays} color="text-blue-600" bg="bg-blue-50" dot="bg-blue-500" />
+        <SummaryCard label="Online" value={online} color="text-emerald-600" dotColor="bg-emerald-500" />
+        <SummaryCard label="Offline" value={offline} color="text-gray-500" dotColor="bg-gray-400" />
+        <SummaryCard label="Reproducciones hoy" value={totalPlays} color="text-blue-600" dotColor="bg-blue-500" />
       </div>
 
-      {/* Tablet grid */}
       {loading ? (
-        <p className="text-gray-400 text-sm">Cargando...</p>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : error ? (
-        <p className="text-red-500 text-sm">{error}</p>
+        <p className="text-sm text-red-500">{error}</p>
       ) : entries.length === 0 ? (
-        <p className="text-gray-400 text-sm">No hay tablets registradas.</p>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay tablets registradas.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {entries.map((t) => (
-            <TabletCard key={t.id} entry={t} />
-          ))}
+          {entries.map((t) => <TabletCard key={t.id} entry={t} />)}
         </div>
       )}
     </div>
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  color,
-  bg,
-  dot,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  bg: string;
-  dot: string;
-}) {
+function SummaryCard({ label, value, color, dotColor }: { label: string; value: number; color: string; dotColor: string }) {
   return (
-    <div className={`${bg} rounded-xl p-4 flex items-center gap-3`}>
-      <div className={`w-3 h-3 rounded-full ${dot} flex-shrink-0`} />
+    <div className="card p-4 flex items-center gap-3">
+      <div className={`w-3 h-3 rounded-full ${dotColor} flex-shrink-0`} />
       <div>
         <p className={`text-2xl font-bold ${color}`}>{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p>
       </div>
     </div>
   );
@@ -142,81 +126,49 @@ function SummaryCard({
 
 function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
   const isOnline = entry.status === 'online';
+  const isLongOffline = !isOnline && entry.offlineMinutes > 120;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-col gap-3">
-      {/* Name + status */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-sm truncate">{entry.name}</p>
-          {entry.zone && (
-            <p className="text-xs text-gray-400 truncate">{entry.zone}</p>
-          )}
+    <Link href={`/tablets/${entry.id}`} className="block">
+      <div className={`card p-4 flex flex-col gap-3 hover:border-blue-400 transition-colors cursor-pointer ${isLongOffline ? 'border-orange-300 dark:border-orange-700' : ''}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{entry.name}</p>
+            {entry.zone && <p className="text-xs truncate" style={{ color: 'var(--text-xs)' }}>{entry.zone}</p>}
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
+            <span className={`text-xs font-medium ${isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
+              style={!isOnline && !isLongOffline ? { color: 'var(--text-muted)' } : undefined}>
+              {isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
+            </span>
+          </div>
         </div>
-        <StatusDot online={isOnline} />
+
+        {/* #27 — Quick stats widget */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg p-2" style={{ background: 'var(--bg)' }}>
+            <p className="text-[10px] leading-tight" style={{ color: 'var(--text-xs)' }}>Última conexión</p>
+            <p className="font-semibold mt-0.5" style={{ color: isOnline ? 'inherit' : 'var(--text-muted)' }}>
+              {relativeTime(entry.lastSync)}
+            </p>
+          </div>
+          <div className="rounded-lg p-2" style={{ background: 'var(--bg)' }}>
+            <p className="text-[10px] leading-tight" style={{ color: 'var(--text-xs)' }}>Reproducciones hoy</p>
+            <p className={`font-semibold mt-0.5 ${entry.todayPlays > 0 ? 'text-blue-600' : ''}`}
+              style={entry.todayPlays === 0 ? { color: 'var(--text-muted)' } : undefined}>
+              {entry.todayPlays}
+            </p>
+          </div>
+        </div>
+
+        <div className="pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-[10px]" style={{ color: 'var(--text-xs)' }}>Playlist</p>
+          <p className="text-xs font-medium truncate mt-0.5">
+            {entry.playlist?.name ?? <span style={{ color: 'var(--text-muted)' }}>Sin asignar</span>}
+          </p>
+        </div>
       </div>
-
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <MetricCell
-          label="Última conexión"
-          value={relativeTime(entry.lastSync)}
-          dim={!isOnline}
-        />
-        <MetricCell
-          label="Reproducciones hoy"
-          value={entry.todayPlays.toString()}
-          highlight={entry.todayPlays > 0}
-        />
-      </div>
-
-      {/* Playlist */}
-      <div className="pt-1 border-t border-gray-50">
-        <p className="text-xs text-gray-400">Playlist</p>
-        <p className="text-xs font-medium text-gray-700 truncate mt-0.5">
-          {entry.playlist?.name ?? <span className="text-gray-400 font-normal">Sin asignar</span>}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function StatusDot({ online }: { online: boolean }) {
-  return (
-    <div className="flex items-center gap-1.5 flex-shrink-0">
-      <span
-        className={`w-2 h-2 rounded-full flex-shrink-0 ${
-          online ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'
-        }`}
-      />
-      <span className={`text-xs font-medium ${online ? 'text-emerald-600' : 'text-gray-400'}`}>
-        {online ? 'online' : 'offline'}
-      </span>
-    </div>
-  );
-}
-
-function MetricCell({
-  label,
-  value,
-  dim,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  dim?: boolean;
-  highlight?: boolean;
-}) {
-  return (
-    <div className="bg-gray-50 rounded-lg p-2">
-      <p className="text-gray-400 text-[10px] leading-tight">{label}</p>
-      <p
-        className={`font-semibold mt-0.5 ${
-          dim ? 'text-gray-400' : highlight ? 'text-blue-600' : 'text-gray-700'
-        }`}
-      >
-        {value}
-      </p>
-    </div>
+    </Link>
   );
 }

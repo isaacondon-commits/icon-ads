@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api, Client } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
@@ -101,13 +102,16 @@ export default function ClientsPage() {
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Empresa</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Teléfono</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Estado</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Editado</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody>
               {paged.map((c) => (
                 <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium">{c.name}</td>
+                  <td className="px-5 py-3 font-medium">
+                    <Link href={`/clients/${c.id}`} className="hover:underline text-blue-600">{c.name}</Link>
+                  </td>
                   <td className="px-5 py-3 text-gray-500">{c.email}</td>
                   <td className="px-5 py-3 text-gray-500">{c.company ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-500">{c.phone ?? '—'}</td>
@@ -115,6 +119,9 @@ export default function ClientsPage() {
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
                       {c.active ? 'Activo' : 'Inactivo'}
                     </span>
+                  </td>
+                  <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
+                    {new Date(c.updatedAt).toLocaleDateString('es-AR')}
                   </td>
                   <td className="px-5 py-3 flex gap-3 justify-end">
                     <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
