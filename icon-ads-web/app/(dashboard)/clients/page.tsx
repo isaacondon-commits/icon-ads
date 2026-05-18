@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { api, Client } from '@/lib/api';
+import ConfirmDialog from '@/components/ConfirmDialog';
+
+const PAGE_SIZE = 10;
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -11,9 +14,23 @@ export default function ClientsPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', company: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Client | null>(null); // #9
+  const [search, setSearch] = useState('');  // #6
+  const [page, setPage] = useState(1);       // #8
 
   const load = () => api.getClients().then(setClients).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
+
+  const filtered = clients.filter((c) => {
+    const q = search.toLowerCase();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q) ||
+      (c.company ?? '').toLowerCase().includes(q)
+    );
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const openCreate = () => {
     setEditing(null);
@@ -44,9 +61,10 @@ export default function ClientsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('¿Desactivar este cliente?')) return;
-    await api.deleteClient(id).catch(() => {});
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await api.deleteClient(deleteTarget.id).catch(() => {});
+    setDeleteTarget(null);
     load();
   };
 
@@ -59,10 +77,20 @@ export default function ClientsPage() {
         </button>
       </div>
 
+      {/* #6 — search */}
+      <div className="mb-4">
+        <input
+          className="input max-w-xs"
+          placeholder="Buscar por nombre, email o empresa..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+        />
+      </div>
+
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
-      ) : clients.length === 0 ? (
-        <p className="text-gray-500">No hay clientes.</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-gray-500">{search ? 'Sin resultados.' : 'No hay clientes.'}</p>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
@@ -77,7 +105,7 @@ export default function ClientsPage() {
               </tr>
             </thead>
             <tbody>
-              {clients.map((c) => (
+              {paged.map((c) => (
                 <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-3 font-medium">{c.name}</td>
                   <td className="px-5 py-3 text-gray-500">{c.email}</td>
@@ -90,13 +118,35 @@ export default function ClientsPage() {
                   </td>
                   <td className="px-5 py-3 flex gap-3 justify-end">
                     <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
-                    <button onClick={() => handleDelete(c.id)} className="text-red-500 hover:underline text-xs">Desactivar</button>
+                    <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Desactivar</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* #8 — pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+          <span>{filtered.length} clientes · página {page} de {totalPages}</span>
+          <div className="flex gap-1">
+            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">‹ Anterior</button>
+            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Siguiente ›</button>
+          </div>
+        </div>
+      )}
+
+      {/* #9 — confirm */}
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Desactivar cliente"
+          message={`¿Desactivar a "${deleteTarget.name}"?`}
+          confirmLabel="Desactivar"
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
 
       {showModal && (

@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { api, Tablet, Playlist } from '@/lib/api';
+import ConfirmDialog from '@/components/ConfirmDialog';
+
+const PAGE_SIZE = 10;
+type StatusFilter = 'all' | 'online' | 'offline' | 'no-playlist';
 
 export default function TabletsPage() {
   const [tablets, setTablets] = useState<Tablet[]>([]);
@@ -12,6 +16,12 @@ export default function TabletsPage() {
   const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null); // #9
+  const [search, setSearch] = useState('');              // #6
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all'); // #7
+  const [page, setPage] = useState(1);                   // #8
+  const [forcingSync, setForcingSync] = useState<number | null>(null);   // #48
+  const [syncMsg, setSyncMsg] = useState('');
 
   const load = () =>
     Promise.all([api.getTablets(), api.getPlaylists()])
@@ -19,6 +29,26 @@ export default function TabletsPage() {
       .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
+
+  // #6 + #7 — combined search + status filter
+  const filtered = tablets.filter((t) => {
+    const q = search.toLowerCase();
+    const matchSearch =
+      t.name.toLowerCase().includes(q) ||
+      t.deviceId.toLowerCase().includes(q) ||
+      (t.zone ?? '').toLowerCase().includes(q);
+
+    const matchStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'online' && t.status === 'online') ||
+      (statusFilter === 'offline' && t.status === 'offline') ||
+      (statusFilter === 'no-playlist' && !t.playlistId);
+
+    return matchSearch && matchStatus;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const openCreate = () => {
     setEditing(null);
@@ -44,11 +74,7 @@ export default function TabletsPage() {
         zone: form.zone || undefined,
         playlistId: form.playlistId ? Number(form.playlistId) : null,
       };
-      if (editing) {
-        await api.updateTablet(editing.id, data);
-      } else {
-        await api.createTablet(data);
-      }
+      editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
       setShowModal(false);
       load();
     } catch (e) {
@@ -57,6 +83,26 @@ export default function TabletsPage() {
       setSaving(false);
     }
   };
+
+  // #48 — force sync
+  const handleForceSync = async (id: number) => {
+    setForcingSync(id);
+    setSyncMsg('');
+    try {
+      const res = await api.forceSync(id);
+      setSyncMsg(res.message);
+      setTimeout(() => setSyncMsg(''), 4000);
+    } finally {
+      setForcingSync(null);
+    }
+  };
+
+  const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+    { key: 'all', label: 'Todas' },
+    { key: 'online', label: 'Online' },
+    { key: 'offline', label: 'Offline' },
+    { key: 'no-playlist', label: 'Sin playlist' },
+  ];
 
   return (
     <div>
@@ -67,10 +113,32 @@ export default function TabletsPage() {
         </button>
       </div>
 
+      {/* #6 search + #7 status filters */}
+      <div className="flex flex-wrap gap-3 mb-4 items-center">
+        <input
+          className="input w-56"
+          placeholder="Buscar tablet..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+        />
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          {STATUS_FILTERS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => { setStatusFilter(key); setPage(1); }}
+              className={`px-3 py-2 text-xs font-medium border-r last:border-0 border-gray-200 ${statusFilter === key ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {syncMsg && <p className="text-emerald-600 text-sm">{syncMsg}</p>}
+      </div>
+
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
-      ) : tablets.length === 0 ? (
-        <p className="text-gray-500">No hay tablets registradas.</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-gray-500">{search || statusFilter !== 'all' ? 'Sin resultados.' : 'No hay tablets registradas.'}</p>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
@@ -86,20 +154,29 @@ export default function TabletsPage() {
               </tr>
             </thead>
             <tbody>
-              {tablets.map((t) => (
+              {paged.map((t) => (
                 <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-3 font-medium">{t.name}</td>
                   <td className="px-5 py-3 text-gray-500 font-mono text-xs">{t.deviceId}</td>
                   <td className="px-5 py-3 text-gray-500">{t.zone ?? '—'}</td>
-                  <td className="px-5 py-3">
-                    <StatusBadge status={t.status} />
-                  </td>
+                  <td className="px-5 py-3"><StatusBadge status={t.status} /></td>
                   <td className="px-5 py-3 text-gray-500">{t.playlist?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-gray-400 text-xs">
                     {t.lastSync ? new Date(t.lastSync).toLocaleString('es-AR') : 'Nunca'}
                   </td>
                   <td className="px-5 py-3">
-                    <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline text-xs">Editar</button>
+                    <div className="flex gap-2 justify-end items-center">
+                      {/* #48 — force sync button */}
+                      <button
+                        onClick={() => handleForceSync(t.id)}
+                        disabled={forcingSync === t.id}
+                        className="text-violet-600 hover:underline text-xs disabled:opacity-40"
+                        title="Forzar sincronización en la próxima conexión"
+                      >
+                        {forcingSync === t.id ? 'Enviando...' : 'Sync'}
+                      </button>
+                      <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline text-xs">Editar</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -108,17 +185,32 @@ export default function TabletsPage() {
         </div>
       )}
 
+      {/* #8 — pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+          <span>{filtered.length} tablets · página {page} de {totalPages}</span>
+          <div className="flex gap-1">
+            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">‹ Anterior</button>
+            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Siguiente ›</button>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Eliminar tablet"
+          message={`¿Eliminar "${deleteTarget.name}"?`}
+          confirmLabel="Eliminar"
+          onConfirm={async () => { setDeleteTarget(null); }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
       {showModal && (
         <Modal title={editing ? 'Editar tablet' : 'Nueva tablet'} onClose={() => setShowModal(false)}>
           <div className="space-y-4">
             <Field label="Device ID">
-              <input
-                className="input"
-                value={form.deviceId}
-                disabled={!!editing}
-                onChange={(e) => setForm({ ...form, deviceId: e.target.value })}
-                placeholder="tablet-001"
-              />
+              <input className="input" value={form.deviceId} disabled={!!editing} onChange={(e) => setForm({ ...form, deviceId: e.target.value })} placeholder="tablet-001" />
             </Field>
             <Field label="Nombre">
               <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Tablet recepción" />
@@ -151,11 +243,7 @@ export default function TabletsPage() {
 }
 
 function StatusBadge({ status }: { status: Tablet['status'] }) {
-  const map = {
-    online: 'bg-emerald-100 text-emerald-700',
-    offline: 'bg-gray-100 text-gray-600',
-    syncing: 'bg-blue-100 text-blue-700',
-  };
+  const map = { online: 'bg-emerald-100 text-emerald-700', offline: 'bg-gray-100 text-gray-600', syncing: 'bg-blue-100 text-blue-700' };
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[status]}`}>{status}</span>;
 }
 

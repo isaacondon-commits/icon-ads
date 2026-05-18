@@ -30,6 +30,8 @@ export const api = {
     request<Tablet>('/api/tablets', { method: 'POST', body: JSON.stringify(data) }),
   updateTablet: (id: number, data: Partial<Tablet>) =>
     request<Tablet>(`/api/tablets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  forceSync: (id: number) =>
+    request<{ ok: boolean; message: string }>(`/api/tablets/${id}/force-sync`, { method: 'POST' }),
   getTabletMonitor: () => request<TabletMonitorEntry[]>('/api/tablets/monitor'),
 
   // Clients
@@ -52,13 +54,28 @@ export const api = {
 
   // Ads
   getAds: () => request<Ad[]>('/api/ads'),
-  uploadAd: (formData: FormData) =>
-    fetch(`${BASE}/api/ads/upload`, { method: 'POST', body: formData, credentials: 'include' }).then(
-      async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
-        return r.json() as Promise<Ad>;
-      }
-    ),
+  uploadAdWithProgress: (
+    formData: FormData,
+    onProgress: (pct: number) => void
+  ): Promise<Ad> =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${BASE}/api/ads/upload`);
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText));
+        } else {
+          const body = JSON.parse(xhr.responseText || '{}');
+          reject(new Error(body.error ?? `HTTP ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Error de red'));
+      xhr.send(formData);
+    }),
   deleteAd: (id: number) =>
     request<void>(`/api/ads/${id}`, { method: 'DELETE' }),
 
@@ -72,6 +89,12 @@ export const api = {
     request<void>(`/api/playlists/${id}`, { method: 'DELETE' }),
   setPlaylistAds: (id: number, ads: { adId: number; order: number }[]) =>
     request<Playlist>(`/api/playlists/${id}/ads`, { method: 'POST', body: JSON.stringify(ads) }),
+  duplicatePlaylist: (id: number) =>
+    request<Playlist>(`/api/playlists/${id}/duplicate`, { method: 'POST' }),
+
+  // Stats
+  getStats: () => request<SystemStats>('/api/stats'),
+  getMetricsCsvUrl: () => `${BASE}/api/stats/metrics/export`,
 };
 
 export interface User {
@@ -154,3 +177,14 @@ export interface TabletMonitorEntry {
   playlist: { id: number; name: string } | null;
   todayPlays: number;
 }
+
+export interface SystemStats {
+  tablets: { total: number; online: number };
+  clients: number;
+  campaigns: number;
+  ads: number;
+  dailyPlays: { date: string; count: number }[];
+  playsByCampaign: { campaignId: number; campaignName: string; count: number }[];
+}
+
+export { BASE };
