@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",
+    "build": "npx prisma generate && npx prisma migrate deploy",
     "start": "node server.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "prisma": "^5.22.0",
     "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
@@ -24,7 +26,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7",
-    "prisma": "^5.22.0"
+    "nodemon": "^3.1.7"
   }
 }
