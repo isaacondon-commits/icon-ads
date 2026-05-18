@@ -4,7 +4,7 @@ services:
     env: node
     rootDir: icon-ads-backend
     plan: free
-    buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss
+    buildCommand: npm install && npx prisma generate
     startCommand: node server.js
     envVars:
       - key: NODE_ENV
