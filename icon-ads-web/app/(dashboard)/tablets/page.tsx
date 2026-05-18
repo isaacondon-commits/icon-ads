@@ -2,15 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, Tablet, Playlist } from '@/lib/api';
+import { api, Tablet, Playlist, BASE } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { useToast } from '@/lib/toast-context';
 
 const PAGE_SIZE = 10;
 type StatusFilter = 'all' | 'online' | 'offline' | 'no-playlist';
-
 const TIMEZONES = ['America/Montevideo', 'America/Argentina/Buenos_Aires', 'America/Sao_Paulo', 'UTC'];
 
 export default function TabletsPage() {
+  const { show } = useToast();
   const [tablets, setTablets] = useState<Tablet[]>([]);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +25,7 @@ export default function TabletsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
-  const [syncMsg, setSyncMsg] = useState('');
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   const load = () =>
     Promise.all([api.getTablets(), api.getPlaylists()])
@@ -33,6 +34,16 @@ export default function TabletsPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Keyboard shortcuts (#12)
+  useEffect(() => {
+    const onNew = () => openCreate();
+    const onClose = () => setShowModal(false);
+    document.addEventListener('iconads:new', onNew);
+    document.addEventListener('iconads:close-modal', onClose);
+    return () => { document.removeEventListener('iconads:new', onNew); document.removeEventListener('iconads:close-modal', onClose); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const now = Date.now();
   const filtered = tablets.filter((t) => {
     const q = search.toLowerCase();
@@ -40,10 +51,8 @@ export default function TabletsPage() {
     const lastMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
     const isOnline = lastMs && (now - lastMs) < 10 * 60000;
     const matchStatus =
-      statusFilter === 'all' ||
-      (statusFilter === 'online' && isOnline) ||
-      (statusFilter === 'offline' && !isOnline) ||
-      (statusFilter === 'no-playlist' && !t.playlistId);
+      statusFilter === 'all' || (statusFilter === 'online' && isOnline) ||
+      (statusFilter === 'offline' && !isOnline) || (statusFilter === 'no-playlist' && !t.playlistId);
     return matchSearch && matchStatus;
   });
 
@@ -71,27 +80,49 @@ export default function TabletsPage() {
     setSaving(true); setError('');
     try {
       const data = {
-        deviceId: form.deviceId,
-        name: form.name,
-        zone: form.zone || undefined,
+        deviceId: form.deviceId, name: form.name, zone: form.zone || undefined,
         timezone: form.timezone || undefined,
         playlistId: form.playlistId ? Number(form.playlistId) : null,
         scheduleAt: form.scheduleAt ? new Date(form.scheduleAt).toISOString() : null,
       };
       editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
       setShowModal(false); load();
+      show(editing ? 'Tablet actualizada' : 'Tablet creada');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error');
     } finally { setSaving(false); }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.deleteTablet(deleteTarget.id);
+      show('Tablet eliminada', 'info');
+      load();
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al eliminar', 'error');
+    } finally { setDeleteTarget(null); }
+  };
+
   const handleForceSync = async (id: number) => {
-    setForcingSync(id); setSyncMsg('');
+    setForcingSync(id);
     try {
       const res = await api.forceSync(id);
-      setSyncMsg(res.message);
-      setTimeout(() => setSyncMsg(''), 4000);
+      show(res.message);
+    } catch {
+      show('Error al forzar sync', 'error');
     } finally { setForcingSync(null); }
+  };
+
+  const copyDeviceId = async (t: Tablet) => {
+    await navigator.clipboard.writeText(t.deviceId);
+    setCopiedId(t.id);
+    show(`Device ID copiado: ${t.deviceId}`, 'info');
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const exportCSV = () => {
+    window.open(`${BASE}/api/admin/export/tablets`, '_blank');
   };
 
   const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
@@ -103,9 +134,15 @@ export default function TabletsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Tablets</h1>
-        <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nueva tablet
-        </button>
+        <div className="flex gap-2">
+          <button onClick={exportCSV} className="border px-3 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}
+            title="Exportar a CSV">
+            ↓ CSV
+          </button>
+          <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium" title="Nueva tablet (N)">
+            + Nueva tablet
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4 items-center">
@@ -119,11 +156,10 @@ export default function TabletsPage() {
             </button>
           ))}
         </div>
-        {syncMsg && <p className="text-emerald-600 text-sm">{syncMsg}</p>}
       </div>
 
       {loading ? (
-        <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
+        <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}</div>
       ) : filtered.length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>{search || statusFilter !== 'all' ? 'Sin resultados.' : 'No hay tablets registradas.'}</p>
       ) : (
@@ -131,7 +167,7 @@ export default function TabletsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
-                {['Nombre','Device ID','Zona','Estado','Playlist','Última sincronía','Editado',''].map((h) => (
+                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Playlist', 'Última sincronía', ''].map((h) => (
                   <th key={h} className={`${h ? 'text-left' : ''} px-5 py-3 font-medium text-xs`} style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -145,10 +181,18 @@ export default function TabletsPage() {
                     <td className="px-5 py-3 font-medium">
                       <Link href={`/tablets/${t.id}`} className="hover:underline text-blue-600">{t.name}</Link>
                     </td>
-                    <td className="px-5 py-3 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{t.deviceId}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{t.deviceId}</span>
+                        <button onClick={() => copyDeviceId(t)} title="Copiar Device ID"
+                          className="text-xs opacity-50 hover:opacity-100 transition-opacity">
+                          {copiedId === t.id ? '✓' : '⎘'}
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{t.zone ?? '—'}</td>
                     <td className="px-5 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
                         {isOnline ? 'online' : 'offline'}
                       </span>
                     </td>
@@ -156,15 +200,14 @@ export default function TabletsPage() {
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
                       {t.lastSync ? new Date(t.lastSync).toLocaleString('es-AR') : 'Nunca'}
                     </td>
-                    <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
-                      {new Date(t.updatedAt).toLocaleDateString('es-AR')}
-                    </td>
                     <td className="px-5 py-3">
                       <div className="flex gap-2 justify-end items-center">
-                        <button onClick={() => handleForceSync(t.id)} disabled={forcingSync === t.id} className="text-violet-600 hover:underline text-xs disabled:opacity-40">
-                          {forcingSync === t.id ? 'Enviando...' : 'Sync'}
+                        <button onClick={() => handleForceSync(t.id)} disabled={forcingSync === t.id}
+                          className="text-violet-600 hover:underline text-xs disabled:opacity-40" title="Forzar sincronización">
+                          {forcingSync === t.id ? '...' : 'Sync'}
                         </button>
-                        <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline text-xs">Editar</button>
+                        <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline text-xs" title="Editar">Editar</button>
+                        <button onClick={() => setDeleteTarget(t)} className="text-red-500 hover:underline text-xs" title="Eliminar">✕</button>
                       </div>
                     </td>
                   </tr>
@@ -186,7 +229,8 @@ export default function TabletsPage() {
       )}
 
       {deleteTarget && (
-        <ConfirmDialog title="Eliminar tablet" message={`¿Eliminar "${deleteTarget.name}"?`} confirmLabel="Eliminar" onConfirm={async () => setDeleteTarget(null)} onCancel={() => setDeleteTarget(null)} />
+        <ConfirmDialog title="Eliminar tablet" message={`¿Eliminar "${deleteTarget.name}"? Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />
       )}
 
       {showModal && (
@@ -194,13 +238,12 @@ export default function TabletsPage() {
           <div className="rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" style={{ background: 'var(--card)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-lg">{editing ? 'Editar tablet' : 'Nueva tablet'}</h2>
-              <button onClick={() => setShowModal(false)} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
+              <button onClick={() => setShowModal(false)} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }} title="Cerrar (ESC)">×</button>
             </div>
             <div className="space-y-4">
               <Field label="Device ID"><input className="input" value={form.deviceId} disabled={!!editing} onChange={(e) => setForm({ ...form, deviceId: e.target.value })} placeholder="tablet-001" /></Field>
               <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
               <Field label="Zona (opcional)"><input className="input" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} placeholder="Planta baja" /></Field>
-              {/* #24 — Timezone */}
               <Field label="Zona horaria">
                 <select className="input" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
                   {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
@@ -212,7 +255,6 @@ export default function TabletsPage() {
                   {playlists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </Field>
-              {/* #25 — Schedule at */}
               <Field label="Programar activación (opcional)">
                 <input type="datetime-local" className="input" value={form.scheduleAt} onChange={(e) => setForm({ ...form, scheduleAt: e.target.value })} />
               </Field>

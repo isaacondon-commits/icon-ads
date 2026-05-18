@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -43,6 +44,7 @@ model Campaign {
   startDate DateTime  @map("start_date")
   endDate   DateTime  @map("end_date")
   active    Boolean   @default(true)
+  cpm       Float?
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -130,9 +132,11 @@ model Tablet {
   timezone   String?      @default("America/Montevideo")
   playlistId Int?         @map("playlist_id")
   playlist   Playlist?    @relation(fields: [playlistId], references: [id])
-  scheduleAt DateTime?    @map("schedule_at")
-  lastSync   DateTime?    @map("last_sync")
-  status     TabletStatus @default(offline)
+  scheduleAt        DateTime?    @map("schedule_at")
+  lastSync          DateTime?    @map("last_sync")
+  status            TabletStatus @default(offline)
+  notes             String?
+  maintenanceUntil  DateTime?    @map("maintenance_until")
   createdAt  DateTime     @default(now()) @map("created_at")
   updatedAt  DateTime     @updatedAt @map("updated_at")
   metrics    Metric[]

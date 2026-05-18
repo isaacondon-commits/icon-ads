@@ -79,4 +79,73 @@ router.get('/dashboard-stats', requireAuth, async (req, res, next) => {
   }
 });
 
+// GET /api/admin/export/tablets — CSV export (#22)
+router.get('/export/tablets', requireAuth, async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({
+      include: { playlist: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    const now = Date.now();
+    const header = 'id,name,deviceId,zone,timezone,status,playlist,lastSync,notes,maintenanceUntil,createdAt';
+    const rows = tablets.map((t) => {
+      const isOnline = t.lastSync && (now - new Date(t.lastSync).getTime()) < 10 * 60000;
+      return [
+        t.id,
+        `"${(t.name || '').replace(/"/g, '""')}"`,
+        t.deviceId,
+        `"${(t.zone || '').replace(/"/g, '""')}"`,
+        t.timezone || '',
+        isOnline ? 'online' : 'offline',
+        `"${(t.playlist?.name || '').replace(/"/g, '""')}"`,
+        t.lastSync ? new Date(t.lastSync).toISOString() : '',
+        `"${(t.notes || '').replace(/"/g, '""')}"`,
+        t.maintenanceUntil ? new Date(t.maintenanceUntil).toISOString() : '',
+        new Date(t.createdAt).toISOString(),
+      ].join(',');
+    });
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="tablets_${date}.csv"`);
+    res.send([header, ...rows].join('\n'));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/stats/zones — plays and tablet count grouped by zone (#24)
+router.get('/stats/zones', requireAuth, async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({
+      select: { id: true, zone: true, lastSync: true },
+    });
+    const now = Date.now();
+    const onlineThreshold = now - 10 * 60 * 1000;
+
+    const zoneMap = {};
+    for (const t of tablets) {
+      const z = t.zone || 'Sin zona';
+      if (!zoneMap[z]) zoneMap[z] = { zone: z, tablets: 0, online: 0, plays: 0 };
+      zoneMap[z].tablets++;
+      if (t.lastSync && new Date(t.lastSync).getTime() > onlineThreshold) zoneMap[z].online++;
+    }
+
+    const playsRows = await prisma.$queryRaw`
+      SELECT COALESCE(t.zone, 'Sin zona') AS zone, COUNT(m.id)::int AS plays
+      FROM metrics m
+      JOIN tablets t ON m.tablet_id = t.id
+      GROUP BY t.zone
+    `;
+
+    for (const row of playsRows) {
+      const z = row.zone;
+      if (zoneMap[z]) zoneMap[z].plays = Number(row.plays);
+    }
+
+    res.json(Object.values(zoneMap).sort((a, b) => b.tablets - a.tablets));
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

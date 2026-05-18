@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { z } = require('zod');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const forceSyncFlags = require('../lib/forceSyncFlags');
@@ -121,6 +122,21 @@ router.put('/:id', async (req, res, next) => {
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     if (err.code === 'P2025') return res.status(404).json({ error: 'Tablet not found' });
+    next(err);
+  }
+});
+
+// GET /:id/qr — QR code PNG for quick tablet identification (#21)
+router.get('/:id/qr', async (req, res, next) => {
+  try {
+    const tablet = await prisma.tablet.findUnique({ where: { id: Number(req.params.id) } });
+    if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
+    const content = JSON.stringify({ deviceId: tablet.deviceId, name: tablet.name, id: tablet.id });
+    const png = await QRCode.toBuffer(content, { type: 'png', width: 300, margin: 2 });
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(png);
+  } catch (err) {
     next(err);
   }
 });

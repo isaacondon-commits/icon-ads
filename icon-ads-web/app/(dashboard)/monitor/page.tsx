@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api, TabletMonitorEntry } from '@/lib/api';
 
-const POLL_INTERVAL = 15;
+const POLL_INTERVAL = 30;
 
 function relativeTime(iso: string | null): string {
   if (!iso) return 'Nunca';
