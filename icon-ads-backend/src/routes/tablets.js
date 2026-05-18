@@ -25,6 +25,48 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/tablets/monitor — live stats per tablet (polls every 15s from frontend)
+router.get('/monitor', async (req, res, next) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [tablets, playCounts] = await Promise.all([
+      prisma.tablet.findMany({
+        include: { playlist: { select: { id: true, name: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.metric.groupBy({
+        by: ['tabletId'],
+        where: { playedAt: { gte: today } },
+        _count: { id: true },
+      }),
+    ]);
+
+    const countMap = Object.fromEntries(playCounts.map((r) => [r.tabletId, r._count.id]));
+    const now = Date.now();
+
+    const result = tablets.map((t) => {
+      const diffMin = t.lastSync ? (now - new Date(t.lastSync).getTime()) / 60000 : Infinity;
+      const liveStatus = diffMin < 70 ? 'online' : 'offline';
+      return {
+        id: t.id,
+        name: t.name,
+        deviceId: t.deviceId,
+        zone: t.zone,
+        status: liveStatus,
+        lastSync: t.lastSync,
+        playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
+        todayPlays: countMap[t.id] ?? 0,
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/', async (req, res, next) => {
   try {
     const { deviceId, name, zone, playlistId } = tabletSchema.parse(req.body);

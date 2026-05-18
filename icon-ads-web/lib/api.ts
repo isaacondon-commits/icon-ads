@@ -30,6 +30,7 @@ export const api = {
     request<Tablet>('/api/tablets', { method: 'POST', body: JSON.stringify(data) }),
   updateTablet: (id: number, data: Partial<Tablet>) =>
     request<Tablet>(`/api/tablets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  getTabletMonitor: () => request<TabletMonitorEntry[]>('/api/tablets/monitor'),
 
   // Clients
   getClients: () => request<Client[]>('/api/clients'),
@@ -141,4 +142,15 @@ export interface Tablet {
   lastSync?: string;
   status: 'online' | 'offline' | 'syncing';
   createdAt: string;
+}
+
+export interface TabletMonitorEntry {
+  id: number;
+  name: string;
+  deviceId: string;
+  zone: string | null;
+  status: 'online' | 'offline';
+  lastSync: string | null;
+  playlist: { id: number; name: string } | null;
+  todayPlays: number;
 }

@@ -16,7 +16,7 @@ android {
         versionName = "1.0"
 
         // Emulador: 10.0.2.2 = localhost del host. Cambiar a IP real en producción.
-        buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
+        buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
     }
 
     buildTypes {
@@ -26,10 +26,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
+            buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
         }
         debug {
-            buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
+            buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
         }
     }
 
