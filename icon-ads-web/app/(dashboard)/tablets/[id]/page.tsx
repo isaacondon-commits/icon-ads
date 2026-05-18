@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, TabletDetail } from '@/lib/api';
+import { api, TabletDetail, BASE } from '@/lib/api';
 
 export default function TabletDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,6 +73,25 @@ export default function TabletDetailPage() {
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* QR code card */}
+      <div className="card p-6 mb-6 flex items-start gap-6">
+        <div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`${BASE}/api/tablets/${tablet.id}/qr`} alt="QR Code" width={150} height={150} className="rounded-lg border" style={{ borderColor: 'var(--border-md)' }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="font-semibold mb-1">Código QR de registro</h2>
+          <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+            Escaneá este código desde la app Android para registrar la tablet automáticamente.
+          </p>
+          <a href={`${BASE}/api/tablets/${tablet.id}/qr`} download={`qr-${tablet.deviceId}.png`}
+            className="inline-block text-xs border px-3 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+            ↓ Descargar PNG
+          </a>
         </div>
       </div>
 

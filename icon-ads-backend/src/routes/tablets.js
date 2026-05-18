@@ -141,6 +141,19 @@ router.get('/:id/qr', async (req, res, next) => {
   }
 });
 
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id } });
+    if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
+    await prisma.tablet.delete({ where: { id } });
+    await audit(req, 'DELETE', 'tablet', id, `Deleted "${tablet.name}"`);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /:id/force-sync (#48)
 router.post('/:id/force-sync', async (req, res, next) => {
   try {

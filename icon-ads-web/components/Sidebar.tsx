@@ -16,6 +16,7 @@ const links = [
   { href: '/calendar', label: 'Calendario', icon: '▦' },
   { href: '/stats', label: 'Estadísticas', icon: '◫' },
   { href: '/logs', label: 'Logs', icon: '☰' },
+  { href: '/help', label: 'Ayuda', icon: '?' },
 ];
 
 export default function Sidebar() {
