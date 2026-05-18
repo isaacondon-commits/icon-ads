@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -15,7 +16,7 @@ android {
         versionName = "1.0"
 
         // Emulador: 10.0.2.2 = localhost del host. Cambiar a IP real en producción.
-        buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:3000\"")
+        buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
     }
 
     buildTypes {
@@ -25,10 +26,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "BASE_URL", "\"http://192.168.1.100:3000\"")
+            buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
         }
         debug {
-            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:3000\"")
+            buildConfigField("String", "BASE_URL", "\"http://192.168.1.12:3000\"")
         }
     }
 
@@ -66,6 +67,12 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+
+    // Room
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // AndroidX
     implementation("androidx.core:core-ktx:1.13.0")

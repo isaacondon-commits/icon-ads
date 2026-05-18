@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -72,7 +73,12 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        registerReceiver(playlistUpdatedReceiver, IntentFilter(SyncWorker.ACTION_PLAYLIST_UPDATED))
+        ContextCompat.registerReceiver(
+            this,
+            playlistUpdatedReceiver,
+            IntentFilter(SyncWorker.ACTION_PLAYLIST_UPDATED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onStop() {
@@ -134,7 +140,11 @@ class PlayerActivity : AppCompatActivity() {
                 Log.e(TAG, "ExoPlayer error: ${error.message}")
                 recordMetric(completed = false, error = true)
                 failCount++
-                if (failCount >= ads.size && ads.size > 1) activateFallback() else playNext()
+                when {
+                    failCount < ads.size -> playNext()
+                    ads.all { it.campaignId < 0 } -> scheduleRetry()
+                    else -> activateFallback()
+                }
             }
         })
     }
@@ -159,6 +169,13 @@ class PlayerActivity : AppCompatActivity() {
             failCount = 0
             if (ads.isNotEmpty()) playAd(ads[0])
         }
+    }
+
+    private fun scheduleRetry() {
+        Log.w(TAG, "Contenido institucional no disponible — reintentando en 30s")
+        binding.playerView.visibility = View.GONE
+        binding.imageView.visibility = View.GONE
+        imageHandler.postDelayed({ loadAndPlay() }, 30_000L)
     }
 
     // ── Reproducción ─────────────────────────────────────────────────────────

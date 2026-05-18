@@ -1,44 +1,40 @@
 package com.iconads.player.data.storage
 
 import android.content.Context
-import android.util.Log
-import com.google.gson.Gson
+import com.iconads.player.data.db.AppDatabase
+import com.iconads.player.data.db.entity.MetricEntity
 import com.iconads.player.data.model.MetricRecord
-import java.io.File
 
 class MetricStorage(context: Context) {
 
-    private val file = File(context.filesDir, "metrics_pending.json")
-    private val gson = Gson()
+    private val dao = AppDatabase.getInstance(context).metricDao()
 
-    @Synchronized
     fun append(metric: MetricRecord) {
-        val list = readAll().toMutableList()
-        list.add(metric)
-        try {
-            file.writeText(gson.toJson(list))
-        } catch (e: Exception) {
-            Log.e(TAG, "Error guardando métrica", e)
-        }
+        dao.insert(
+            MetricEntity(
+                adId = metric.adId,
+                campaignId = metric.campaignId,
+                playedAt = metric.playedAt,
+                durationPlayedS = metric.durationPlayedS,
+                completed = metric.completed,
+                error = metric.error,
+            )
+        )
     }
 
-    @Synchronized
-    fun readAll(): List<MetricRecord> {
-        if (!file.exists() || file.length() == 0L) return emptyList()
-        return try {
-            gson.fromJson(file.readText(), Array<MetricRecord>::class.java).toList()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error leyendo métricas, descartando", e)
-            emptyList()
+    fun readAll(): List<MetricRecord> =
+        dao.getAll().map { e ->
+            MetricRecord(
+                adId = e.adId,
+                campaignId = e.campaignId,
+                playedAt = e.playedAt,
+                durationPlayedS = e.durationPlayedS,
+                completed = e.completed,
+                error = e.error,
+            )
         }
-    }
 
-    @Synchronized
     fun clear() {
-        file.delete()
-    }
-
-    companion object {
-        private const val TAG = "MetricStorage"
+        dao.deleteAll()
     }
 }
