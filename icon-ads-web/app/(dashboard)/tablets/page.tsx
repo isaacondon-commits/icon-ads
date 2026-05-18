@@ -17,7 +17,7 @@ export default function TabletsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Tablet | null>(null);
-  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '' });
+  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
@@ -61,7 +61,7 @@ export default function TabletsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '' });
+    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '' });
     setError(''); setShowModal(true);
   };
 
@@ -72,6 +72,8 @@ export default function TabletsPage() {
       playlistId: t.playlistId?.toString() ?? '',
       timezone: t.timezone ?? 'America/Montevideo',
       scheduleAt: t.scheduleAt ? t.scheduleAt.slice(0, 16) : '',
+      notes: t.notes ?? '',
+      maintenanceUntil: t.maintenanceUntil ? t.maintenanceUntil.slice(0, 16) : '',
     });
     setError(''); setShowModal(true);
   };
@@ -84,6 +86,8 @@ export default function TabletsPage() {
         timezone: form.timezone || undefined,
         playlistId: form.playlistId ? Number(form.playlistId) : null,
         scheduleAt: form.scheduleAt ? new Date(form.scheduleAt).toISOString() : null,
+        notes: form.notes || null,
+        maintenanceUntil: form.maintenanceUntil ? new Date(form.maintenanceUntil).toISOString() : null,
       };
       editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
       setShowModal(false); load();
@@ -257,6 +261,12 @@ export default function TabletsPage() {
               </Field>
               <Field label="Programar activación (opcional)">
                 <input type="datetime-local" className="input" value={form.scheduleAt} onChange={(e) => setForm({ ...form, scheduleAt: e.target.value })} />
+              </Field>
+              <Field label="Mantenimiento hasta (opcional)">
+                <input type="datetime-local" className="input" value={form.maintenanceUntil} onChange={(e) => setForm({ ...form, maintenanceUntil: e.target.value })} />
+              </Field>
+              <Field label="Notas (opcional)">
+                <textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Observaciones internas..." style={{ resize: 'vertical' }} />
               </Field>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">

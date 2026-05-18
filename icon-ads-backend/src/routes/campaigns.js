@@ -12,6 +12,7 @@ const campaignSchema = z.object({
   name: z.string().min(1),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
+  cpm: z.number().positive().nullable().optional(),
 });
 
 router.get('/', async (req, res, next) => {
@@ -29,9 +30,9 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { clientId, name, startDate, endDate } = campaignSchema.parse(req.body);
+    const { clientId, name, startDate, endDate, cpm } = campaignSchema.parse(req.body);
     const campaign = await prisma.campaign.create({
-      data: { clientId, name, startDate: new Date(startDate), endDate: new Date(endDate) },
+      data: { clientId, name, startDate: new Date(startDate), endDate: new Date(endDate), cpm: cpm ?? null },
       include: { client: { select: { id: true, name: true } } },
     });
     await audit(req, 'CREATE', 'campaign', campaign.id, `Created "${campaign.name}"`);

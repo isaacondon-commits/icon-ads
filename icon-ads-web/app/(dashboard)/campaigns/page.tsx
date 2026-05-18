@@ -5,8 +5,7 @@ import { api, Campaign, Client } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 const PAGE_SIZE = 10;
-const PLAYS_PER_IMPRESSION = 1;
-const CPM = 5; // $5 per 1000 impressions — estimated ROI baseline
+const DEFAULT_CPM = 5;
 
 function daysLeft(endDate: string) {
   return Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000);
@@ -52,7 +51,7 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
-  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '' });
+  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
@@ -78,13 +77,13 @@ export default function CampaignsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ clientId: '', name: '', startDate: '', endDate: '' });
+    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '' });
     setError('');
     setShowModal(true);
   };
   const openEdit = (c: Campaign) => {
     setEditing(c);
-    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate) });
+    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate), cpm: c.cpm?.toString() ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -98,6 +97,7 @@ export default function CampaignsPage() {
         name: form.name,
         startDate: new Date(form.startDate).toISOString(),
         endDate: new Date(form.endDate).toISOString(),
+        cpm: form.cpm ? Number(form.cpm) : null,
       };
       editing ? await api.updateCampaign(editing.id, data) : await api.createCampaign(data);
       setShowModal(false);
@@ -166,9 +166,9 @@ export default function CampaignsPage() {
             </thead>
             <tbody>
               {paged.map((c) => {
-                // #14 — ROI: estimated value = plays / 1000 * CPM
                 const plays = c._count?.metrics ?? 0;
-                const roi = ((plays / 1000) * CPM).toFixed(2);
+                const effectiveCpm = c.cpm ?? DEFAULT_CPM;
+                const roi = ((plays / 1000) * effectiveCpm).toFixed(2);
                 return (
                   <tr key={c.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
                     <td className="px-5 py-3 font-medium">{c.name}</td>
@@ -243,6 +243,7 @@ export default function CampaignsPage() {
             <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Fecha inicio"><input type="date" className="input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
             <Field label="Fecha fin"><input type="date" className="input" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></Field>
+            <Field label="CPM (USD, opcional)"><input type="number" step="0.01" min="0" className="input" value={form.cpm} onChange={(e) => setForm({ ...form, cpm: e.target.value })} placeholder={`${DEFAULT_CPM} (default)`} /></Field>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">

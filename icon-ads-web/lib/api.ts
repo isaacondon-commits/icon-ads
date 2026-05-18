@@ -162,6 +162,7 @@ export interface ClientProfile extends Client {
 export interface Campaign {
   id: number; clientId: number; client?: { id: number; name: string };
   name: string; startDate: string; endDate: string; active: boolean;
+  cpm?: number | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
   _count?: { metrics: number };
 }
@@ -193,6 +194,7 @@ export interface PlaylistVersion {
 export interface Tablet {
   id: number; deviceId: string; token: string; name: string; zone?: string | null;
   timezone?: string | null; scheduleAt?: string | null;
+  notes?: string | null; maintenanceUntil?: string | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
 }
