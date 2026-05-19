@@ -18,6 +18,7 @@ const statsRoutes = require('./routes/stats');
 const logsRoutes = require('./routes/logs');
 const adminRoutes = require('./routes/admin');
 const notificationRoutes = require('./routes/notifications');
+const settingsRoutes = require('./routes/settings');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
@@ -27,6 +28,16 @@ const app = express();
 
 // Trust Render's/Vercel's reverse proxy so rate limiting and IP logging use real client IPs
 app.set('trust proxy', 1);
+
+// ── Maintenance mode (#11) ───────────────────────────────────────────────────
+let maintenanceMode = false;
+async function refreshMaintenanceMode() {
+  try {
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'maintenance_mode' } });
+    maintenanceMode = cfg?.value === 'true';
+  } catch { /* DB may not be ready yet */ }
+}
+setInterval(refreshMaintenanceMode, 60_000);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
@@ -59,6 +70,13 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Maintenance mode gate (skip health, auth, device)
+app.use((req, res, next) => {
+  if (!maintenanceMode) return next();
+  if (req.path === '/api/health' || req.path.startsWith('/api/auth') || req.path.startsWith('/api/device')) return next();
+  res.status(503).json({ error: 'Sistema en mantenimiento. Intentá de nuevo más tarde.' });
+});
 
 app.get('/api/health', async (req, res) => {
   let dbStatus = 'ok';
@@ -99,6 +117,7 @@ app.use('/api/stats', statsRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -118,6 +137,17 @@ setInterval(async () => {
         alertedTablets.add(t.id);
         syslog.addEvent('TABLET_OFFLINE', 'tablet', t.id, `${t.name} offline >2h`);
         await sendTabletOfflineAlert(t);
+        // #10 — Webhook for tablet offline
+        try {
+          const cfg = await prisma.systemConfig.findUnique({ where: { key: 'webhook_url' } });
+          if (cfg?.value) {
+            fetch(cfg.value, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ event: 'tablet_offline', tabletId: t.id, name: t.name, zone: t.zone, lastSync: t.lastSync }),
+            }).catch((e) => console.warn('[webhook] POST failed:', e.message));
+          }
+        } catch { /* non-fatal */ }
       } else if (!isOffline && alertedTablets.has(t.id)) {
         alertedTablets.delete(t.id);
         syslog.addEvent('TABLET_BACK_ONLINE', 'tablet', t.id, `${t.name} came back online`);
@@ -128,4 +158,18 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
+// #12 — Daily metrics retention cleanup
+setInterval(async () => {
+  try {
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'metrics_retention_days' } });
+    const days = Math.max(7, parseInt(cfg?.value ?? '90'));
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { count } = await prisma.metric.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    if (count > 0) console.log(`[cleanup] ${count} métricas eliminadas (retención: ${days}d)`);
+  } catch (err) {
+    console.warn('[cleanup]', err.message);
+  }
+}, 24 * 60 * 60 * 1000);
+
+app.refreshMaintenanceMode = refreshMaintenanceMode;
 module.exports = app;

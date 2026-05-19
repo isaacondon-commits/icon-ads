@@ -264,4 +264,42 @@ router.get('/playlists', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/occupancy — paid vs available time per tablet (#8)
+router.get('/occupancy', async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({
+      where: { playlistId: { not: null } },
+      select: {
+        id: true, name: true, zone: true,
+        playlist: {
+          select: {
+            playlistAds: {
+              select: {
+                ad: {
+                  select: {
+                    durationS: true,
+                    campaign: { select: { active: true, deletedAt: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const result = tablets.map((t) => {
+      const ads = t.playlist?.playlistAds ?? [];
+      const totalDurationS = ads.reduce((s, pa) => s + pa.ad.durationS, 0);
+      const paidDurationS = ads
+        .filter((pa) => pa.ad.campaign.active && !pa.ad.campaign.deletedAt)
+        .reduce((s, pa) => s + pa.ad.durationS, 0);
+      const occupancyPct = totalDurationS > 0 ? Math.round((paidDurationS / totalDurationS) * 100) : 0;
+      return { tabletId: t.id, tabletName: t.name, zone: t.zone, totalDurationS, paidDurationS, occupancyPct };
+    });
+
+    res.json(result.sort((a, b) => b.occupancyPct - a.occupancyPct));
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

@@ -71,6 +71,9 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       },
     });
 
+    // Record sync in history (#1)
+    prisma.syncLog.create({ data: { tabletId: tablet.id, version: currentVersion, success: true } }).catch(() => {});
+
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
       return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned' });
@@ -209,9 +212,42 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
       })),
     });
 
+    // Auto-pause campaigns that reached max_impressions (#7)
+    const uniqueCampaignIds = [...new Set(metrics.map((m) => m.campaignId))];
+    for (const campaignId of uniqueCampaignIds) {
+      try {
+        const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { maxImpressions: true, active: true } });
+        if (!campaign?.maxImpressions || !campaign.active) continue;
+        const total = await prisma.metric.count({ where: { campaignId } });
+        if (total >= campaign.maxImpressions) {
+          await prisma.campaign.update({ where: { id: campaignId }, data: { active: false } });
+          console.log(`[metrics] Campaña ${campaignId} autopausada: ${total}/${campaign.maxImpressions} impresiones`);
+        }
+      } catch { /* non-fatal */ }
+    }
+
     res.json({ saved: metrics.length });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
+// GET /api/device/messages — pending admin messages for this tablet (#4)
+router.get('/messages', requireDevice, async (req, res, next) => {
+  try {
+    const messages = await prisma.tabletMessage.findMany({
+      where: { tabletId: req.tablet.id, shown: false },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (messages.length > 0) {
+      await prisma.tabletMessage.updateMany({
+        where: { id: { in: messages.map((m) => m.id) } },
+        data: { shown: true },
+      });
+    }
+    res.json(messages.map((m) => ({ id: m.id, message: m.message, createdAt: m.createdAt })));
+  } catch (err) {
     next(err);
   }
 });

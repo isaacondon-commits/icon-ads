@@ -74,6 +74,70 @@ router.get('/monitor', async (req, res, next) => {
   }
 });
 
+// ── Tablet groups (#5) ──────────────────────────────────────────────────────
+
+router.get('/groups', async (req, res, next) => {
+  try {
+    const groups = await prisma.tabletGroup.findMany({
+      include: {
+        playlist: { select: { id: true, name: true } },
+        _count: { select: { tablets: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    res.json(groups);
+  } catch (err) { next(err); }
+});
+
+router.post('/groups', requireAdmin, async (req, res, next) => {
+  try {
+    const { name, playlistId } = z.object({
+      name: z.string().min(1),
+      playlistId: z.number().int().positive().nullable().optional(),
+    }).parse(req.body);
+    const group = await prisma.tabletGroup.create({ data: { name, playlistId: playlistId ?? null } });
+    await audit(req, 'CREATE', 'tablet_group', group.id, `Created group "${name}"`);
+    res.status(201).json(group);
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
+router.put('/groups/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const gid = Number(req.params.id);
+    const { name, playlistId } = z.object({
+      name: z.string().min(1).optional(),
+      playlistId: z.number().int().positive().nullable().optional(),
+    }).parse(req.body);
+    const group = await prisma.tabletGroup.update({
+      where: { id: gid },
+      data: { ...(name ? { name } : {}), ...(playlistId !== undefined ? { playlistId: playlistId ?? null } : {}) },
+    });
+    if (playlistId !== undefined) {
+      await prisma.tablet.updateMany({ where: { groupId: gid }, data: { playlistId: playlistId ?? null } });
+    }
+    await audit(req, 'UPDATE', 'tablet_group', gid, `Updated group "${group.name}"`);
+    res.json(group);
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Group not found' });
+    next(err);
+  }
+});
+
+router.delete('/groups/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const gid = Number(req.params.id);
+    const group = await prisma.tabletGroup.findUnique({ where: { id: gid } });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    await prisma.tabletGroup.delete({ where: { id: gid } });
+    await audit(req, 'DELETE', 'tablet_group', gid, `Deleted group "${group.name}"`);
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
 router.post('/', requireAdmin, async (req, res, next) => {
   try {
     const { deviceId, name, zone, timezone, playlistId, scheduleAt, notes, maintenanceUntil, driverName, licensePlate, spotPrice } = tabletSchema.parse(req.body);
@@ -150,6 +214,63 @@ router.get('/:id/qr', async (req, res, next) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(png);
   } catch (err) {
+    next(err);
+  }
+});
+
+// GET /:id/sync-history — last 50 syncs + 7-day uptime (#1 #3)
+router.get('/:id/sync-history', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id } });
+    if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
+
+    const [syncs, uptimeRows] = await Promise.all([
+      prisma.syncLog.findMany({ where: { tabletId: id }, orderBy: { createdAt: 'desc' }, take: 50 }),
+      prisma.$queryRaw`
+        WITH buckets AS (
+          SELECT (EXTRACT(EPOCH FROM created_at)::BIGINT / 300) AS bucket
+          FROM sync_logs
+          WHERE tablet_id = ${id} AND created_at >= NOW() - INTERVAL '7 days' AND success = true
+          GROUP BY 1
+        )
+        SELECT COUNT(*)::int AS online_buckets FROM buckets
+      `,
+    ]);
+
+    const totalBuckets = 7 * 24 * 12;
+    const onlineBuckets = Number(uptimeRows[0]?.online_buckets ?? 0);
+    const uptimePct7d = Math.min(100, Math.round((onlineBuckets / totalBuckets) * 100));
+    res.json({ syncs, uptimePct7d });
+  } catch (err) { next(err); }
+});
+
+// POST /:id/message — send admin overlay message to tablet (#4)
+router.post('/:id/message', requireAdmin, async (req, res, next) => {
+  try {
+    const { message } = z.object({ message: z.string().min(1).max(200) }).parse(req.body);
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id } });
+    if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
+    const msg = await prisma.tabletMessage.create({ data: { tabletId: id, message } });
+    await audit(req, 'SEND_MESSAGE', 'tablet', id, `Mensaje a tablet: "${message.slice(0, 50)}"`);
+    res.status(201).json(msg);
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
+// PATCH /:id/group — assign tablet to a group (#5)
+router.patch('/:id/group', requireAdmin, async (req, res, next) => {
+  try {
+    const { groupId } = z.object({ groupId: z.number().int().positive().nullable() }).parse(req.body);
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.update({ where: { id }, data: { groupId: groupId ?? null } });
+    res.json(tablet);
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Tablet not found' });
     next(err);
   }
 });

@@ -49,8 +49,9 @@ model Campaign {
   startDate DateTime  @map("start_date")
   endDate   DateTime  @map("end_date")
   active    Boolean   @default(true)
-  cpm       Float?
-  deletedAt DateTime? @map("deleted_at")
+  cpm            Float?
+  maxImpressions Int?      @map("max_impressions")
+  deletedAt      DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   ads       Ad[]
@@ -96,9 +97,10 @@ model Playlist {
   contentHash String?           @map("content_hash")
   createdAt   DateTime          @default(now()) @map("created_at")
   updatedAt   DateTime          @updatedAt @map("updated_at")
-  playlistAds PlaylistAd[]
-  tablets     Tablet[]
-  versions    PlaylistVersion[]
+  playlistAds  PlaylistAd[]
+  tablets      Tablet[]
+  tabletGroups TabletGroup[]
+  versions     PlaylistVersion[]
 
   @@map("playlists")
 }
@@ -132,6 +134,18 @@ enum TabletStatus {
   syncing
 }
 
+model TabletGroup {
+  id         Int       @id @default(autoincrement())
+  name       String
+  playlistId Int?      @map("playlist_id")
+  playlist   Playlist? @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+  tablets    Tablet[]
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@map("tablet_groups")
+}
+
 model Tablet {
   id         Int          @id @default(autoincrement())
   deviceId   String       @unique @map("device_id")
@@ -141,6 +155,8 @@ model Tablet {
   timezone   String?      @default("America/Montevideo")
   playlistId Int?         @map("playlist_id")
   playlist   Playlist?    @relation(fields: [playlistId], references: [id])
+  groupId           Int?         @map("group_id")
+  group             TabletGroup? @relation(fields: [groupId], references: [id])
   scheduleAt        DateTime?    @map("schedule_at")
   lastSync          DateTime?    @map("last_sync")
   status            TabletStatus @default(offline)
@@ -156,8 +172,42 @@ model Tablet {
   updatedAt  DateTime     @updatedAt @map("updated_at")
   metrics    Metric[]
   errorLogs  ErrorLog[]
+  syncLogs   SyncLog[]
+  messages   TabletMessage[]
 
   @@map("tablets")
+}
+
+model SyncLog {
+  id        Int      @id @default(autoincrement())
+  tabletId  Int      @map("tablet_id")
+  tablet    Tablet   @relation(fields: [tabletId], references: [id], onDelete: Cascade)
+  version   Int      @default(0)
+  success   Boolean  @default(true)
+  errorMsg  String?  @map("error_msg")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tabletId])
+  @@map("sync_logs")
+}
+
+model TabletMessage {
+  id        Int      @id @default(autoincrement())
+  tabletId  Int      @map("tablet_id")
+  tablet    Tablet   @relation(fields: [tabletId], references: [id], onDelete: Cascade)
+  message   String
+  shown     Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("tablet_messages")
+}
+
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_config")
 }
 
 model Metric {
