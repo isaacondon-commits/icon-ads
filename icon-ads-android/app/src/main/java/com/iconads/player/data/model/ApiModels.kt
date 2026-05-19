@@ -38,3 +38,9 @@ data class ErrorReport(
     val message: String,
     val occurredAt: String,
 )
+
+data class AdminMessage(
+    val id: Int,
+    val message: String,
+    val createdAt: String,
+)

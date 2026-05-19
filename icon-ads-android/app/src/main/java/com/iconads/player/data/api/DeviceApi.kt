@@ -25,6 +25,9 @@ interface DeviceApi {
     @POST("api/device/metrics")
     suspend fun uploadMetrics(@Body metrics: List<MetricUpload>): Map<String, Int>
 
+    @GET("api/device/messages")
+    suspend fun getMessages(): List<AdminMessage>
+
     @POST("api/device/error")
     suspend fun reportError(@Body error: ErrorReport)
 }

@@ -23,6 +23,30 @@
         android:background="@android:color/black"
         android:visibility="gone" />
 
+    <!-- Admin message overlay (#4) -->
+    <FrameLayout
+        android:id="@+id/message_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#CC000000"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="16dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/message_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:text="" />
+
+    </FrameLayout>
+
     <!-- Splash / Loading overlay — full screen -->
     <FrameLayout
         android:id="@+id/loading_view"

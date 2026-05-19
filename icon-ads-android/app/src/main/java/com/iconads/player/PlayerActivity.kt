@@ -95,6 +95,13 @@ class PlayerActivity : AppCompatActivity() {
         }
         SyncWorker.schedule(this)
         loadAndPlay()
+        // Poll for admin messages every 5 min (#4)
+        lifecycleScope.launch {
+            while (true) {
+                delay(5 * 60_000L)
+                checkAdminMessages()
+            }
+        }
     }
 
     override fun onStart() {
@@ -342,6 +349,27 @@ class PlayerActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.w(TAG, "uploadMetricsNow: ${e.javaClass.simpleName}: ${e.message}")
         }
+    }
+
+    private suspend fun checkAdminMessages() {
+        val token = prefs.getToken() ?: return
+        try {
+            val messages = withContext(Dispatchers.IO) { NetworkModule.provideDeviceApi(token).getMessages() }
+            for (msg in messages) {
+                withContext(Dispatchers.Main) { showAdminMessage(msg.message) }
+                delay(11_000L) // wait for overlay to finish before showing next
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "checkAdminMessages: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun showAdminMessage(text: String) {
+        binding.messageOverlay.visibility = android.view.View.VISIBLE
+        binding.messageText.text = text
+        imageHandler.postDelayed({
+            binding.messageOverlay.visibility = android.view.View.GONE
+        }, 10_000L)
     }
 
     private suspend fun registerNow() {
