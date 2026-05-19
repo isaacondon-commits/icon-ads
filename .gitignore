@@ -50,8 +50,9 @@ icon-ads-android/.cxx/
 Thumbs.db
 
 # ── Logs y temporales ─────────────────────────────────────────────────────────
-logs/
 *.log
+/logs/
+icon-ads-backend/logs/
 tmp/
 temp/
 .cache/
