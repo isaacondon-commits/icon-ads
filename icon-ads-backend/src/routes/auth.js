@@ -55,7 +55,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
     // #35 — Log successful login
     await audit({ user, ip }, 'LOGIN', 'user', user.id, `Login exitoso desde ${ip}`);
 
-    res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);

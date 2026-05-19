@@ -31,13 +31,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { user } = await api.login(email, password);
+    const { token, user } = await api.login(email, password);
+    localStorage.setItem('auth_token', token);
     setUser(user);
     router.push('/dashboard');
   };
 
   const logout = async () => {
     await api.logout().catch(() => {});
+    localStorage.removeItem('auth_token');
     setUser(null);
     router.push('/login');
   };
