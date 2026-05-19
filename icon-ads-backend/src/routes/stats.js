@@ -112,7 +112,7 @@ router.get('/range', async (req, res, next) => {
     const to = req.query.to ? new Date(req.query.to) : new Date();
     to.setHours(23, 59, 59, 999);
 
-    const [dailyRows, campaignRows, tabletRows] = await Promise.all([
+    const [dailyRows, campaignRows, tabletRows, adRows] = await Promise.all([
       prisma.$queryRaw`
         SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
         FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
@@ -130,6 +130,12 @@ router.get('/range', async (req, res, next) => {
         WHERE m.played_at BETWEEN ${from} AND ${to}
         GROUP BY t.id, t.name ORDER BY count DESC LIMIT 10
       `,
+      prisma.$queryRaw`
+        SELECT a.id AS "adId", a.name AS "adName", COUNT(m.id)::int AS count
+        FROM metrics m JOIN ads a ON m.ad_id = a.id
+        WHERE m.played_at BETWEEN ${from} AND ${to}
+        GROUP BY a.id, a.name ORDER BY count DESC LIMIT 10
+      `,
     ]);
 
     res.json({
@@ -139,6 +145,7 @@ router.get('/range', async (req, res, next) => {
       dailyPlays: dailyRows.map((r) => ({ date: String(r.date).slice(0, 10), count: Number(r.count) })),
       playsByCampaign: campaignRows.map((r) => ({ campaignId: Number(r.campaignId), campaignName: r.campaignName, count: Number(r.count) })),
       playsByTablet: tabletRows.map((r) => ({ tabletId: Number(r.tabletId), tabletName: r.tabletName, count: Number(r.count) })),
+      playsByAd: adRows.map((r) => ({ adId: Number(r.adId), adName: r.adName, count: Number(r.count) })),
     });
   } catch (err) {
     next(err);

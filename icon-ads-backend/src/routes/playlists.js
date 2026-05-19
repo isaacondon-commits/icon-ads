@@ -69,7 +69,14 @@ router.put('/:id', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    await prisma.playlist.delete({ where: { id: Number(req.params.id) } });
+    const id = Number(req.params.id);
+    const playlist = await prisma.playlist.findUnique({ where: { id } });
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
+    // Clear FK references that don't cascade automatically
+    await prisma.tablet.updateMany({ where: { playlistId: id }, data: { playlistId: null } });
+    await prisma.playlistAd.deleteMany({ where: { playlistId: id } });
+    await prisma.playlist.delete({ where: { id } });
+    await audit(req, 'DELETE', 'playlist', id, `Deleted "${playlist.name}"`);
     res.status(204).send();
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Playlist not found' });

@@ -132,6 +132,15 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
   }
 });
 
+router.get('/pending-count', async (req, res, next) => {
+  try {
+    const count = await prisma.ad.count({ where: { approvalStatus: 'pending', deletedAt: null } });
+    res.json({ count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const ad = await prisma.ad.findUnique({
@@ -179,6 +188,7 @@ router.patch('/:id/approve', async (req, res, next) => {
   try {
     const ad = await prisma.ad.update({ where: { id: Number(req.params.id) }, data: { approvalStatus: 'approved', active: true } });
     await audit(req, 'APPROVE', 'ad', ad.id, `Approved "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
     res.json(ad);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });

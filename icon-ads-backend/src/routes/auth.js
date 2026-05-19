@@ -72,6 +72,26 @@ router.post('/logout', requireAuth, async (req, res) => {
   res.json({ message: 'Logged out' });
 });
 
+router.post('/change-password', requireAuth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8, 'Mínimo 8 caracteres'),
+    }).parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+      return res.status(400).json({ error: 'Contraseña actual incorrecta' });
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({ where: { id: req.user.id }, data: { password: hashed } });
+    await audit(req, 'CHANGE_PASSWORD', 'user', req.user.id, 'Cambio de contraseña');
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0]?.message ?? err.errors });
+    next(err);
+  }
+});
+
 router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
