@@ -159,6 +159,11 @@ export const api = {
   // Logs
   getLogs: () => request<SystemLogEntry[]>('/api/logs'),
   getAuditLogs: (page?: number) => request<AuditPage>(`/api/logs/audit${page ? `?page=${page}` : ''}`),
+
+  // Profile
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: boolean }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
+  getPendingAdsCount: () => request<{ count: number }>('/api/ads/pending-count'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -232,6 +237,7 @@ export interface RangeStats {
   dailyPlays: { date: string; count: number }[];
   playsByCampaign: { campaignId: number; campaignName: string; count: number }[];
   playsByTablet: { tabletId: number; tabletName: string; count: number }[];
+  playsByAd: { adId: number; adName: string; count: number }[];
 }
 export interface SystemLogEntry {
   id: number; action: string; entity: string; entityId: number | null;

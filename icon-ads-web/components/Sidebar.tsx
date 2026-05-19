@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
+import { api } from '@/lib/api';
 
 const links = [
   { href: '/dashboard', label: 'Dashboard', icon: '⊞' },
@@ -16,6 +18,7 @@ const links = [
   { href: '/calendar', label: 'Calendario', icon: '▦' },
   { href: '/stats', label: 'Estadísticas', icon: '◫' },
   { href: '/logs', label: 'Logs', icon: '☰' },
+  { href: '/profile', label: 'Perfil', icon: '◷' },
   { href: '/help', label: 'Ayuda', icon: '?' },
 ];
 
@@ -23,6 +26,15 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
+  const [pendingAds, setPendingAds] = useState(0);
+
+  useEffect(() => {
+    api.getPendingAdsCount().then((r) => setPendingAds(r.count)).catch(() => {});
+    const id = setInterval(() => {
+      api.getPendingAdsCount().then((r) => setPendingAds(r.count)).catch(() => {});
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <aside
@@ -44,6 +56,7 @@ export default function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {links.map((link) => {
           const active = pathname === link.href || pathname.startsWith(link.href + '/');
+          const badge = link.href === '/ads' && pendingAds > 0 ? pendingAds : null;
           return (
             <Link
               key={link.href}
@@ -56,7 +69,12 @@ export default function Sidebar() {
               onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = ''; }}
             >
               <span className="text-base">{link.icon}</span>
-              {link.label}
+              <span className="flex-1">{link.label}</span>
+              {badge && (
+                <span className="text-xs font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
             </Link>
           );
         })}

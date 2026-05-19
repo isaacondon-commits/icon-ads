@@ -17,6 +17,7 @@ export default function PlaylistsPage() {
   const [selectedAds, setSelectedAds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Playlist | null>(null);
   const [duplicating, setDuplicating] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -48,8 +49,14 @@ export default function PlaylistsPage() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    await api.deletePlaylist(deleteTarget.id).catch(() => {});
-    setDeleteTarget(null); load();
+    try {
+      await api.deletePlaylist(deleteTarget.id);
+      setDeleteTarget(null);
+      load();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Error al eliminar');
+      setDeleteTarget(null);
+    }
   };
 
   const handleDuplicate = async (id: number) => {
@@ -114,6 +121,13 @@ export default function PlaylistsPage() {
           + Nueva playlist
         </button>
       </div>
+
+      {deleteError && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 flex items-center justify-between">
+          <p className="text-sm text-red-600">{deleteError}</p>
+          <button onClick={() => setDeleteError('')} className="text-red-400 hover:text-red-600 ml-3 text-lg leading-none">×</button>
+        </div>
+      )}
 
       <div className="mb-4">
         <input className="input max-w-xs" placeholder="Buscar playlist..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />

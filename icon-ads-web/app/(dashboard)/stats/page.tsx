@@ -106,46 +106,83 @@ export default function StatsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* By campaign */}
               <div>
-                <p className="text-sm font-medium mb-3">Por campaña</p>
-                <div className="space-y-2">
-                  {range.playsByCampaign.map((c, i) => {
-                    const maxC = Math.max(...range.playsByCampaign.map(x => x.count), 1);
-                    const pct = Math.round((c.count / maxC) * 100);
-                    return (
-                      <div key={c.campaignId}>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="truncate max-w-[180px]">{c.campaignName}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>{c.count.toLocaleString()}</span>
-                        </div>
-                        <div className="w-full h-2 rounded-full" style={{ background: 'var(--border-md)' }}>
-                          <div className="h-2 rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-sm font-medium mb-3">Top campañas</p>
+                {range.playsByCampaign.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        <th className="text-left pb-2 w-6">#</th>
+                        <th className="text-left pb-2">Campaña</th>
+                        <th className="text-right pb-2">Reprod.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {range.playsByCampaign.map((c, i) => (
+                        <tr key={c.campaignId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                          <td className="py-1.5 pr-2 font-bold text-xs" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td className="py-1.5 truncate max-w-[160px]">{c.campaignName}</td>
+                          <td className="py-1.5 text-right font-medium tabular-nums">{c.count.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
               {/* By tablet */}
               <div>
-                <p className="text-sm font-medium mb-3">Por tablet</p>
-                <div className="space-y-2">
-                  {range.playsByTablet.map((t, i) => {
-                    const maxT = Math.max(...range.playsByTablet.map(x => x.count), 1);
-                    const pct = Math.round((t.count / maxT) * 100);
-                    return (
-                      <div key={t.tabletId}>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="truncate max-w-[180px]">{t.tabletName}</span>
-                          <span style={{ color: 'var(--text-muted)' }}>{t.count.toLocaleString()}</span>
-                        </div>
-                        <div className="w-full h-2 rounded-full" style={{ background: 'var(--border-md)' }}>
-                          <div className="h-2 rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[(i + 3) % CHART_COLORS.length] }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-sm font-medium mb-3">Top tablets</p>
+                {range.playsByTablet.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        <th className="text-left pb-2 w-6">#</th>
+                        <th className="text-left pb-2">Tablet</th>
+                        <th className="text-right pb-2">Reprod.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {range.playsByTablet.map((t, i) => (
+                        <tr key={t.tabletId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                          <td className="py-1.5 pr-2 font-bold text-xs" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td className="py-1.5 truncate max-w-[160px]">{t.tabletName}</td>
+                          <td className="py-1.5 text-right font-medium tabular-nums">{t.count.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* By ad — #14 */}
+              <div className="lg:col-span-2">
+                <p className="text-sm font-medium mb-3">Top 10 anuncios más reproducidos</p>
+                {(range.playsByAd ?? []).length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        <th className="text-left pb-2 w-6">#</th>
+                        <th className="text-left pb-2">Anuncio</th>
+                        <th className="text-right pb-2">Reproducciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(range.playsByAd ?? []).map((a, i) => (
+                        <tr key={a.adId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                          <td className="py-1.5 pr-2 font-bold text-xs" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                          <td className="py-1.5 truncate max-w-[300px]">{a.adName}</td>
+                          <td className="py-1.5 text-right font-medium tabular-nums">{a.count.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </>
