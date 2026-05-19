@@ -28,13 +28,33 @@ router.post('/login', loginLimiter, async (req, res, next) => {
     const { email, password } = loginSchema.parse(req.body);
     const user = await prisma.user.findUnique({ where: { email } });
 
+    if (user?.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      const minutesLeft = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000);
+      return res.status(423).json({ error: `Cuenta bloqueada. Intentá de nuevo en ${minutesLeft} minuto${minutesLeft !== 1 ? 's' : ''}.` });
+    }
+
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      // #35 — Log failed login attempt
       console.warn(`[auth] Login fallido — email=${email} ip=${ip}`);
       await prisma.auditLog.create({
         data: { action: 'LOGIN_FAILED', entity: 'user', details: `email=${email}`, ip },
       }).catch(() => {});
+      if (user) {
+        const newFailed = (user.failedLogins ?? 0) + 1;
+        const lockUntil = newFailed >= 5 ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null;
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { failedLogins: newFailed, ...(lockUntil ? { lockedUntil: lockUntil } : {}) },
+        }).catch(() => {});
+        if (newFailed >= 5) {
+          return res.status(423).json({ error: 'Cuenta bloqueada por múltiples intentos fallidos. Contactá al administrador.' });
+        }
+        return res.status(401).json({ error: `Credenciales inválidas. Intentos restantes: ${5 - newFailed}` });
+      }
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if ((user.failedLogins ?? 0) > 0) {
+      await prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } }).catch(() => {});
     }
 
     const expiresIn = process.env.JWT_EXPIRES_IN || '8h'; // #34 — 8h default
@@ -88,6 +108,22 @@ router.post('/change-password', requireAuth, async (req, res, next) => {
     res.json({ ok: true });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors[0]?.message ?? err.errors });
+    next(err);
+  }
+});
+
+router.patch('/unlock/:userId', requireAuth, async (req, res, next) => {
+  if (req.user?.role !== 'superadmin') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const user = await prisma.user.update({
+      where: { id: Number(req.params.userId) },
+      data: { failedLogins: 0, lockedUntil: null },
+      select: { id: true, email: true, name: true },
+    });
+    await audit(req, 'UNLOCK_ACCOUNT', 'user', user.id, `Desbloqueó cuenta de ${user.email}`);
+    res.json({ ok: true, user });
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'User not found' });
     next(err);
   }
 });

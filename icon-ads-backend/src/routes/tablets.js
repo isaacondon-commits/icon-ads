@@ -18,6 +18,8 @@ const tabletSchema = z.object({
   scheduleAt: z.string().datetime().nullable().optional(),
   notes: z.string().nullable().optional(),
   maintenanceUntil: z.string().datetime().nullable().optional(),
+  driverName: z.string().nullable().optional(),
+  licensePlate: z.string().nullable().optional(),
 });
 
 router.get('/', async (req, res, next) => {
@@ -73,10 +75,13 @@ router.get('/monitor', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { deviceId, name, zone, timezone, playlistId, scheduleAt, notes, maintenanceUntil } = tabletSchema.parse(req.body);
+    const { deviceId, name, zone, timezone, playlistId, scheduleAt, notes, maintenanceUntil, driverName, licensePlate } = tabletSchema.parse(req.body);
     const token = crypto.randomBytes(32).toString('hex');
     const tablet = await prisma.tablet.create({
-      data: { deviceId, name, zone, timezone, playlistId, scheduleAt: scheduleAt ? new Date(scheduleAt) : null, notes, maintenanceUntil: maintenanceUntil ? new Date(maintenanceUntil) : null, token },
+      data: { deviceId, name, zone, timezone, playlistId,
+              scheduleAt: scheduleAt ? new Date(scheduleAt) : null,
+              notes, maintenanceUntil: maintenanceUntil ? new Date(maintenanceUntil) : null,
+              driverName: driverName ?? null, licensePlate: licensePlate ?? null, token },
     });
     await audit(req, 'CREATE', 'tablet', tablet.id, `Registered "${tablet.name}"`);
     res.status(201).json(tablet);
@@ -119,6 +124,8 @@ router.put('/:id', async (req, res, next) => {
     const parsed = { ...data };
     if (data.scheduleAt !== undefined) parsed.scheduleAt = data.scheduleAt ? new Date(data.scheduleAt) : null;
     if (data.maintenanceUntil !== undefined) parsed.maintenanceUntil = data.maintenanceUntil ? new Date(data.maintenanceUntil) : null;
+    if (data.driverName !== undefined) parsed.driverName = data.driverName ?? null;
+    if (data.licensePlate !== undefined) parsed.licensePlate = data.licensePlate ?? null;
     const tablet = await prisma.tablet.update({ where: { id: Number(req.params.id) }, data: parsed });
     await audit(req, 'UPDATE', 'tablet', tablet.id, `Updated "${tablet.name}"`);
     res.json(tablet);

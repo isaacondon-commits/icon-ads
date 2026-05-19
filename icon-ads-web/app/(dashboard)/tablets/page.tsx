@@ -17,7 +17,7 @@ export default function TabletsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Tablet | null>(null);
-  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '' });
+  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
@@ -61,7 +61,7 @@ export default function TabletsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '' });
+    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '' });
     setError(''); setShowModal(true);
   };
 
@@ -74,6 +74,8 @@ export default function TabletsPage() {
       scheduleAt: t.scheduleAt ? t.scheduleAt.slice(0, 16) : '',
       notes: t.notes ?? '',
       maintenanceUntil: t.maintenanceUntil ? t.maintenanceUntil.slice(0, 16) : '',
+      driverName: t.driverName ?? '',
+      licensePlate: t.licensePlate ?? '',
     });
     setError(''); setShowModal(true);
   };
@@ -88,6 +90,8 @@ export default function TabletsPage() {
         scheduleAt: form.scheduleAt ? new Date(form.scheduleAt).toISOString() : null,
         notes: form.notes || null,
         maintenanceUntil: form.maintenanceUntil ? new Date(form.maintenanceUntil).toISOString() : null,
+        driverName: form.driverName || null,
+        licensePlate: form.licensePlate || null,
       };
       editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
       setShowModal(false); load();
@@ -268,6 +272,14 @@ export default function TabletsPage() {
               <Field label="Notas (opcional)">
                 <textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Observaciones internas..." style={{ resize: 'vertical' }} />
               </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Conductor (opcional)">
+                  <input className="input" value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} placeholder="Nombre del conductor" />
+                </Field>
+                <Field label="Patente (opcional)">
+                  <input className="input" value={form.licensePlate} onChange={(e) => setForm({ ...form, licensePlate: e.target.value })} placeholder="ABC 1234" />
+                </Field>
+              </div>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">
                 <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">

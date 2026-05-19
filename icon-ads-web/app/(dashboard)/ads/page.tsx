@@ -14,7 +14,8 @@ export default function AdsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10' });
+  const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '' });
+  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);  // #1
   const [uploadPct, setUploadPct] = useState(0);                 // #3
@@ -49,7 +50,7 @@ export default function AdsPage() {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const openCreate = () => {
-    setForm({ campaignId: '', name: '', type: 'image', durationS: '10' });
+    setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '' });
     setFile(null);
     setPreview(null);
     setUploadPct(0);
@@ -98,6 +99,8 @@ export default function AdsPage() {
       fd.append('name', form.name || file.name);
       fd.append('type', form.type);
       fd.append('durationS', form.durationS);
+      fd.append('priority', form.priority || '0');
+      if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
       await api.uploadAdWithProgress(fd, setUploadPct);
       setShowModal(false);
       load();
@@ -175,12 +178,20 @@ export default function AdsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {paged.map((ad) => (
             <div key={ad.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              {/* #11 — thumbnail */}
-              <div className="h-36 bg-gray-100 flex items-center justify-center overflow-hidden">
+              {/* #11 — thumbnail, click to preview */}
+              <div
+                className="h-36 bg-gray-100 flex items-center justify-center overflow-hidden cursor-pointer relative group"
+                onClick={() => setPlayerUrl(`${BASE}${ad.fileUrl}`)}
+              >
                 {ad.type === 'image' ? (
                   <img src={`${BASE}${ad.fileUrl}`} alt={ad.name} className="h-full w-full object-cover" />
                 ) : (
-                  <video src={`${BASE}${ad.fileUrl}`} className="h-full w-full object-cover" muted />
+                  <>
+                    <video src={`${BASE}${ad.fileUrl}`} className="h-full w-full object-cover" muted />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
+                      <span className="text-white text-3xl">▶</span>
+                    </div>
+                  </>
                 )}
               </div>
               <div className="p-4">
@@ -221,11 +232,19 @@ export default function AdsPage() {
               {paged.map((ad) => (
                 <tr key={ad.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="px-4 py-2">
-                    <div className="w-12 h-8 rounded overflow-hidden bg-gray-100">
+                    <div
+                      className="w-12 h-8 rounded overflow-hidden bg-gray-100 cursor-pointer relative group"
+                      onClick={() => setPlayerUrl(`${BASE}${ad.fileUrl}`)}
+                    >
                       {ad.type === 'image' ? (
                         <img src={`${BASE}${ad.fileUrl}`} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <video src={`${BASE}${ad.fileUrl}`} className="w-full h-full object-cover" muted />
+                        <>
+                          <video src={`${BASE}${ad.fileUrl}`} className="w-full h-full object-cover" muted />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                            <span className="text-white text-xs">▶</span>
+                          </div>
+                        </>
                       )}
                     </div>
                   </td>
@@ -258,6 +277,23 @@ export default function AdsPage() {
         </div>
       )}
 
+      {/* Video player modal */}
+      {playerUrl && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPlayerUrl(null)}>
+          <div className="relative max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPlayerUrl(null)}
+              className="absolute -top-8 right-0 text-white text-2xl leading-none hover:text-gray-300"
+            >×</button>
+            {/\.(jpg|jpeg|png|webp)(\?|$)/i.test(playerUrl) ? (
+              <img src={playerUrl} alt="preview" className="w-full rounded-lg" />
+            ) : (
+              <video src={playerUrl} controls autoPlay className="w-full rounded-lg" />
+            )}
+          </div>
+        </div>
+      )}
+
       {/* #9 — delete confirmation modal */}
       {deleteTarget && (
         <ConfirmDialog
@@ -281,7 +317,7 @@ export default function AdsPage() {
               {/* File picker */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Archivo <span className="text-gray-400 font-normal">(mp4, jpg, png, webp · máx {MAX_SIZE_MB}MB)</span>
+                  Archivo <span className="text-gray-400 font-normal">(mp4, jpg, png, webp · máx {MAX_SIZE_MB}MB · recomendado 1280×720)</span>
                 </label>
                 <div
                   onClick={() => fileRef.current?.click()}
@@ -354,6 +390,16 @@ export default function AdsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Duración (s)</label>
                   <input type="number" min="1" className="input" value={form.durationS} onChange={(e) => setForm({ ...form, durationS: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Prioridad <span className="text-gray-400 font-normal">(0 = normal)</span></label>
+                  <input type="number" min="0" max="100" className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">URL destino <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <input type="url" className="input" value={form.targetUrl} onChange={(e) => setForm({ ...form, targetUrl: e.target.value })} placeholder="https://..." />
                 </div>
               </div>
               {error && <p className="text-red-600 text-sm">{error}</p>}

@@ -106,6 +106,8 @@ export const api = {
             name: formData.get('name'),
             type: formData.get('type'),
             durationS: formData.get('durationS'),
+            priority: formData.get('priority'),
+            targetUrl: formData.get('targetUrl') || null,
           }),
         });
         onProgress(100);
@@ -121,6 +123,8 @@ export const api = {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${BASE}/api/ads/upload`);
       xhr.withCredentials = true;
+      const token = getStoredToken();
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
@@ -164,11 +168,19 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: boolean }>('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   getPendingAdsCount: () => request<{ count: number }>('/api/ads/pending-count'),
+  unlockUser: (userId: number) => request<{ ok: boolean }>(`/api/auth/unlock/${userId}`, { method: 'PATCH' }),
+
+  // Stats extras
+  getHeatmap: (from?: string, to?: string) =>
+    request<HourlyCount[]>(`/api/stats/heatmap${from ? `?from=${from}&to=${to}` : ''}`),
+  getCompletionRate: (from?: string, to?: string) =>
+    request<CompletionRate[]>(`/api/stats/completion${from ? `?from=${from}&to=${to}` : ''}`),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
 export interface Client {
   id: number; name: string; email: string; phone?: string; company?: string;
+  rut?: string | null; address?: string | null;
   active: boolean; deletedAt?: string; createdAt: string; updatedAt: string;
 }
 export interface ClientProfile extends Client {
@@ -192,6 +204,7 @@ export interface Ad {
   id: number; campaignId: number; campaign?: { id: number; name: string };
   name: string; type: 'video' | 'image'; fileUrl: string; filename: string;
   durationS: number; active: boolean; approvalStatus: string;
+  priority: number; targetUrl?: string | null; startsAt?: string | null; endsAt?: string | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
 }
 export interface PlaylistAd { id: number; adId: number; order: number; ad: Ad; }
@@ -210,6 +223,7 @@ export interface Tablet {
   id: number; deviceId: string; token: string; name: string; zone?: string | null;
   timezone?: string | null; scheduleAt?: string | null;
   notes?: string | null; maintenanceUntil?: string | null;
+  driverName?: string | null; licensePlate?: string | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
 }
@@ -249,5 +263,8 @@ export interface AuditPage {
     user: { id: number; name: string; email: string } | null }[];
   total: number; page: number; pages: number;
 }
+
+export interface HourlyCount { hour: number; count: number; }
+export interface CompletionRate { adId: number; adName: string; totalPlays: number; completedPlays: number; completionRate: number; }
 
 export { BASE };

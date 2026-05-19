@@ -37,6 +37,10 @@ const adSchema = z.object({
   name: z.string().min(1),
   type: z.enum(['video', 'image']),
   durationS: z.coerce.number().int().positive(),
+  priority: z.coerce.number().int().min(0).optional(),
+  targetUrl: z.preprocess((v) => (!v || v === '' ? null : v), z.string().url().nullable().optional()),
+  startsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
+  endsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
 });
 
 router.get('/', async (req, res, next) => {
@@ -93,14 +97,16 @@ router.get('/presign', async (req, res, next) => {
 router.post('/confirm', async (req, res, next) => {
   try {
     if (!r2.isConfigured) return res.status(503).json({ error: 'R2 not configured' });
-    const { key, publicUrl, campaignId, name, type, durationS } = adSchema.extend({
+    const { key, publicUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt } = adSchema.extend({
       key: z.string().min(1),
       publicUrl: z.string().url(),
     }).parse(req.body);
     const filename = path.basename(key);
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl: publicUrl, filename, durationS, approvalStatus },
+      data: { campaignId, name, type, fileUrl: publicUrl, filename, durationS, approvalStatus,
+              priority: priority ?? 0, targetUrl: targetUrl ?? null,
+              startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });
     await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" via R2 (${approvalStatus})`);
@@ -115,12 +121,14 @@ router.post('/confirm', async (req, res, next) => {
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const { campaignId, name, type, durationS } = adSchema.parse(req.body);
+    const { campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt } = adSchema.parse(req.body);
     const fileUrl = `/uploads/${req.file.filename}`;
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl, filename: req.file.filename, durationS, approvalStatus },
+      data: { campaignId, name, type, fileUrl, filename: req.file.filename, durationS, approvalStatus,
+              priority: priority ?? 0, targetUrl: targetUrl ?? null,
+              startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });
     await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus})`);

@@ -12,7 +12,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', rut: '', address: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null); // #9
@@ -35,14 +35,14 @@ export default function ClientsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', email: '', phone: '', company: '' });
+    setForm({ name: '', email: '', phone: '', company: '', rut: '', address: '' });
     setError('');
     setShowModal(true);
   };
 
   const openEdit = (c: Client) => {
     setEditing(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '' });
+    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '', rut: c.rut ?? '', address: c.address ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -51,7 +51,7 @@ export default function ClientsPage() {
     setSaving(true);
     setError('');
     try {
-      const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined };
+      const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null };
       editing ? await api.updateClient(editing.id, data) : await api.createClient(data);
       setShowModal(false);
       load();
@@ -163,6 +163,8 @@ export default function ClientsPage() {
             <Field label="Email"><input type="email" className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
             <Field label="Empresa (opcional)"><input className="input" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></Field>
             <Field label="Teléfono (opcional)"><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
+            <Field label="RUT (opcional)"><input className="input" value={form.rut} onChange={(e) => setForm({ ...form, rut: e.target.value })} placeholder="12.345.678-9" /></Field>
+            <Field label="Dirección (opcional)"><input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Calle 123, Ciudad" /></Field>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">

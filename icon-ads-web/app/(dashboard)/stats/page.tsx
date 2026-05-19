@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -10,8 +10,11 @@ function toInputDate(d: Date) { return d.toISOString().slice(0, 10); }
 export default function StatsPage() {
   const [weekly, setWeekly] = useState<WeeklyEntry[]>([]);
   const [range, setRange] = useState<RangeStats | null>(null);
+  const [heatmap, setHeatmap] = useState<HourlyCount[]>([]);
+  const [completion, setCompletion] = useState<CompletionRate[]>([]);
   const [loadingWeekly, setLoadingWeekly] = useState(true);
   const [loadingRange, setLoadingRange] = useState(false);
+  const [loadingExtra, setLoadingExtra] = useState(false);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -25,7 +28,16 @@ export default function StatsPage() {
 
   const fetchRange = (f: string, t: string) => {
     setLoadingRange(true);
-    api.getRangeStats(f, t).then(setRange).finally(() => setLoadingRange(false));
+    setLoadingExtra(true);
+    Promise.allSettled([
+      api.getRangeStats(f, t),
+      api.getHeatmap(f, t),
+      api.getCompletionRate(f, t),
+    ]).then(([r, h, c]) => {
+      if (r.status === 'fulfilled') setRange(r.value);
+      if (h.status === 'fulfilled') setHeatmap(h.value);
+      if (c.status === 'fulfilled') setCompletion(c.value);
+    }).finally(() => { setLoadingRange(false); setLoadingExtra(false); });
   };
 
   const maxWeekly = Math.max(...weekly.map((w) => w.count), 1);
@@ -185,6 +197,69 @@ export default function StatsPage() {
                 )}
               </div>
             </div>
+
+            {/* #11 — Hourly heatmap */}
+            {heatmap.length > 0 && (
+              <div className="mt-6">
+                <p className="text-sm font-medium mb-3">Reproducciones por hora del día</p>
+                {loadingExtra ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
+                ) : (
+                  <div className="flex items-end gap-0.5 h-28">
+                    {heatmap.map((h) => {
+                      const maxH = Math.max(...heatmap.map((x) => x.count), 1);
+                      const pct = Math.round((h.count / maxH) * 100);
+                      return (
+                        <div key={h.hour} className="flex-1 flex flex-col items-center gap-0.5" title={`${h.hour}:00 — ${h.count} reproducciones`}>
+                          <div className="w-full flex flex-col justify-end" style={{ height: '80px' }}>
+                            <div
+                              className="w-full rounded-t transition-all duration-300"
+                              style={{ height: `${Math.max(pct, h.count > 0 ? 3 : 0)}%`, background: '#3b82f6', opacity: 0.5 + (pct / 200) }}
+                            />
+                          </div>
+                          <span className="text-xs" style={{ color: 'var(--text-xs)', fontSize: '9px' }}>{h.hour}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* #12 — Completion rate */}
+            {completion.length > 0 && (
+              <div className="mt-6">
+                <p className="text-sm font-medium mb-3">Tasa de finalización por anuncio</p>
+                {loadingExtra ? (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        <th className="text-left pb-2">Anuncio</th>
+                        <th className="text-right pb-2">Total</th>
+                        <th className="text-right pb-2">Completados</th>
+                        <th className="text-right pb-2">Tasa</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {completion.map((c) => (
+                        <tr key={c.adId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                          <td className="py-1.5 truncate max-w-[200px]">{c.adName}</td>
+                          <td className="py-1.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{c.totalPlays.toLocaleString()}</td>
+                          <td className="py-1.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{c.completedPlays.toLocaleString()}</td>
+                          <td className="py-1.5 text-right font-medium">
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${c.completionRate >= 80 ? 'bg-emerald-100 text-emerald-700' : c.completionRate >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
+                              {c.completionRate}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

@@ -9,14 +9,16 @@ datasource db {
 }
 
 model User {
-  id        Int        @id @default(autoincrement())
-  email     String     @unique
-  password  String
-  name      String
-  role      String     @default("admin")
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
-  auditLogs AuditLog[]
+  id           Int        @id @default(autoincrement())
+  email        String     @unique
+  password     String
+  name         String
+  role         String     @default("admin")
+  failedLogins Int        @default(0) @map("failed_logins")
+  lockedUntil  DateTime?  @map("locked_until")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  auditLogs    AuditLog[]
 
   @@map("users")
 }
@@ -27,6 +29,8 @@ model Client {
   email     String     @unique
   phone     String?
   company   String?
+  rut       String?
+  address   String?
   active    Boolean    @default(true)
   deletedAt DateTime?  @map("deleted_at")
   createdAt DateTime   @default(now()) @map("created_at")
@@ -71,6 +75,10 @@ model Ad {
   durationS      Int          @map("duration_s")
   active         Boolean      @default(true)
   approvalStatus String       @default("approved") @map("approval_status")
+  priority       Int          @default(0)
+  targetUrl      String?      @map("target_url")
+  startsAt       DateTime?    @map("starts_at")
+  endsAt         DateTime?    @map("ends_at")
   deletedAt      DateTime?    @map("deleted_at")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
@@ -137,6 +145,8 @@ model Tablet {
   status            TabletStatus @default(offline)
   notes             String?
   maintenanceUntil  DateTime?    @map("maintenance_until")
+  driverName        String?      @map("driver_name")
+  licensePlate      String?      @map("license_plate")
   createdAt  DateTime     @default(now()) @map("created_at")
   updatedAt  DateTime     @updatedAt @map("updated_at")
   metrics    Metric[]

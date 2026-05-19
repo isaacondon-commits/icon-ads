@@ -152,6 +152,53 @@ router.get('/range', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/heatmap?from=&to= — plays per hour of day (#11)
+router.get('/heatmap', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+    const rows = await prisma.$queryRaw`
+      SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE 'UTC')::int AS hour, COUNT(*)::int AS count
+      FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
+      GROUP BY hour ORDER BY hour ASC
+    `;
+    const heatmap = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
+    for (const r of rows) heatmap[Number(r.hour)].count = Number(r.count);
+    res.json(heatmap);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stats/completion?from=&to= — completion rate per ad (#12)
+router.get('/completion', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+    const rows = await prisma.$queryRaw`
+      SELECT a.id AS "adId", a.name AS "adName",
+        COUNT(m.id)::int AS "totalPlays",
+        SUM(CASE WHEN m.completed THEN 1 ELSE 0 END)::int AS "completedPlays"
+      FROM metrics m JOIN ads a ON m.ad_id = a.id
+      WHERE m.played_at BETWEEN ${from} AND ${to}
+      GROUP BY a.id, a.name ORDER BY "totalPlays" DESC LIMIT 15
+    `;
+    res.json(rows.map((r) => ({
+      adId: Number(r.adId),
+      adName: r.adName,
+      totalPlays: Number(r.totalPlays),
+      completedPlays: Number(r.completedPlays),
+      completionRate: Number(r.totalPlays) > 0
+        ? Math.round((Number(r.completedPlays) / Number(r.totalPlays)) * 1000) / 10
+        : 0,
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/stats/metrics/export — CSV download
 router.get('/metrics/export', async (req, res, next) => {
   try {
