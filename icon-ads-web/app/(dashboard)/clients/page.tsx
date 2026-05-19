@@ -12,7 +12,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', rut: '', address: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', rut: '', address: '', color: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null); // #9
@@ -35,14 +35,14 @@ export default function ClientsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', email: '', phone: '', company: '', rut: '', address: '' });
+    setForm({ name: '', email: '', phone: '', company: '', rut: '', address: '', color: '' });
     setError('');
     setShowModal(true);
   };
 
   const openEdit = (c: Client) => {
     setEditing(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '', rut: c.rut ?? '', address: c.address ?? '' });
+    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '', rut: c.rut ?? '', address: c.address ?? '', color: c.color ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -51,7 +51,7 @@ export default function ClientsPage() {
     setSaving(true);
     setError('');
     try {
-      const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null };
+      const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null, color: form.color || null };
       editing ? await api.updateClient(editing.id, data) : await api.createClient(data);
       setShowModal(false);
       load();
@@ -110,7 +110,10 @@ export default function ClientsPage() {
               {paged.map((c) => (
                 <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="px-5 py-3 font-medium">
-                    <Link href={`/clients/${c.id}`} className="hover:underline text-blue-600">{c.name}</Link>
+                    <div className="flex items-center gap-2">
+                      {c.color && <span className="w-3 h-3 rounded-full shrink-0 border border-black/10" style={{ background: c.color }} />}
+                      <Link href={`/clients/${c.id}`} className="hover:underline text-blue-600">{c.name}</Link>
+                    </div>
                   </td>
                   <td className="px-5 py-3 text-gray-500">{c.email}</td>
                   <td className="px-5 py-3 text-gray-500">{c.company ?? '—'}</td>
@@ -165,6 +168,13 @@ export default function ClientsPage() {
             <Field label="Teléfono (opcional)"><input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></Field>
             <Field label="RUT (opcional)"><input className="input" value={form.rut} onChange={(e) => setForm({ ...form, rut: e.target.value })} placeholder="12.345.678-9" /></Field>
             <Field label="Dirección (opcional)"><input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Calle 123, Ciudad" /></Field>
+            <Field label="Color identificador (opcional)">
+              <div className="flex items-center gap-3">
+                <input type="color" className="w-10 h-9 rounded cursor-pointer border border-gray-200 p-0.5" value={form.color || '#6366f1'} onChange={(e) => setForm({ ...form, color: e.target.value })} />
+                <input className="input flex-1" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} placeholder="#6366f1 o vacío" />
+                {form.color && <button type="button" className="text-xs text-gray-400 hover:text-gray-600" onClick={() => setForm({ ...form, color: '' })}>✕</button>}
+              </div>
+            </Field>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
-import { api } from '@/lib/api';
+import { api, Notifications } from '@/lib/api';
 
 const links = [
   { href: '/dashboard', label: 'Dashboard', icon: '⊞' },
@@ -27,12 +27,16 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const [pendingAds, setPendingAds] = useState(0);
+  const [notifications, setNotifications] = useState<Notifications | null>(null);
+  const [showNotif, setShowNotif] = useState(false);
 
   useEffect(() => {
-    api.getPendingAdsCount().then((r) => setPendingAds(r.count)).catch(() => {});
-    const id = setInterval(() => {
+    const fetchNotifs = () => {
       api.getPendingAdsCount().then((r) => setPendingAds(r.count)).catch(() => {});
-    }, 60_000);
+      api.getNotifications().then(setNotifications).catch(() => {});
+    };
+    fetchNotifs();
+    const id = setInterval(fetchNotifs, 5 * 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -81,6 +85,58 @@ export default function Sidebar() {
       </nav>
 
       <div className="px-3 py-4 border-t border-gray-800 space-y-1">
+        {/* #26 — Notification bell */}
+        <div className="relative">
+          <button
+            onClick={() => setShowNotif((s) => !s)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+          >
+            <span>🔔</span>
+            <span className="flex-1">Notificaciones</span>
+            {notifications && notifications.total > 0 && (
+              <span className="text-xs font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                {notifications.total > 99 ? '99+' : notifications.total}
+              </span>
+            )}
+          </button>
+          {showNotif && notifications && (
+            <div
+              className="absolute bottom-full left-0 right-0 mb-1 rounded-xl shadow-xl border z-50 overflow-hidden"
+              style={{ background: 'var(--card)', borderColor: 'var(--border-md)' }}
+            >
+              <div className="px-3 py-2 border-b text-xs font-semibold" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+                ALERTAS
+              </div>
+              {notifications.total === 0 ? (
+                <p className="px-3 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>Sin alertas activas</p>
+              ) : (
+                <div className="max-h-64 overflow-y-auto">
+                  {notifications.pendingAds > 0 && (
+                    <Link href="/ads" onClick={() => setShowNotif(false)} className="flex items-start gap-2 px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 border-b" style={{ borderColor: 'var(--border)' }}>
+                      <span className="text-amber-500 shrink-0">⏳</span>
+                      <span className="text-xs">{notifications.pendingAds} anuncio{notifications.pendingAds !== 1 ? 's' : ''} pendiente{notifications.pendingAds !== 1 ? 's' : ''} de aprobación</span>
+                    </Link>
+                  )}
+                  {notifications.expiringCampaigns.map((c) => (
+                    <Link href="/campaigns" key={c.id} onClick={() => setShowNotif(false)} className="flex items-start gap-2 px-3 py-2 hover:bg-red-50 dark:hover:bg-red-950/20 border-b" style={{ borderColor: 'var(--border)' }}>
+                      <span className="text-red-500 shrink-0">⏰</span>
+                      <span className="text-xs">{c.name} vence en {c.daysLeft}d</span>
+                    </Link>
+                  ))}
+                  {notifications.offlineTablets.map((t) => (
+                    <Link href="/monitor" key={t.id} onClick={() => setShowNotif(false)} className="flex items-start gap-2 px-3 py-2 hover:bg-orange-50 dark:hover:bg-orange-950/20 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+                      <span className="text-orange-500 shrink-0">📵</span>
+                      <span className="text-xs">{t.name} offline {t.offlineMinutes != null ? `${Math.floor(t.offlineMinutes / 60)}h ${t.offlineMinutes % 60}m` : ''}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Dark mode toggle (#1) */}
         <button
           onClick={toggle}

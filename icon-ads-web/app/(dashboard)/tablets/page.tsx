@@ -17,7 +17,7 @@ export default function TabletsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Tablet | null>(null);
-  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '' });
+  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
@@ -61,7 +61,7 @@ export default function TabletsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '' });
+    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '' });
     setError(''); setShowModal(true);
   };
 
@@ -76,6 +76,7 @@ export default function TabletsPage() {
       maintenanceUntil: t.maintenanceUntil ? t.maintenanceUntil.slice(0, 16) : '',
       driverName: t.driverName ?? '',
       licensePlate: t.licensePlate ?? '',
+      spotPrice: t.spotPrice != null ? String(t.spotPrice) : '',
     });
     setError(''); setShowModal(true);
   };
@@ -92,6 +93,7 @@ export default function TabletsPage() {
         maintenanceUntil: form.maintenanceUntil ? new Date(form.maintenanceUntil).toISOString() : null,
         driverName: form.driverName || null,
         licensePlate: form.licensePlate || null,
+        spotPrice: form.spotPrice ? Number(form.spotPrice) : null,
       };
       editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
       setShowModal(false); load();
@@ -175,7 +177,7 @@ export default function TabletsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
-                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Playlist', 'Última sincronía', ''].map((h) => (
+                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Batería', 'Playlist', 'Última sincronía', ''].map((h) => (
                   <th key={h} className={`${h ? 'text-left' : ''} px-5 py-3 font-medium text-xs`} style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -203,6 +205,13 @@ export default function TabletsPage() {
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
                         {isOnline ? 'online' : 'offline'}
                       </span>
+                    </td>
+                    <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {t.batteryLevel != null ? (
+                        <span className={`font-medium ${t.batteryLevel <= 20 ? 'text-red-500' : t.batteryLevel <= 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                          {t.batteryLevel}%
+                        </span>
+                      ) : '—'}
                     </td>
                     <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{t.playlist?.name ?? '—'}</td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
@@ -280,6 +289,9 @@ export default function TabletsPage() {
                   <input className="input" value={form.licensePlate} onChange={(e) => setForm({ ...form, licensePlate: e.target.value })} placeholder="ABC 1234" />
                 </Field>
               </div>
+              <Field label="Precio por spot (USD, opcional)">
+                <input type="number" min="0" step="0.01" className="input" value={form.spotPrice} onChange={(e) => setForm({ ...form, spotPrice: e.target.value })} placeholder="0.00" />
+              </Field>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">
                 <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">

@@ -175,12 +175,21 @@ export const api = {
     request<HourlyCount[]>(`/api/stats/heatmap${from ? `?from=${from}&to=${to}` : ''}`),
   getCompletionRate: (from?: string, to?: string) =>
     request<CompletionRate[]>(`/api/stats/completion${from ? `?from=${from}&to=${to}` : ''}`),
+  getPlaylistStats: (from?: string, to?: string) =>
+    request<PlaylistStat[]>(`/api/stats/playlists${from ? `?from=${from}&to=${to}` : ''}`),
+
+  // Notifications
+  getNotifications: () => request<Notifications>('/api/notifications'),
+
+  // Audit export URL
+  getAuditCsvUrl: (from?: string, to?: string) =>
+    `${BASE}/api/logs/audit/export${from ? `?from=${from}&to=${to}` : ''}`,
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
 export interface Client {
   id: number; name: string; email: string; phone?: string; company?: string;
-  rut?: string | null; address?: string | null;
+  rut?: string | null; address?: string | null; color?: string | null;
   active: boolean; deletedAt?: string; createdAt: string; updatedAt: string;
 }
 export interface ClientProfile extends Client {
@@ -224,6 +233,7 @@ export interface Tablet {
   timezone?: string | null; scheduleAt?: string | null;
   notes?: string | null; maintenanceUntil?: string | null;
   driverName?: string | null; licensePlate?: string | null;
+  spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
 }
@@ -266,5 +276,11 @@ export interface AuditPage {
 
 export interface HourlyCount { hour: number; count: number; }
 export interface CompletionRate { adId: number; adName: string; totalPlays: number; completedPlays: number; completionRate: number; }
+export interface PlaylistStat { playlistId: number; playlistName: string; tabletCount: number; totalPlays: number; }
+export interface Notifications {
+  total: number; pendingAds: number;
+  expiringCampaigns: { id: number; name: string; daysLeft: number }[];
+  offlineTablets: { id: number; name: string; offlineMinutes: number | null }[];
+}
 
 export { BASE };

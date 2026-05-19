@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -12,6 +12,7 @@ export default function StatsPage() {
   const [range, setRange] = useState<RangeStats | null>(null);
   const [heatmap, setHeatmap] = useState<HourlyCount[]>([]);
   const [completion, setCompletion] = useState<CompletionRate[]>([]);
+  const [playlists, setPlaylists] = useState<PlaylistStat[]>([]);
   const [loadingWeekly, setLoadingWeekly] = useState(true);
   const [loadingRange, setLoadingRange] = useState(false);
   const [loadingExtra, setLoadingExtra] = useState(false);
@@ -23,6 +24,7 @@ export default function StatsPage() {
 
   useEffect(() => {
     api.getWeeklyStats(8).then(setWeekly).finally(() => setLoadingWeekly(false));
+    api.getPlaylistStats().then(setPlaylists).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -33,10 +35,12 @@ export default function StatsPage() {
       api.getRangeStats(f, t),
       api.getHeatmap(f, t),
       api.getCompletionRate(f, t),
-    ]).then(([r, h, c]) => {
+      api.getPlaylistStats(f, t),
+    ]).then(([r, h, c, p]) => {
       if (r.status === 'fulfilled') setRange(r.value);
       if (h.status === 'fulfilled') setHeatmap(h.value);
       if (c.status === 'fulfilled') setCompletion(c.value);
+      if (p.status === 'fulfilled') setPlaylists(p.value);
     }).finally(() => { setLoadingRange(false); setLoadingExtra(false); });
   };
 
@@ -75,6 +79,34 @@ export default function StatsPage() {
           </div>
         )}
       </div>
+
+      {/* #3 — Playlist comparison */}
+      {playlists.length > 0 && (
+        <div className="card p-6 mb-6">
+          <h2 className="font-semibold mb-5">Rendimiento por playlist (últimos 30 días)</h2>
+          {(() => {
+            const maxPlays = Math.max(...playlists.map((p) => p.totalPlays), 1);
+            return (
+              <div className="space-y-3">
+                {playlists.map((p, i) => (
+                  <div key={p.playlistId}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="font-medium truncate max-w-[60%]">{p.playlistName}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{p.totalPlays.toLocaleString()} reprod. · {p.tabletCount} tablet{p.tabletCount !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full" style={{ background: 'var(--border-md)' }}>
+                      <div
+                        className="h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max((p.totalPlays / maxPlays) * 100, p.totalPlays > 0 ? 2 : 0)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* #13 — Date range filter */}
       <div className="card p-6">

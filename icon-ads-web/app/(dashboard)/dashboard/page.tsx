@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, SystemStats, TabletMonitorEntry, StorageStats } from '@/lib/api';
+import Link from 'next/link';
+import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry } from '@/lib/api';
 import UruguayMap from '@/components/UruguayMap';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4','#ec4899','#84cc16'];
@@ -11,16 +12,24 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [monitor, setMonitor] = useState<TabletMonitorEntry[]>([]);
   const [storage, setStorage] = useState<StorageStats | null>(null);
+  const [lastWeek, setLastWeek] = useState<WeeklyEntry | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMonday = new Date().getDay() === 1;
 
   useEffect(() => {
-    Promise.all([api.getStats(), api.getTabletMonitor(), api.getStorageStats()])
-      .then(([s, m, st]) => { setStats(s); setMonitor(m); setStorage(st); })
+    Promise.allSettled([api.getStats(), api.getTabletMonitor(), api.getStorageStats()])
+      .then(([s, m, st]) => {
+        if (s.status === 'fulfilled') setStats(s.value);
+        if (m.status === 'fulfilled') setMonitor(m.value);
+        if (st.status === 'fulfilled') setStorage(st.value);
+      })
       .finally(() => setLoading(false));
+    if (isMonday) api.getWeeklyStats(2).then((weeks) => setLastWeek(weeks[0] ?? null)).catch(() => {});
   }, []);
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando estadísticas...</p>;
   if (!stats) return <p className="text-red-500">Error al cargar estadísticas.</p>;
+  const storagePct = storage ? Math.min(100, Math.round((storage.totalMB / STORAGE_LIMIT_MB) * 100)) : 0;
 
   // Offline >2h tablets (#4)
   const offlineAlerts = monitor.filter((t) => t.status === 'offline' && t.offlineMinutes > 120);
@@ -35,8 +44,6 @@ export default function DashboardPage() {
     { label: 'Total reproducciones', value: stats.totalPlays.toLocaleString(), color: 'bg-emerald-500' },
   ];
 
-  const storagePct = storage ? Math.min(100, Math.round((storage.totalMB / STORAGE_LIMIT_MB) * 100)) : 0;
-
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -48,6 +55,40 @@ export default function DashboardPage() {
           Exportar CSV
         </a>
       </div>
+
+      {/* #4 — Monday weekly summary card */}
+      {isMonday && lastWeek && (
+        <div className="mb-4 p-5 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800">
+          <p className="text-sm font-semibold text-blue-700 dark:text-blue-300 mb-1">
+            Resumen semana anterior ({lastWeek.from} → {lastWeek.to})
+          </p>
+          <p className="text-2xl font-bold text-blue-800 dark:text-blue-200">{lastWeek.count.toLocaleString()} reproducciones</p>
+        </div>
+      )}
+
+      {/* #36 — Quick actions */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        {[
+          { href: '/tablets', label: '+ Nueva tablet', color: 'border-blue-200 text-blue-700 hover:bg-blue-50' },
+          { href: '/clients', label: '+ Nuevo cliente', color: 'border-violet-200 text-violet-700 hover:bg-violet-50' },
+          { href: '/campaigns', label: '+ Nueva campaña', color: 'border-amber-200 text-amber-700 hover:bg-amber-50' },
+          { href: '/ads', label: '+ Subir anuncio', color: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' },
+          { href: '/stats', label: 'Ver estadísticas', color: 'border-gray-200 text-gray-600 hover:bg-gray-50' },
+        ].map((a) => (
+          <Link key={a.href} href={a.href} className={`text-sm font-medium border px-3 py-1.5 rounded-lg transition-colors dark:border-opacity-30 dark:hover:bg-opacity-10 ${a.color}`}>
+            {a.label}
+          </Link>
+        ))}
+      </div>
+
+      {/* #29 — Storage alert when >80% */}
+      {storagePct >= 80 && storage && (
+        <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800">
+          <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+            Almacenamiento al {storagePct}% — {storage.totalMB} MB de {STORAGE_LIMIT_MB} MB usados
+          </p>
+        </div>
+      )}
 
       {/* #4 — Offline alerts (>2h) */}
       {offlineAlerts.length > 0 && (
