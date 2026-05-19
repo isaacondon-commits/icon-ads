@@ -232,4 +232,36 @@ router.get('/metrics/export', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/playlists?from=&to= — plays per playlist (#3)
+router.get('/playlists', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+
+    const [playlists, metricsRows] = await Promise.all([
+      prisma.playlist.findMany({
+        select: { id: true, name: true, _count: { select: { tablets: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.$queryRaw`
+        SELECT pa.playlist_id AS "playlistId", COUNT(m.id)::int AS count
+        FROM metrics m
+        JOIN playlist_ads pa ON pa.ad_id = m.ad_id
+        WHERE m.played_at BETWEEN ${from} AND ${to}
+        GROUP BY pa.playlist_id
+      `,
+    ]);
+
+    const countMap = Object.fromEntries(metricsRows.map((r) => [Number(r.playlistId), Number(r.count)]));
+    res.json(
+      playlists
+        .map((p) => ({ playlistId: p.id, playlistName: p.name, tabletCount: p._count.tablets, totalPlays: countMap[p.id] ?? 0 }))
+        .sort((a, b) => b.totalPlays - a.totalPlays)
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

@@ -12,4 +12,9 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+function requireAdmin(req, res, next) {
+  if (req.user?.role === 'operator') return res.status(403).json({ error: 'Acceso denegado: cuenta de solo lectura' });
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin };

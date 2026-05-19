@@ -24,6 +24,12 @@ const MIGRATIONS = [
   // v2 — account lockout
   { name: 'users.failed_logins',        sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins INT NOT NULL DEFAULT 0` },
   { name: 'users.locked_until',         sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ` },
+  // v3 — client color, tablet extended fields
+  { name: 'clients.color',              sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS color TEXT` },
+  { name: 'tablets.spot_price',         sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS spot_price FLOAT` },
+  { name: 'tablets.battery_level',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS battery_level INT` },
+  { name: 'tablets.temperature_c',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS temperature_c FLOAT` },
+  { name: 'tablets.app_version',        sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS app_version TEXT` },
 ];
 
 async function runStartupMigrations() {

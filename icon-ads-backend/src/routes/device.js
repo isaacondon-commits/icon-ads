@@ -54,13 +54,21 @@ router.post('/register', async (req, res, next) => {
 router.get('/sync', requireDevice, async (req, res, next) => {
   try {
     const currentVersion = parseInt(req.query.version) || 0;
+    const batteryLevel = req.query.battery !== undefined ? parseInt(req.query.battery) : undefined;
+    const temperatureC = req.query.temp !== undefined ? parseFloat(req.query.temp) : undefined;
+    const appVersion = req.query.appVersion || undefined;
     const tablet = req.tablet;
 
-    console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} playlistId=${tablet.playlistId ?? 'ninguna'}`);
+    console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
 
     await prisma.tablet.update({
       where: { id: tablet.id },
-      data: { status: 'online', lastSync: new Date() },
+      data: {
+        status: 'online', lastSync: new Date(),
+        ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+        ...(temperatureC !== undefined ? { temperatureC } : {}),
+        ...(appVersion !== undefined ? { appVersion } : {}),
+      },
     });
 
     if (!tablet.playlistId) {

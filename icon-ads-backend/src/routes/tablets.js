@@ -3,7 +3,7 @@ const { z } = require('zod');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const prisma = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const { audit } = require('../lib/auditLog');
 
@@ -20,6 +20,7 @@ const tabletSchema = z.object({
   maintenanceUntil: z.string().datetime().nullable().optional(),
   driverName: z.string().nullable().optional(),
   licensePlate: z.string().nullable().optional(),
+  spotPrice: z.number().positive().nullable().optional(),
 });
 
 router.get('/', async (req, res, next) => {
@@ -73,15 +74,16 @@ router.get('/monitor', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requireAdmin, async (req, res, next) => {
   try {
-    const { deviceId, name, zone, timezone, playlistId, scheduleAt, notes, maintenanceUntil, driverName, licensePlate } = tabletSchema.parse(req.body);
+    const { deviceId, name, zone, timezone, playlistId, scheduleAt, notes, maintenanceUntil, driverName, licensePlate, spotPrice } = tabletSchema.parse(req.body);
     const token = crypto.randomBytes(32).toString('hex');
     const tablet = await prisma.tablet.create({
       data: { deviceId, name, zone, timezone, playlistId,
               scheduleAt: scheduleAt ? new Date(scheduleAt) : null,
               notes, maintenanceUntil: maintenanceUntil ? new Date(maintenanceUntil) : null,
-              driverName: driverName ?? null, licensePlate: licensePlate ?? null, token },
+              driverName: driverName ?? null, licensePlate: licensePlate ?? null,
+              spotPrice: spotPrice ?? null, token },
     });
     await audit(req, 'CREATE', 'tablet', tablet.id, `Registered "${tablet.name}"`);
     res.status(201).json(tablet);
@@ -118,7 +120,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', requireAdmin, async (req, res, next) => {
   try {
     const data = tabletSchema.partial().parse(req.body);
     const parsed = { ...data };
@@ -126,6 +128,7 @@ router.put('/:id', async (req, res, next) => {
     if (data.maintenanceUntil !== undefined) parsed.maintenanceUntil = data.maintenanceUntil ? new Date(data.maintenanceUntil) : null;
     if (data.driverName !== undefined) parsed.driverName = data.driverName ?? null;
     if (data.licensePlate !== undefined) parsed.licensePlate = data.licensePlate ?? null;
+    if (data.spotPrice !== undefined) parsed.spotPrice = data.spotPrice ?? null;
     const tablet = await prisma.tablet.update({ where: { id: Number(req.params.id) }, data: parsed });
     await audit(req, 'UPDATE', 'tablet', tablet.id, `Updated "${tablet.name}"`);
     res.json(tablet);
@@ -151,7 +154,7 @@ router.get('/:id/qr', async (req, res, next) => {
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireAdmin, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const tablet = await prisma.tablet.findUnique({ where: { id } });
@@ -165,7 +168,7 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 // POST /:id/force-sync (#48)
-router.post('/:id/force-sync', async (req, res, next) => {
+router.post('/:id/force-sync', requireAdmin, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const tablet = await prisma.tablet.findUnique({ where: { id } });

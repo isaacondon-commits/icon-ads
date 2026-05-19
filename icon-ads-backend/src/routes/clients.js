@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { z } = require('zod');
 const prisma = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 
 router.use(requireAuth);
@@ -13,6 +13,7 @@ const clientSchema = z.object({
   company: z.string().optional(),
   rut: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
 });
 
 router.get('/', async (req, res, next) => {
@@ -27,7 +28,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requireAdmin, async (req, res, next) => {
   try {
     const data = clientSchema.parse(req.body);
     const client = await prisma.client.create({ data });
@@ -68,7 +69,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', requireAdmin, async (req, res, next) => {
   try {
     const data = clientSchema.partial().parse(req.body);
     const client = await prisma.client.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
@@ -82,7 +83,7 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // DELETE — soft delete (#33)
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireAdmin, async (req, res, next) => {
   try {
     const client = await prisma.client.update({
       where: { id: Number(req.params.id), deletedAt: null },
@@ -97,7 +98,7 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 // PATCH /:id/reactivate (#34)
-router.patch('/:id/reactivate', async (req, res, next) => {
+router.patch('/:id/reactivate', requireAdmin, async (req, res, next) => {
   try {
     const client = await prisma.client.update({ where: { id: Number(req.params.id) }, data: { active: true, deletedAt: null } });
     await audit(req, 'REACTIVATE', 'client', client.id, `Reactivated "${client.name}"`);

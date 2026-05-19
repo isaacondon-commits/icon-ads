@@ -31,6 +31,7 @@ model Client {
   company   String?
   rut       String?
   address   String?
+  color     String?
   active    Boolean    @default(true)
   deletedAt DateTime?  @map("deleted_at")
   createdAt DateTime   @default(now()) @map("created_at")
@@ -147,6 +148,10 @@ model Tablet {
   maintenanceUntil  DateTime?    @map("maintenance_until")
   driverName        String?      @map("driver_name")
   licensePlate      String?      @map("license_plate")
+  spotPrice         Float?       @map("spot_price")
+  batteryLevel      Int?         @map("battery_level")
+  temperatureC      Float?       @map("temperature_c")
+  appVersion        String?      @map("app_version")
   createdAt  DateTime     @default(now()) @map("created_at")
   updatedAt  DateTime     @updatedAt @map("updated_at")
   metrics    Metric[]
