@@ -16,7 +16,7 @@ export default function ClientsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null); // #9
-  const [search, setSearch] = useState('');  // #6
+  const [search, setSearch] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('clients_filter_search') ?? '') : '');  // #6 + #14
   const [page, setPage] = useState(1);       // #8
 
   const load = () => api.getClients().then(setClients).finally(() => setLoading(false));
@@ -84,7 +84,7 @@ export default function ClientsPage() {
           className="input max-w-xs"
           placeholder="Buscar por nombre, email o empresa..."
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          onChange={(e) => { setSearch(e.target.value); localStorage.setItem('clients_filter_search', e.target.value); setPage(1); }}
         />
       </div>
 

@@ -125,7 +125,7 @@ export default function DashboardPage() {
       )}
 
       {/* #6 — Executive summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {statCards.map((card) => (
           <div key={card.label} className="card p-5">
             <div className={`w-10 h-10 rounded-lg ${card.color} mb-3`} />
@@ -135,6 +135,25 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* #15 — Reach estimation */}
+      {stats.tablets.online > 0 && (() => {
+        const dailyReach = stats.tablets.online * 8 * 16;
+        const monthlyReach = dailyReach * 30;
+        return (
+          <div className="card p-5 mb-8 flex items-center gap-6">
+            <div>
+              <p className="text-3xl font-bold text-violet-600">{dailyReach.toLocaleString()}</p>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Alcance estimado hoy</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>{stats.tablets.online} tablets × 8 pasajeros × 16 horas activas</p>
+            </div>
+            <div className="border-l pl-6" style={{ borderColor: 'var(--border-md)' }}>
+              <p className="text-xl font-bold">{monthlyReach.toLocaleString()}</p>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Alcance estimado mensual</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

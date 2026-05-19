@@ -9,6 +9,8 @@ import { useToast } from '@/lib/toast-context';
 const PAGE_SIZE = 10;
 type StatusFilter = 'all' | 'online' | 'offline' | 'no-playlist';
 const TIMEZONES = ['America/Montevideo', 'America/Argentina/Buenos_Aires', 'America/Sao_Paulo', 'UTC'];
+const LS_SEARCH = 'tablets_filter_search';
+const LS_STATUS = 'tablets_filter_status';
 
 export default function TabletsPage() {
   const { show } = useToast();
@@ -21,8 +23,11 @@ export default function TabletsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [search, setSearch] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem(LS_SEARCH) ?? '') : '');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    if (typeof window === 'undefined') return 'all';
+    return (localStorage.getItem(LS_STATUS) as StatusFilter) ?? 'all';
+  });
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -156,10 +161,10 @@ export default function TabletsPage() {
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <input className="input w-56" placeholder="Buscar tablet..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+        <input className="input w-56" placeholder="Buscar tablet..." value={search} onChange={(e) => { setSearch(e.target.value); localStorage.setItem(LS_SEARCH, e.target.value); setPage(1); }} />
         <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
           {STATUS_FILTERS.map(({ key, label }) => (
-            <button key={key} onClick={() => { setStatusFilter(key); setPage(1); }}
+            <button key={key} onClick={() => { setStatusFilter(key); localStorage.setItem(LS_STATUS, key); setPage(1); }}
               className={`px-3 py-2 text-xs font-medium border-r last:border-0 ${statusFilter === key ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
               style={{ borderColor: 'var(--border-md)', color: statusFilter === key ? 'white' : 'var(--text-muted)' }}>
               {label}
@@ -177,7 +182,7 @@ export default function TabletsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
-                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Batería', 'Playlist', 'Última sincronía', ''].map((h) => (
+                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Batería', 'APK', 'Playlist', 'Última sincronía', ''].map((h) => (
                   <th key={h} className={`${h ? 'text-left' : ''} px-5 py-3 font-medium text-xs`} style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -213,6 +218,7 @@ export default function TabletsPage() {
                         </span>
                       ) : '—'}
                     </td>
+                    <td className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{t.appVersion ?? '—'}</td>
                     <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{t.playlist?.name ?? '—'}</td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
                       {t.lastSync ? new Date(t.lastSync).toLocaleString('es-AR') : 'Nunca'}

@@ -184,6 +184,32 @@ export const api = {
   // Audit export URL
   getAuditCsvUrl: (from?: string, to?: string) =>
     `${BASE}/api/logs/audit/export${from ? `?from=${from}&to=${to}` : ''}`,
+
+  // Sync history + uptime (#1 #3)
+  getSyncHistory: (tabletId: number) =>
+    request<{ syncs: SyncLog[]; uptimePct7d: number }>(`/api/tablets/${tabletId}/sync-history`),
+
+  // Admin message to tablet (#4)
+  sendTabletMessage: (tabletId: number, message: string) =>
+    request<{ id: number }>(`/api/tablets/${tabletId}/message`, { method: 'POST', body: JSON.stringify({ message }) }),
+
+  // Tablet groups (#5)
+  getTabletGroups: () => request<TabletGroup[]>('/api/tablets/groups'),
+  createTabletGroup: (data: { name: string; playlistId?: number | null }) =>
+    request<TabletGroup>('/api/tablets/groups', { method: 'POST', body: JSON.stringify(data) }),
+  updateTabletGroup: (id: number, data: { name?: string; playlistId?: number | null }) =>
+    request<TabletGroup>(`/api/tablets/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTabletGroup: (id: number) => request<void>(`/api/tablets/groups/${id}`, { method: 'DELETE' }),
+  assignTabletGroup: (tabletId: number, groupId: number | null) =>
+    request<Tablet>(`/api/tablets/${tabletId}/group`, { method: 'PATCH', body: JSON.stringify({ groupId }) }),
+
+  // System settings (#11 #12 #10)
+  getSettings: () => request<Record<string, string>>('/api/settings'),
+  setSetting: (key: string, value: string) =>
+    request<{ key: string; value: string }>(`/api/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
+
+  // Occupancy stats (#8)
+  getOccupancy: () => request<OccupancyEntry[]>('/api/stats/occupancy'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -198,7 +224,7 @@ export interface ClientProfile extends Client {
 export interface Campaign {
   id: number; clientId: number; client?: { id: number; name: string };
   name: string; startDate: string; endDate: string; active: boolean;
-  cpm?: number | null;
+  cpm?: number | null; maxImpressions?: number | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
   _count?: { metrics: number };
 }
@@ -234,6 +260,7 @@ export interface Tablet {
   notes?: string | null; maintenanceUntil?: string | null;
   driverName?: string | null; licensePlate?: string | null;
   spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null;
+  groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
 }
@@ -241,6 +268,20 @@ export interface TabletDetail extends Tablet {
   errorLogs: { id: number; errorType: string; message: string; occurredAt: string }[];
   playsToday: number;
   playsAllTime: number;
+}
+
+export interface SyncLog {
+  id: number; tabletId: number; version: number; success: boolean; errorMsg: string | null; createdAt: string;
+}
+export interface TabletGroup {
+  id: number; name: string; playlistId: number | null;
+  playlist?: { id: number; name: string } | null;
+  _count?: { tablets: number };
+  createdAt: string; updatedAt: string;
+}
+export interface OccupancyEntry {
+  tabletId: number; tabletName: string; zone: string | null;
+  totalDurationS: number; paidDurationS: number; occupancyPct: number;
 }
 export interface TabletMonitorEntry {
   id: number; name: string; deviceId: string; zone: string | null; timezone: string | null;
