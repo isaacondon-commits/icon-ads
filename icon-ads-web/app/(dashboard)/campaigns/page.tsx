@@ -59,10 +59,12 @@ export default function CampaignsPage() {
   const [page, setPage] = useState(1);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
-  const load = () =>
-    Promise.all([api.getCampaigns(), api.getClients()])
-      .then(([c, cl]) => { setCampaigns(c); setClients(cl); })
-      .finally(() => setLoading(false));
+  const load = async () => {
+    const [campaignsRes, clientsRes] = await Promise.allSettled([api.getCampaigns(), api.getClients()]);
+    if (campaignsRes.status === 'fulfilled') setCampaigns(campaignsRes.value);
+    if (clientsRes.status === 'fulfilled') setClients(clientsRes.value);
+    setLoading(false);
+  };
 
   useEffect(() => { load(); }, []);
 
