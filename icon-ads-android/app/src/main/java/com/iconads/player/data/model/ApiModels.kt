@@ -18,6 +18,12 @@ data class SyncResponse(
     val message: String? = null,
 )
 
+data class HeartbeatInfo(
+    val battery: Int?,
+    val temp: Float?,
+    val appVersion: String,
+)
+
 data class MetricUpload(
     val adId: Int,
     val campaignId: Int,

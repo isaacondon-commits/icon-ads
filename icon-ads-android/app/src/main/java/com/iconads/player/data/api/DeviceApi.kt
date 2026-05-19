@@ -11,7 +11,12 @@ interface DeviceApi {
     suspend fun register(@Body body: RegisterRequest): RegisterResponse
 
     @GET("api/device/sync")
-    suspend fun sync(@Query("version") version: Int): SyncResponse
+    suspend fun sync(
+        @Query("version") version: Int,
+        @Query("battery") battery: Int? = null,
+        @Query("temp") temp: Float? = null,
+        @Query("appVersion") appVersion: String? = null,
+    ): SyncResponse
 
     @Streaming
     @GET

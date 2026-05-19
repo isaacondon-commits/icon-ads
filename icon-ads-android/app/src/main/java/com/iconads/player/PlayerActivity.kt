@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.BatteryManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -174,7 +175,9 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                Log.e(TAG, "ExoPlayer error: ${error.message}")
+                Log.e(TAG, "ExoPlayer error (ad ${ads.getOrNull(currentIndex)?.id}): ${error.message}")
+                // Hide video immediately to avoid black screen
+                binding.playerView.visibility = View.GONE
                 recordMetric(completed = false, error = true)
                 failCount++
                 when {
@@ -284,15 +287,32 @@ class PlayerActivity : AppCompatActivity() {
 
     // ── Registro + sync inmediatos ───────────────────────────────────────────
 
+    private fun getBatteryLevel(): Int? {
+        return try {
+            val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+            val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            if (level < 0) null else level
+        } catch (e: Exception) { null }
+    }
+
+    private fun getCpuTemperature(): Float? {
+        return try {
+            val file = java.io.File("/sys/class/thermal/thermal_zone0/temp")
+            if (file.exists()) file.readText().trim().toFloat() / 1000f else null
+        } catch (e: Exception) { null }
+    }
+
     private suspend fun syncNow() {
         val token = prefs.getToken() ?: run {
             Log.w(TAG, "syncNow: sin token — abortando")
             return
         }
-        Log.i(TAG, "syncNow: versión local=${prefs.getPlaylistVersion()}")
+        val battery = getBatteryLevel()
+        val temp = getCpuTemperature()
+        Log.i(TAG, "syncNow: versión local=${prefs.getPlaylistVersion()} battery=${battery}% temp=${temp}°C")
         try {
             val api = NetworkModule.provideDeviceApi(token)
-            val syncResp = withContext(Dispatchers.IO) { api.sync(prefs.getPlaylistVersion()) }
+            val syncResp = withContext(Dispatchers.IO) { api.sync(prefs.getPlaylistVersion(), battery, temp, BuildConfig.VERSION_NAME) }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
             if (!syncResp.needsUpdate) return
 
