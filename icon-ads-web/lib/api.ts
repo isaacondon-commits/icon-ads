@@ -304,6 +304,26 @@ export const api = {
   getCertificateUrl: (campaignId: number) => `${BASE}/api/campaigns/${campaignId}/certificate`,
   getContractUrl: (campaignId: number) => `${BASE}/api/campaigns/${campaignId}/contract`,
 
+  // A/B tests (#49)
+  getAbTests: () => request<AbTest[]>('/api/abtests'),
+  createAbTest: (data: { name: string; adAId: number; adBId: number }) =>
+    request<AbTest>('/api/abtests', { method: 'POST', body: JSON.stringify(data) }),
+  updateAbTestStatus: (id: number, status: string) =>
+    request<AbTest>(`/api/abtests/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  deleteAbTest: (id: number) => request<void>(`/api/abtests/${id}`, { method: 'DELETE' }),
+
+  // Referrals (#58)
+  getReferrals: () => request<Referral[]>('/api/referrals'),
+  createReferral: (referrerId: number) =>
+    request<Referral>('/api/referrals', { method: 'POST', body: JSON.stringify({ referrerId }) }),
+  redeemReferral: (id: number, referredId?: number) =>
+    request<Referral>(`/api/referrals/${id}/redeem`, { method: 'PATCH', body: JSON.stringify({ referredId }) }),
+  deleteReferral: (id: number) => request<void>(`/api/referrals/${id}`, { method: 'DELETE' }),
+
+  // Driver points (#69)
+  getDriverPoints: () => request<DriverPointsEntry[]>('/api/driver-points'),
+  recalculateDriverPoints: () => request<{ recalculated: number; topPoints: number }>('/api/driver-points/recalculate', { method: 'POST' }),
+
   // Reminders (#39)
   getReminders: () => request<Reminder[]>('/api/reminders'),
   createReminder: (data: { title: string; body?: string | null; dueAt?: string | null }) =>
@@ -512,6 +532,26 @@ export interface SlaStat {
 export interface Reminder {
   id: number; title: string; body: string | null;
   dueAt: string | null; done: boolean; createdAt: string;
+}
+
+export interface AbTest {
+  id: number; name: string; status: string; createdAt: string;
+  adAId: number; adBId: number;
+  adA: { id: number; name: string; type: string };
+  adB: { id: number; name: string; type: string };
+  playsA?: number; playsB?: number; tabletsA?: number; tabletsB?: number;
+}
+
+export interface Referral {
+  id: number; code: string; used: boolean; createdAt: string;
+  referrerId: number; referredId: number | null;
+  referrer: { id: number; name: string; company?: string | null };
+  referred?: { id: number; name: string; company?: string | null } | null;
+}
+
+export interface DriverPointsEntry {
+  id: number; tabletId: number; points: number; syncs30d: number; lastCalculated: string;
+  tablet: { id: number; name: string; zone: string | null; driverName: string | null; licensePlate: string | null };
 }
 
 export { BASE };

@@ -57,6 +57,13 @@ const MIGRATIONS = [
   { name: 'favorites',                 sql: `CREATE TABLE IF NOT EXISTS favorites (id SERIAL PRIMARY KEY, entity_type TEXT NOT NULL, entity_id INT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(entity_type, entity_id))` },
   // v10 — reminders (#39)
   { name: 'reminders',                 sql: `CREATE TABLE IF NOT EXISTS reminders (id SERIAL PRIMARY KEY, title TEXT NOT NULL, body TEXT, due_at TIMESTAMPTZ, done BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v11 — A/B tests (#49)
+  { name: 'ab_tests',                  sql: `CREATE TABLE IF NOT EXISTS ab_tests (id SERIAL PRIMARY KEY, name TEXT NOT NULL, ad_a_id INT NOT NULL REFERENCES ads(id) ON DELETE CASCADE, ad_b_id INT NOT NULL REFERENCES ads(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'active', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'tablets.ab_group',          sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS ab_group TEXT` },
+  // v12 — referrals (#58)
+  { name: 'referrals',                 sql: `CREATE TABLE IF NOT EXISTS referrals (id SERIAL PRIMARY KEY, referrer_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, referred_id INT REFERENCES clients(id) ON DELETE SET NULL, code TEXT NOT NULL UNIQUE, used BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v13 — driver points (#69)
+  { name: 'driver_points',             sql: `CREATE TABLE IF NOT EXISTS driver_points (id SERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE UNIQUE, points INT NOT NULL DEFAULT 0, syncs_30d INT NOT NULL DEFAULT 0, last_calculated TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
 ];
 
 async function runStartupMigrations() {

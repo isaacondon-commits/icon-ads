@@ -38,7 +38,9 @@ model Client {
   deletedAt      DateTime? @map("deleted_at")
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
-  campaigns Campaign[]
+  campaigns        Campaign[]
+  referralsGiven   Referral[]  @relation("ReferralReferrer")
+  referralsReceived Referral[] @relation("ReferralReferred")
 
   @@map("clients")
 }
@@ -92,6 +94,8 @@ model Ad {
   updatedAt      DateTime     @updatedAt @map("updated_at")
   playlistAds    PlaylistAd[]
   metrics        Metric[]
+  abTestsA       AbTest[]     @relation("AbTestAdA")
+  abTestsB       AbTest[]     @relation("AbTestAdB")
 
   @@map("ads")
 }
@@ -183,6 +187,8 @@ model Tablet {
   errorLogs  ErrorLog[]
   syncLogs   SyncLog[]
   messages   TabletMessage[]
+  driverPoints DriverPoints?
+  abGroup    String?         @map("ab_group")
 
   @@map("tablets")
 }
@@ -320,4 +326,41 @@ model Reminder {
   createdAt DateTime  @default(now()) @map("created_at")
 
   @@map("reminders")
+}
+
+model AbTest {
+  id        Int      @id @default(autoincrement())
+  name      String
+  adAId     Int      @map("ad_a_id")
+  adBId     Int      @map("ad_b_id")
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  adA       Ad       @relation("AbTestAdA", fields: [adAId], references: [id])
+  adB       Ad       @relation("AbTestAdB", fields: [adBId], references: [id])
+
+  @@map("ab_tests")
+}
+
+model Referral {
+  id         Int      @id @default(autoincrement())
+  referrerId Int      @map("referrer_id")
+  referredId Int?     @map("referred_id")
+  code       String   @unique
+  used       Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  referrer   Client   @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  referred   Client?  @relation("ReferralReferred", fields: [referredId], references: [id])
+
+  @@map("referrals")
+}
+
+model DriverPoints {
+  id             Int      @id @default(autoincrement())
+  tabletId       Int      @unique @map("tablet_id")
+  points         Int      @default(0)
+  syncs30d       Int      @default(0) @map("syncs_30d")
+  lastCalculated DateTime @default(now()) @map("last_calculated")
+  tablet         Tablet   @relation(fields: [tabletId], references: [id])
+
+  @@map("driver_points")
 }

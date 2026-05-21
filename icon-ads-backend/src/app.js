@@ -24,6 +24,9 @@ const notesRoutes = require('./routes/notes');
 const templatesRoutes = require('./routes/templates');
 const favoritesRoutes = require('./routes/favorites');
 const remindersRoutes = require('./routes/reminders');
+const abtestsRoutes = require('./routes/abtests');
+const referralsRoutes = require('./routes/referrals');
+const driverpointsRoutes = require('./routes/driverpoints');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const latencyTracker = require('./lib/latencyTracker');
@@ -139,6 +142,9 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/reminders', remindersRoutes);
+app.use('/api/abtests', abtestsRoutes);
+app.use('/api/referrals', referralsRoutes);
+app.use('/api/driver-points', driverpointsRoutes);
 
 // #41 — Swagger API docs at /api/docs
 const swaggerSpec = swaggerJsdoc({
@@ -245,6 +251,25 @@ setInterval(async () => {
     console.warn('[offline-check]', err.message);
   }
 }, 30 * 60 * 1000);
+
+// #69 — Nightly driver points recalculation
+setInterval(async () => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const tablets = await prisma.tablet.findMany({ select: { id: true } });
+    for (const t of tablets) {
+      const syncs30d = await prisma.syncLog.count({ where: { tabletId: t.id, createdAt: { gte: thirtyDaysAgo }, success: true } });
+      const bonus = syncs30d > 200 ? 50 : syncs30d > 100 ? 20 : 0;
+      const points = syncs30d + bonus;
+      await prisma.driverPoints.upsert({
+        where: { tabletId: t.id },
+        update: { points, syncs30d, lastCalculated: new Date() },
+        create: { tabletId: t.id, points, syncs30d },
+      });
+    }
+    console.log(`[driver-points] recalculados para ${tablets.length} tablets`);
+  } catch (err) { console.warn('[driver-points]', err.message); }
+}, 24 * 60 * 60 * 1000);
 
 // #42 — Daily backup log
 setInterval(async () => {
