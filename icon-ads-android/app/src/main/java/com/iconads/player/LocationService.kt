@@ -12,6 +12,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
@@ -32,9 +33,27 @@ class LocationService : Service() {
     private lateinit var locationManager: LocationManager
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val prefs by lazy { DevicePrefs(this) }
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Last fresh location received from any provider
+    @Volatile private var lastLocation: Location? = null
 
     private val locationListener = LocationListener { loc ->
+        lastLocation = loc
         scope.launch { uploadLocation(loc) }
+    }
+
+    // Fallback: every 60s upload last known location if no fresh fix arrived
+    private val fallbackRunnable = object : Runnable {
+        override fun run() {
+            val loc = lastLocation ?: getBestLastKnown()
+            if (loc != null) {
+                scope.launch { uploadLocation(loc) }
+            } else {
+                Log.d(TAG, "fallback: sin ubicación conocida aún")
+            }
+            handler.postDelayed(this, INTERVAL_MS)
+        }
     }
 
     override fun onCreate() {
@@ -42,6 +61,27 @@ class LocationService : Service() {
         locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
         startForeground(NOTIF_ID, buildNotification())
         requestUpdates()
+        // Start fallback timer after first interval
+        handler.postDelayed(fallbackRunnable, INTERVAL_MS)
+    }
+
+    private fun getBestLastKnown(): Location? {
+        val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) return null
+        return try {
+            val gps = if (hasFine) locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) else null
+            val net = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            // Prefer GPS if recent (< 5 min), else network
+            val fiveMin = 5 * 60 * 1000L
+            val now = System.currentTimeMillis()
+            when {
+                gps != null && (now - gps.time) < fiveMin -> gps
+                net != null -> net
+                gps != null -> gps
+                else -> null
+            }
+        } catch (e: SecurityException) { null }
     }
 
     private fun requestUpdates() {
@@ -52,7 +92,6 @@ class LocationService : Service() {
             return
         }
         try {
-            // GPS (alta precisión)
             if (hasFine && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER,
@@ -61,7 +100,6 @@ class LocationService : Service() {
                 )
                 Log.i(TAG, "GPS provider registrado")
             }
-            // Red/WiFi (fallback)
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
@@ -76,7 +114,10 @@ class LocationService : Service() {
     }
 
     private suspend fun uploadLocation(loc: Location) {
-        val token = prefs.getToken() ?: return
+        val token = prefs.getToken() ?: run {
+            Log.w(TAG, "uploadLocation: token no disponible aún")
+            return
+        }
         try {
             NetworkModule.provideDeviceApi(token).uploadLocation(
                 LocationUpload(
@@ -94,6 +135,7 @@ class LocationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        handler.removeCallbacks(fallbackRunnable)
         try { locationManager.removeUpdates(locationListener) } catch (_: Exception) {}
         scope.cancel()
     }
@@ -112,7 +154,7 @@ class LocationService : Service() {
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("ICON ADS")
             .setContentText("Rastreo GPS activo")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
@@ -121,7 +163,7 @@ class LocationService : Service() {
     companion object {
         private const val TAG = "LocationService"
         private const val NOTIF_ID = 42
-        private const val INTERVAL_MS = 60_000L   // 1 minuto
+        private const val INTERVAL_MS = 60_000L
         private const val MIN_DIST_M = 0f
 
         fun start(context: Context) {
