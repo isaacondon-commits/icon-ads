@@ -55,3 +55,10 @@ data class SurveyAnswerRequest(
     val surveyId: Int,
     val optionIndex: Int,
 )
+
+data class LocationUpload(
+    val lat: Double,
+    val lng: Double,
+    val accuracy: Float?,
+    val timestamp: String,
+)

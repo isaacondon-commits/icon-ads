@@ -258,6 +258,31 @@ router.get('/messages', requireDevice, async (req, res, next) => {
   }
 });
 
+// POST /api/device/location — GPS position upload
+router.post('/location', requireDevice, async (req, res, next) => {
+  try {
+    const { lat, lng, accuracy, timestamp } = z.object({
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+      accuracy: z.number().min(0).optional(),
+      timestamp: z.string().datetime().optional(),
+    }).parse(req.body);
+    const tabletId = req.tablet.id;
+    const ts = timestamp ? new Date(timestamp) : new Date();
+    await prisma.$executeRaw`
+      INSERT INTO tablet_locations (tablet_id, lat, lng, accuracy, created_at)
+      VALUES (${tabletId}, ${lat}, ${lng}, ${accuracy ?? null}, ${ts})
+    `;
+    await prisma.$executeRaw`
+      UPDATE tablets SET last_lat = ${lat}, last_lng = ${lng} WHERE id = ${tabletId}
+    `;
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
 // GET /api/device/survey — active survey not yet answered by this tablet (#47)
 router.get('/survey', requireDevice, async (req, res, next) => {
   try {

@@ -342,6 +342,15 @@ setInterval(async () => {
   }
 }, 24 * 60 * 60 * 1000);
 
+// GPS location history cleanup — keep 7 days
+setInterval(async () => {
+  try {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const deleted = await prisma.$executeRaw`DELETE FROM tablet_locations WHERE created_at < ${cutoff}`;
+    if (deleted > 0) console.log(`[location-cleanup] ${deleted} registros GPS eliminados`);
+  } catch (err) { console.warn('[location-cleanup]', err.message); }
+}, 24 * 60 * 60 * 1000);
+
 // #42 — Daily backup log
 setInterval(async () => {
   try {

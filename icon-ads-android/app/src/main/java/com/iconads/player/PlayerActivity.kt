@@ -30,6 +30,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.load
 import com.iconads.player.BuildConfig
 import com.iconads.player.data.api.NetworkModule
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.iconads.player.data.model.Ad
 import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.model.SurveyAnswerRequest
@@ -96,6 +100,7 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         SyncWorker.schedule(this)
+        startLocationService()
         loadAndPlay()
         // Poll for admin messages every 5 min (#4)
         lifecycleScope.launch {
@@ -382,6 +387,25 @@ class PlayerActivity : AppCompatActivity() {
         }, 10_000L)
     }
 
+    private fun startLocationService() {
+        val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (hasFine || hasCoarse) {
+            LocationService.start(this)
+        } else {
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                LOCATION_PERM_REQ)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_PERM_REQ && grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
+            LocationService.start(this)
+        }
+    }
+
     private suspend fun checkSurvey() {
         val token = prefs.getToken() ?: return
         try {
@@ -472,5 +496,6 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PlayerActivity"
+        private const val LOCATION_PERM_REQ = 101
     }
 }

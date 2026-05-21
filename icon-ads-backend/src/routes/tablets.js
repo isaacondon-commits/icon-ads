@@ -190,6 +190,56 @@ router.get('/export', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /locations/live — last known position + status for all tablets
+router.get('/locations/live', async (req, res, next) => {
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const [tablets, playCounts] = await Promise.all([
+      prisma.tablet.findMany({
+        include: { playlist: { select: { id: true, name: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.metric.groupBy({
+        by: ['tabletId'],
+        where: { playedAt: { gte: today } },
+        _count: { id: true },
+      }),
+    ]);
+    const countMap = Object.fromEntries(playCounts.map((r) => [r.tabletId, r._count.id]));
+    const now = Date.now();
+    const result = tablets.map((t) => {
+      const diffMin = t.lastSync ? (now - new Date(t.lastSync).getTime()) / 60000 : Infinity;
+      return {
+        id: t.id, name: t.name, zone: t.zone, lastSync: t.lastSync,
+        batteryLevel: t.batteryLevel,
+        playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
+        status: diffMin < 70 ? 'online' : 'offline',
+        lat: t.lastLat ?? null,
+        lng: t.lastLng ?? null,
+        todayPlays: countMap[t.id] ?? 0,
+      };
+    });
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+// GET /:id/location/history — today's GPS breadcrumb trail
+router.get('/:id/location/history', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!tablet) return res.status(404).json({ error: 'Not found' });
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const locations = await prisma.$queryRaw`
+      SELECT lat, lng, accuracy, created_at
+      FROM tablet_locations
+      WHERE tablet_id = ${id} AND created_at >= ${todayStart}
+      ORDER BY created_at ASC
+    `;
+    res.json({ tablet, locations });
+  } catch (err) { next(err); }
+});
+
 // GET /:id — full detail with sync history / error logs (#29)
 router.get('/:id', async (req, res, next) => {
   try {

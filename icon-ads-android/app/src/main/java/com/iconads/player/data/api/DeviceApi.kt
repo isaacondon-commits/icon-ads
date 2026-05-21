@@ -33,6 +33,9 @@ interface DeviceApi {
     @POST("api/device/error")
     suspend fun reportError(@Body error: ErrorReport)
 
+    @POST("api/device/location")
+    suspend fun uploadLocation(@Body body: LocationUpload)
+
     @GET("api/device/survey")
     suspend fun getSurvey(): retrofit2.Response<SurveyQuestion>
 

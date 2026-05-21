@@ -359,6 +359,11 @@ export const api = {
   // Mercado Pago payment link (#54)
   getCampaignPaymentLink: (id: number) =>
     request<{ initPoint: string; sandboxInitPoint: string; preferenceId: string }>(`/api/campaigns/${id}/payment-link`, { method: 'POST' }),
+
+  // GPS real-time locations
+  getTabletLocationsLive: () => request<TabletLiveLocation[]>('/api/tablets/locations/live'),
+  getTabletLocationHistory: (id: number) =>
+    request<{ tablet: { id: number; name: string }; locations: LocationPoint[] }>(`/api/tablets/${id}/location/history`),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -596,6 +601,19 @@ export interface ApiKey {
 export interface Survey {
   id: number; question: string; options: string[];
   active: boolean; answer_count: number; created_at: string;
+}
+
+export interface TabletLiveLocation {
+  id: number; name: string; zone: string | null; lastSync: string | null;
+  batteryLevel: number | null;
+  playlist: { id: number; name: string } | null;
+  status: 'online' | 'offline';
+  lat: number | null; lng: number | null;
+  todayPlays: number;
+}
+
+export interface LocationPoint {
+  lat: number; lng: number; accuracy: number | null; created_at: string;
 }
 
 export { BASE };
