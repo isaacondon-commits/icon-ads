@@ -347,6 +347,18 @@ export const api = {
   createApiKey: (name: string) =>
     request<ApiKey>('/api/admin/api-keys', { method: 'POST', body: JSON.stringify({ name }) }),
   revokeApiKey: (id: number) => request<void>(`/api/admin/api-keys/${id}`, { method: 'DELETE' }),
+
+  // Driver surveys (#47)
+  getSurveys: () => request<Survey[]>('/api/surveys'),
+  createSurvey: (data: { question: string; options: string[] }) =>
+    request<Survey>('/api/surveys', { method: 'POST', body: JSON.stringify(data) }),
+  toggleSurvey: (id: number) => request<Survey>(`/api/surveys/${id}/toggle`, { method: 'PATCH' }),
+  deleteSurvey: (id: number) => request<void>(`/api/surveys/${id}`, { method: 'DELETE' }),
+  getSurveyResults: (id: number) => request<{ survey: Survey; answers: { option_index: number; count: number }[] }>(`/api/surveys/${id}/results`),
+
+  // Mercado Pago payment link (#54)
+  getCampaignPaymentLink: (id: number) =>
+    request<{ initPoint: string; sandboxInitPoint: string; preferenceId: string }>(`/api/campaigns/${id}/payment-link`, { method: 'POST' }),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -579,6 +591,11 @@ export interface Zone {
 export interface ApiKey {
   id: number; name: string; key: string;
   active: boolean; lastUsed: string | null; createdAt: string;
+}
+
+export interface Survey {
+  id: number; question: string; options: string[];
+  active: boolean; answer_count: number; created_at: string;
 }
 
 export { BASE };

@@ -208,6 +208,16 @@ export default function CampaignsPage() {
     }
   };
 
+  // #54 — Mercado Pago payment link
+  const handleMercadoPago = async (id: number) => {
+    try {
+      const { initPoint } = await api.getCampaignPaymentLink(id);
+      window.open(initPoint, '_blank', 'noopener');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error al generar link MP');
+    }
+  };
+
   // #4 — archive all expired campaigns
   const [archivingExpired, setArchivingExpired] = useState(false);
   const handleArchiveExpired = async () => {
@@ -431,6 +441,8 @@ export default function CampaignsPage() {
                         {/* #51 #56 — PDF docs */}
                         <a href={api.getCertificateUrl(c.id)} className="text-violet-600 hover:underline text-xs" title="Certificado de reproducciones PDF">Cert.</a>
                         <a href={api.getContractUrl(c.id)} className="text-emerald-600 hover:underline text-xs" title="Contrato digital PDF">Contrato</a>
+                        {/* #54 — Mercado Pago */}
+                        {c.budget && <button onClick={() => handleMercadoPago(c.id)} className="text-sky-600 hover:underline text-xs" title="Generar link de pago Mercado Pago">MP Pago</button>}
                         <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Eliminar</button>
                       </div>
                     </td>

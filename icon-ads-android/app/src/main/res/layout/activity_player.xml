@@ -47,6 +47,97 @@
 
     </FrameLayout>
 
+    <!-- Survey overlay (#47) -->
+    <FrameLayout
+        android:id="@+id/survey_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="420dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:background="#1C2B3A"
+            android:padding="28dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Encuesta rápida"
+                android:textColor="#9CA3AF"
+                android:textSize="13sp"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:id="@+id/survey_question_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:lineSpacingMultiplier="1.3"
+                android:layout_marginBottom="20dp" />
+
+            <Button
+                android:id="@+id/survey_opt_0"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginBottom="8dp"
+                android:backgroundTint="#1D4ED8"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/survey_opt_1"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginBottom="8dp"
+                android:backgroundTint="#1D4ED8"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/survey_opt_2"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginBottom="8dp"
+                android:backgroundTint="#1D4ED8"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/survey_opt_3"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginBottom="8dp"
+                android:backgroundTint="#1D4ED8"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/survey_dismiss"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Responder después"
+                android:textColor="#6B7280"
+                android:textSize="14sp"
+                android:gravity="center"
+                android:padding="12dp"
+                android:layout_marginTop="4dp" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
     <!-- Splash / Loading overlay — full screen -->
     <FrameLayout
         android:id="@+id/loading_view"

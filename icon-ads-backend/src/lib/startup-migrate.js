@@ -68,6 +68,9 @@ const MIGRATIONS = [
   { name: 'zones',                     sql: `CREATE TABLE IF NOT EXISTS zones (id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, polygon JSONB NOT NULL DEFAULT '[]', color TEXT NOT NULL DEFAULT '#3b82f6', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   // v15 — public API keys (#70)
   { name: 'api_keys',                  sql: `CREATE TABLE IF NOT EXISTS api_keys (id SERIAL PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, active BOOLEAN NOT NULL DEFAULT true, last_used TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v16 — driver surveys (#47)
+  { name: 'surveys',                   sql: `CREATE TABLE IF NOT EXISTS surveys (id SERIAL PRIMARY KEY, question TEXT NOT NULL, options JSONB NOT NULL DEFAULT '[]', active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'survey_answers',            sql: `CREATE TABLE IF NOT EXISTS survey_answers (id SERIAL PRIMARY KEY, survey_id INT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, option_index INT NOT NULL, answered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(survey_id, tablet_id))` },
 ];
 
 async function runStartupMigrations() {

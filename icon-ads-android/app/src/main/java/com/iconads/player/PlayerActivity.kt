@@ -32,6 +32,8 @@ import com.iconads.player.BuildConfig
 import com.iconads.player.data.api.NetworkModule
 import com.iconads.player.data.model.Ad
 import com.iconads.player.data.model.RegisterRequest
+import com.iconads.player.data.model.SurveyAnswerRequest
+import com.iconads.player.data.model.SurveyQuestion
 import com.iconads.player.data.repository.MetricRepository
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.databinding.ActivityPlayerBinding
@@ -100,6 +102,14 @@ class PlayerActivity : AppCompatActivity() {
             while (true) {
                 delay(5 * 60_000L)
                 checkAdminMessages()
+            }
+        }
+        // Poll for surveys every 6 hours (#47)
+        lifecycleScope.launch {
+            delay(2 * 60_000L)
+            while (true) {
+                checkSurvey()
+                delay(6 * 60 * 60_000L)
             }
         }
     }
@@ -370,6 +380,53 @@ class PlayerActivity : AppCompatActivity() {
         imageHandler.postDelayed({
             binding.messageOverlay.visibility = android.view.View.GONE
         }, 10_000L)
+    }
+
+    private suspend fun checkSurvey() {
+        val token = prefs.getToken() ?: return
+        try {
+            val resp = withContext(Dispatchers.IO) { NetworkModule.provideDeviceApi(token).getSurvey() }
+            if (resp.isSuccessful && resp.body() != null) {
+                withContext(Dispatchers.Main) { showSurvey(resp.body()!!) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "checkSurvey: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun showSurvey(survey: SurveyQuestion) {
+        val optButtons = listOf(binding.surveyOpt0, binding.surveyOpt1, binding.surveyOpt2, binding.surveyOpt3)
+        binding.surveyQuestionText.text = survey.question
+        optButtons.forEachIndexed { idx, btn ->
+            if (idx < survey.options.size) {
+                btn.visibility = View.VISIBLE
+                btn.text = survey.options[idx]
+                btn.setOnClickListener { submitSurveyAnswer(survey.id, idx) }
+            } else {
+                btn.visibility = View.GONE
+            }
+        }
+        binding.surveyDismiss.setOnClickListener {
+            binding.surveyOverlay.visibility = View.GONE
+        }
+        binding.surveyOverlay.visibility = View.VISIBLE
+    }
+
+    private fun submitSurveyAnswer(surveyId: Int, optionIndex: Int) {
+        lifecycleScope.launch {
+            try {
+                val token = prefs.getToken() ?: return@launch
+                withContext(Dispatchers.IO) {
+                    NetworkModule.provideDeviceApi(token).submitSurveyAnswer(
+                        SurveyAnswerRequest(surveyId, optionIndex)
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "submitSurveyAnswer: ${e.message}")
+            } finally {
+                binding.surveyOverlay.visibility = View.GONE
+            }
+        }
     }
 
     private suspend fun registerNow() {

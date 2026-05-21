@@ -384,4 +384,42 @@ router.post('/:id/comments', async (req, res, next) => {
   }
 });
 
+// POST /:id/payment-link — Mercado Pago checkout preference (#54)
+router.post('/:id/payment-link', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const campaign = await prisma.campaign.findUnique({
+      where: { id, deletedAt: null },
+      include: { client: { select: { name: true, email: true } } },
+    });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    if (!campaign.budget) return res.status(400).json({ error: 'La campaña no tiene presupuesto definido.' });
+    const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    if (!accessToken) return res.status(503).json({ error: 'MERCADOPAGO_ACCESS_TOKEN no configurado en el servidor.' });
+    const body = {
+      items: [{
+        title: `ICON ADS — ${campaign.name}`,
+        description: `Campaña publicitaria del ${new Date(campaign.startDate).toLocaleDateString('es-UY')} al ${new Date(campaign.endDate).toLocaleDateString('es-UY')}`,
+        unit_price: campaign.budget,
+        quantity: 1,
+        currency_id: 'UYU',
+      }],
+      external_reference: `campaign_${id}`,
+      ...(campaign.client?.email ? { payer: { email: campaign.client.email } } : {}),
+    };
+    const mpRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(body),
+    });
+    if (!mpRes.ok) {
+      const errData = await mpRes.json().catch(() => ({}));
+      return res.status(502).json({ error: `Mercado Pago: ${errData.message ?? mpRes.statusText}` });
+    }
+    const data = await mpRes.json();
+    await audit(req, 'PAYMENT_LINK', 'campaign', id, `MP preferenceId=${data.id}`);
+    res.json({ initPoint: data.init_point, sandboxInitPoint: data.sandbox_init_point, preferenceId: data.id });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

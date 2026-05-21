@@ -258,6 +258,44 @@ router.get('/messages', requireDevice, async (req, res, next) => {
   }
 });
 
+// GET /api/device/survey — active survey not yet answered by this tablet (#47)
+router.get('/survey', requireDevice, async (req, res, next) => {
+  try {
+    const tabletId = req.tablet.id;
+    const [survey] = await prisma.$queryRaw`
+      SELECT s.id, s.question, s.options FROM surveys s
+      WHERE s.active = true
+      AND NOT EXISTS (
+        SELECT 1 FROM survey_answers sa
+        WHERE sa.survey_id = s.id AND sa.tablet_id = ${tabletId}
+      )
+      ORDER BY s.created_at DESC LIMIT 1
+    `;
+    if (!survey) return res.status(204).send();
+    res.json({ id: survey.id, question: survey.question, options: survey.options });
+  } catch (err) { next(err); }
+});
+
+// POST /api/device/survey-answer — submit survey answer (#47)
+router.post('/survey-answer', requireDevice, async (req, res, next) => {
+  try {
+    const { surveyId, optionIndex } = z.object({
+      surveyId: z.number().int().positive(),
+      optionIndex: z.number().int().min(0).max(3),
+    }).parse(req.body);
+    const tabletId = req.tablet.id;
+    await prisma.$executeRaw`
+      INSERT INTO survey_answers (survey_id, tablet_id, option_index, answered_at)
+      VALUES (${surveyId}, ${tabletId}, ${optionIndex}, NOW())
+      ON CONFLICT (survey_id, tablet_id) DO UPDATE SET option_index = EXCLUDED.option_index, answered_at = NOW()
+    `;
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
 // POST /api/device/error — log a device-side error
 router.post('/error', requireDevice, async (req, res, next) => {
   try {

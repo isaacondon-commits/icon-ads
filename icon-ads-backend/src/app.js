@@ -29,6 +29,7 @@ const referralsRoutes = require('./routes/referrals');
 const driverpointsRoutes = require('./routes/driverpoints');
 const zonesRoutes = require('./routes/zones');
 const publicRoutes = require('./routes/public');
+const surveysRoutes = require('./routes/surveys');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const latencyTracker = require('./lib/latencyTracker');
@@ -148,6 +149,7 @@ app.use('/api/abtests', abtestsRoutes);
 app.use('/api/referrals', referralsRoutes);
 app.use('/api/driver-points', driverpointsRoutes);
 app.use('/api/zones', zonesRoutes);
+app.use('/api/surveys', surveysRoutes);
 app.use('/api/v1/public', publicRoutes);
 
 // #41 — Swagger API docs at /api/docs

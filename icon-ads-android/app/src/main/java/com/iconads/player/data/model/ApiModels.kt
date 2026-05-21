@@ -44,3 +44,14 @@ data class AdminMessage(
     val message: String,
     val createdAt: String,
 )
+
+data class SurveyQuestion(
+    val id: Int,
+    val question: String,
+    val options: List<String>,
+)
+
+data class SurveyAnswerRequest(
+    val surveyId: Int,
+    val optionIndex: Int,
+)
