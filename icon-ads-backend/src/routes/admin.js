@@ -148,4 +148,31 @@ router.get('/stats/zones', requireAuth, async (req, res, next) => {
   }
 });
 
+// GET /api/admin/backup — full JSON export of key data (#42)
+router.get('/backup', requireAuth, async (req, res, next) => {
+  try {
+    const [clients, campaigns, ads, playlists, tablets] = await Promise.all([
+      prisma.client.findMany({ where: { deletedAt: null } }),
+      prisma.campaign.findMany({ where: { deletedAt: null } }),
+      prisma.ad.findMany({
+        where: { deletedAt: null },
+        select: { id: true, campaignId: true, name: true, type: true, filename: true, durationS: true, active: true, approvalStatus: true, priority: true, tags: true, createdAt: true, updatedAt: true },
+      }),
+      prisma.playlist.findMany({ include: { playlistAds: { select: { adId: true, order: true } } } }),
+      prisma.tablet.findMany({
+        select: { id: true, deviceId: true, name: true, zone: true, status: true, lastSync: true, appVersion: true, osVersion: true, deviceModel: true, batteryLevel: true, createdAt: true },
+      }),
+    ]);
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="iconads_backup_${date}.json"`);
+    res.json({
+      exportedAt: new Date().toISOString(),
+      version: '1.0',
+      counts: { clients: clients.length, campaigns: campaigns.length, ads: ads.length, playlists: playlists.length, tablets: tablets.length },
+      data: { clients, campaigns, ads, playlists, tablets },
+    });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

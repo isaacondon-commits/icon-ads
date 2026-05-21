@@ -175,6 +175,22 @@ setInterval(async () => {
   }
 }, 30 * 60 * 1000);
 
+// #42 — Daily backup log
+setInterval(async () => {
+  try {
+    const [clients, campaigns, ads, playlists, tablets] = await Promise.all([
+      prisma.client.count({ where: { deletedAt: null } }),
+      prisma.campaign.count({ where: { deletedAt: null } }),
+      prisma.ad.count({ where: { deletedAt: null } }),
+      prisma.playlist.count(),
+      prisma.tablet.count(),
+    ]);
+    console.log(`[backup-log] ${new Date().toISOString()} — clients:${clients} campaigns:${campaigns} ads:${ads} playlists:${playlists} tablets:${tablets}`);
+  } catch (err) {
+    console.warn('[backup-log]', err.message);
+  }
+}, 24 * 60 * 60 * 1000);
+
 // #12 — Daily metrics retention cleanup
 setInterval(async () => {
   try {

@@ -403,6 +403,51 @@ router.get('/latency', (req, res) => {
   res.json(latencyTracker.getSummary());
 });
 
+// GET /api/stats/zone-hour — plays per zone per hour of day, last 30 days (#52)
+router.get('/zone-hour', async (req, res, next) => {
+  try {
+    const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rows = await prisma.$queryRaw`
+      SELECT
+        COALESCE(t.zone, 'Sin zona') AS zone,
+        EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'UTC')::int AS hour,
+        COUNT(*)::int AS count
+      FROM metrics m
+      JOIN tablets t ON m.tablet_id = t.id
+      WHERE m.played_at >= ${from}
+      GROUP BY COALESCE(t.zone, 'Sin zona'), EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'UTC')
+      ORDER BY zone, hour
+    `;
+    res.json(rows.map((r) => ({ zone: r.zone, hour: Number(r.hour), count: Number(r.count) })));
+  } catch (err) { next(err); }
+});
+
+// GET /api/stats/sla — tablet sync coverage (active days) in last 30 days (#59)
+router.get('/sla', async (req, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT
+        t.id AS "tabletId",
+        t.name AS "tabletName",
+        t.zone,
+        COUNT(sl.id)::int AS "syncCount30d",
+        COUNT(DISTINCT DATE(sl.created_at AT TIME ZONE 'UTC'))::int AS "activeDays30d"
+      FROM tablets t
+      LEFT JOIN sync_logs sl ON sl.tablet_id = t.id AND sl.created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY t.id, t.name, t.zone
+      ORDER BY "activeDays30d" DESC
+    `;
+    res.json(rows.map((r) => ({
+      tabletId: Number(r.tabletId),
+      tabletName: r.tabletName,
+      zone: r.zone,
+      syncCount30d: Number(r.syncCount30d),
+      activeDays30d: Number(r.activeDays30d),
+      coveragePct: Math.min(100, Math.round((Number(r.activeDays30d) / 30) * 100)),
+    })));
+  } catch (err) { next(err); }
+});
+
 // GET /api/stats/by-zone — tablets and plays grouped by zone (#35)
 router.get('/by-zone', async (req, res, next) => {
   try {

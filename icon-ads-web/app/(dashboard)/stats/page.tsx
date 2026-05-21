@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -20,6 +20,8 @@ export default function StatsPage() {
   const [zoneStats, setZoneStats] = useState<ZoneStat[]>([]);
   const [syncIntervals, setSyncIntervals] = useState<SyncInterval[]>([]);
   const [roiStats, setRoiStats] = useState<RoiEntry[]>([]);
+  const [zoneHour, setZoneHour] = useState<ZoneHourEntry[]>([]);
+  const [slaStats, setSlaStats] = useState<SlaStat[]>([]);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -33,6 +35,8 @@ export default function StatsPage() {
     api.getZoneStats().then(setZoneStats).catch(() => {});
     api.getSyncIntervals().then(setSyncIntervals).catch(() => {});
     api.getRoiStats().then(setRoiStats).catch(() => {});
+    api.getZoneHourStats().then(setZoneHour).catch(() => {});
+    api.getSlaStats().then(setSlaStats).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -436,6 +440,97 @@ export default function StatsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* #52 — Zone-hour heatmap */}
+      {zoneHour.length > 0 && (() => {
+        const zones = [...new Set(zoneHour.map((r) => r.zone))].sort();
+        const hours = Array.from({ length: 24 }, (_, i) => i);
+        const maxCount = Math.max(...zoneHour.map((r) => r.count), 1);
+        const lookup = new Map(zoneHour.map((r) => [`${r.zone}:${r.hour}`, r.count]));
+        return (
+          <div className="card p-6 mt-6">
+            <h2 className="font-semibold mb-4">Reproducciones por zona y hora (últimos 30 días)</h2>
+            <div className="overflow-x-auto">
+              <table className="text-xs w-full">
+                <thead>
+                  <tr>
+                    <th className="text-left pb-2 pr-3 font-medium" style={{ color: 'var(--text-muted)', minWidth: '100px' }}>Zona</th>
+                    {hours.map((h) => (
+                      <th key={h} className="text-center pb-2 px-0.5 font-medium tabular-nums" style={{ color: 'var(--text-muted)', minWidth: '22px' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {zones.map((zone) => (
+                    <tr key={zone}>
+                      <td className="pr-3 py-1 font-medium truncate max-w-[100px]" title={zone}>{zone}</td>
+                      {hours.map((h) => {
+                        const count = lookup.get(`${zone}:${h}`) ?? 0;
+                        const intensity = count / maxCount;
+                        return (
+                          <td key={h} className="px-0.5 py-1 text-center" title={`${zone} ${h}:00 — ${count}`}>
+                            <div
+                              className="mx-auto rounded"
+                              style={{
+                                width: '18px', height: '18px',
+                                background: count === 0 ? 'var(--border)' : `rgba(59,130,246,${0.15 + intensity * 0.85})`,
+                              }}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>Cada celda = reproducciones en esa hora. Azul más oscuro = más reproducciones.</p>
+          </div>
+        );
+      })()}
+
+      {/* #59 — SLA compliance */}
+      {slaStats.length > 0 && (
+        <div className="card p-6 mt-6">
+          <h2 className="font-semibold mb-4">Cumplimiento SLA por tablet (últimos 30 días)</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                  <th className="text-left pb-2">Tablet</th>
+                  <th className="text-left pb-2">Zona</th>
+                  <th className="text-right pb-2">Días activos</th>
+                  <th className="text-right pb-2">Syncs 30d</th>
+                  <th className="text-right pb-2">Cobertura</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slaStats.map((s) => (
+                  <tr key={s.tabletId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                    <td className="py-2.5 font-medium">{s.tabletName}</td>
+                    <td className="py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{s.zone ?? '—'}</td>
+                    <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{s.activeDays30d} / 30</td>
+                    <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{s.syncCount30d.toLocaleString()}</td>
+                    <td className="py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-16 h-1.5 rounded-full" style={{ background: 'var(--border-md)' }}>
+                          <div
+                            className={`h-1.5 rounded-full ${s.coveragePct >= 90 ? 'bg-emerald-500' : s.coveragePct >= 60 ? 'bg-amber-400' : 'bg-red-500'}`}
+                            style={{ width: `${s.coveragePct}%` }}
+                          />
+                        </div>
+                        <span className={`text-xs font-medium tabular-nums ${s.coveragePct >= 90 ? 'text-emerald-600' : s.coveragePct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+                          {s.coveragePct}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

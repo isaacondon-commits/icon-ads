@@ -274,6 +274,15 @@ export const api = {
 
   // Endpoint latency (#43)
   getLatency: () => request<LatencySummary>('/api/stats/latency'),
+
+  // Zone-hour heatmap (#52)
+  getZoneHourStats: () => request<ZoneHourEntry[]>('/api/stats/zone-hour'),
+
+  // SLA compliance (#59)
+  getSlaStats: () => request<SlaStat[]>('/api/stats/sla'),
+
+  // Full JSON backup download URL (#42)
+  getBackupUrl: () => `${BASE}/api/admin/backup`,
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -455,6 +464,13 @@ export interface LatencySummary {
   count: number; avg: number; p95: number;
   slow: { method: string; path: string; ms: number; status: number; ts: string }[];
   recent: { method: string; path: string; ms: number; status: number; ts: string }[];
+}
+
+export interface ZoneHourEntry { zone: string; hour: number; count: number; }
+
+export interface SlaStat {
+  tabletId: number; tabletName: string; zone: string | null;
+  syncCount30d: number; activeDays30d: number; coveragePct: number;
 }
 
 export { BASE };
