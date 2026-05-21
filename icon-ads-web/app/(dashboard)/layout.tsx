@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 import Breadcrumbs from '@/components/Breadcrumbs';
+import GoogleAnalytics from '@/components/GoogleAnalytics';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -38,6 +39,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
+      <GoogleAnalytics />
       <Sidebar />
       <main className="flex-1 p-8 overflow-auto" style={{ color: 'var(--text)' }}>
         <Breadcrumbs />

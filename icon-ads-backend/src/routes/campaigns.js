@@ -20,6 +20,18 @@ const campaignSchema = z.object({
   targetImpressions: z.number().int().positive().nullable().optional(),
 });
 
+// POST /archive-expired — manually archive all campaigns past their end date (#4)
+router.post('/archive-expired', async (req, res, next) => {
+  try {
+    const now = new Date();
+    const result = await prisma.campaign.updateMany({
+      where: { endDate: { lt: now }, deletedAt: null },
+      data: { active: false, deletedAt: now },
+    });
+    res.json({ archived: result.count });
+  } catch (err) { next(err); }
+});
+
 // GET /archived — soft-deleted campaigns (#5)
 router.get('/archived', async (req, res, next) => {
   try {

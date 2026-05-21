@@ -69,6 +69,8 @@ export const api = {
   getCampaignDetail: (id: number) => request<CampaignDetail>(`/api/campaigns/${id}`),
   addComment: (campaignId: number, body: string) =>
     request<Comment>(`/api/campaigns/${campaignId}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
+  archiveExpiredCampaigns: () =>
+    request<{ archived: number }>('/api/campaigns/archive-expired', { method: 'POST' }),
 
   // Ads
   getAds: () => request<Ad[]>('/api/ads'),

@@ -208,6 +208,18 @@ export default function CampaignsPage() {
     }
   };
 
+  // #4 — archive all expired campaigns
+  const [archivingExpired, setArchivingExpired] = useState(false);
+  const handleArchiveExpired = async () => {
+    setArchivingExpired(true);
+    try {
+      const { archived } = await api.archiveExpiredCampaigns();
+      if (archived > 0) { load(); } else { alert('No hay campañas vencidas activas.'); }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error');
+    } finally { setArchivingExpired(false); }
+  };
+
   // #15 — pause/resume toggle
   const handleToggle = async (c: Campaign) => {
     setTogglingId(c.id);
@@ -237,6 +249,15 @@ export default function CampaignsPage() {
               </button>
             ))}
           </div>
+          <button
+            onClick={handleArchiveExpired}
+            disabled={archivingExpired}
+            className="px-4 py-2 rounded-lg text-sm font-medium border disabled:opacity-50"
+            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}
+            title="Archivar todas las campañas cuya fecha de fin ya pasó"
+          >
+            {archivingExpired ? 'Archivando...' : '📁 Archivar vencidas'}
+          </button>
           <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
             + Nueva campaña
           </button>

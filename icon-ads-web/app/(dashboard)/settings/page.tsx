@@ -29,13 +29,23 @@ export default function SettingsPage() {
   const maintenanceOn = settings['maintenance_mode'] === 'true';
   const retentionDays = settings['metrics_retention_days'] ?? '90';
   const webhookUrl = settings['webhook_url'] ?? '';
+  const gaId = settings['ga_measurement_id'] ?? '';
+  const callmebotPhone = settings['callmebot_phone'] ?? '';
+  const callmebotApikey = settings['callmebot_apikey'] ?? '';
+  const autoArchive = settings['auto_archive_expired'] === 'true';
 
   const [retentionInput, setRetentionInput] = useState('');
   const [webhookInput, setWebhookInput] = useState('');
+  const [gaInput, setGaInput] = useState('');
+  const [callmebotPhoneInput, setCallmebotPhoneInput] = useState('');
+  const [callmebotApikeyInput, setCallmebotApikeyInput] = useState('');
 
   useEffect(() => {
     setRetentionInput(settings['metrics_retention_days'] ?? '90');
     setWebhookInput(settings['webhook_url'] ?? '');
+    setGaInput(settings['ga_measurement_id'] ?? '');
+    setCallmebotPhoneInput(settings['callmebot_phone'] ?? '');
+    setCallmebotApikeyInput(settings['callmebot_apikey'] ?? '');
   }, [settings]);
 
   return (
@@ -122,6 +132,92 @@ export default function SettingsPage() {
             <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
               El cuerpo del POST incluye: event, tabletId, name, zone, lastSync.
             </p>
+          </div>
+
+          {/* #48 — Google Analytics GA4 */}
+          <div className="card p-6">
+            <h2 className="font-semibold mb-1">Google Analytics 4</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+              Measurement ID de GA4 (ej: G-XXXXXXXXXX). Dejar vacío para deshabilitar el tracking.
+            </p>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                className="input flex-1"
+                placeholder="G-XXXXXXXXXX"
+                value={gaInput}
+                onChange={(e) => setGaInput(e.target.value)}
+              />
+              <button
+                onClick={() => save('ga_measurement_id', gaInput)}
+                disabled={saving === 'ga_measurement_id' || gaInput === gaId}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
+              >
+                {saving === 'ga_measurement_id' ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+
+          {/* #53 + #61 — WhatsApp via CallMeBot */}
+          <div className="card p-6">
+            <h2 className="font-semibold mb-1">WhatsApp — alertas via CallMeBot</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+              Envía WhatsApp al número configurado cuando: (1) una tablet lleva más de 2h offline, (2) una campaña vence hoy.
+              Antes de configurar, enviá "I allow callmebot to send me messages" al +34644605090 en WhatsApp.
+            </p>
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  className="input flex-1"
+                  placeholder="Teléfono internacional (ej: 59899123456)"
+                  value={callmebotPhoneInput}
+                  onChange={(e) => setCallmebotPhoneInput(e.target.value)}
+                />
+                <button
+                  onClick={() => save('callmebot_phone', callmebotPhoneInput)}
+                  disabled={saving === 'callmebot_phone' || callmebotPhoneInput === callmebotPhone}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
+                >
+                  {saving === 'callmebot_phone' ? 'Guardando...' : 'Guardar teléfono'}
+                </button>
+              </div>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  className="input flex-1"
+                  placeholder="API Key de CallMeBot"
+                  value={callmebotApikeyInput}
+                  onChange={(e) => setCallmebotApikeyInput(e.target.value)}
+                />
+                <button
+                  onClick={() => save('callmebot_apikey', callmebotApikeyInput)}
+                  disabled={saving === 'callmebot_apikey' || callmebotApikeyInput === callmebotApikey}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
+                >
+                  {saving === 'callmebot_apikey' ? 'Guardando...' : 'Guardar API key'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* #4 — Auto-archive expired campaigns */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold mb-1">Auto-archivar campañas vencidas</h2>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Archiva automáticamente cada 24h las campañas cuya fecha de fin ya pasó. Se pueden restaurar desde la página Archivo.
+                </p>
+              </div>
+              <button
+                onClick={() => save('auto_archive_expired', autoArchive ? 'false' : 'true')}
+                disabled={saving === 'auto_archive_expired'}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${autoArchive ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoArchive ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
           </div>
 
         </div>

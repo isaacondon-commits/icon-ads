@@ -6,7 +6,12 @@ const { audit } = require('../lib/auditLog');
 
 router.use(requireAuth);
 
-const ALLOWED_KEYS = ['maintenance_mode', 'metrics_retention_days', 'webhook_url'];
+const ALLOWED_KEYS = [
+  'maintenance_mode', 'metrics_retention_days', 'webhook_url',
+  'ga_measurement_id',
+  'callmebot_phone', 'callmebot_apikey',
+  'auto_archive_expired',
+];
 
 // GET /api/settings — all system config values
 router.get('/', async (req, res, next) => {

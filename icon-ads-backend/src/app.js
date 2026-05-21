@@ -255,6 +255,18 @@ setInterval(async () => {
             }).catch((e) => console.warn('[webhook] POST failed:', e.message));
           }
         } catch { /* non-fatal */ }
+        // #53 — WhatsApp via CallMeBot
+        try {
+          const [phoneCfg, apikeyCfg] = await Promise.all([
+            prisma.systemConfig.findUnique({ where: { key: 'callmebot_phone' } }),
+            prisma.systemConfig.findUnique({ where: { key: 'callmebot_apikey' } }),
+          ]);
+          if (phoneCfg?.value && apikeyCfg?.value) {
+            const text = encodeURIComponent(`ICON ADS: Tablet "${t.name}" (zona ${t.zone || 'sin zona'}) offline hace más de 2 horas.`);
+            fetch(`https://api.callmebot.com/whatsapp.php?phone=${phoneCfg.value}&text=${text}&apikey=${apikeyCfg.value}`)
+              .catch((e) => console.warn('[callmebot]', e.message));
+          }
+        } catch { /* non-fatal */ }
       } else if (!isOffline && alertedTablets.has(t.id)) {
         alertedTablets.delete(t.id);
         syslog.addEvent('TABLET_BACK_ONLINE', 'tablet', t.id, `${t.name} came back online`);
@@ -282,6 +294,50 @@ setInterval(async () => {
     }
     console.log(`[driver-points] recalculados para ${tablets.length} tablets`);
   } catch (err) { console.warn('[driver-points]', err.message); }
+}, 24 * 60 * 60 * 1000);
+
+// #61 — WhatsApp via CallMeBot when campaign(s) expire today
+setInterval(async () => {
+  try {
+    const [phoneCfg, apikeyCfg] = await Promise.all([
+      prisma.systemConfig.findUnique({ where: { key: 'callmebot_phone' } }),
+      prisma.systemConfig.findUnique({ where: { key: 'callmebot_apikey' } }),
+    ]);
+    if (!phoneCfg?.value || !apikeyCfg?.value) return;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+    const expiring = await prisma.campaign.findMany({
+      where: { active: true, deletedAt: null, endDate: { gte: todayStart, lte: todayEnd } },
+      include: { client: { select: { name: true } } },
+    });
+    if (expiring.length === 0) return;
+    const names = expiring.map((c) => `"${c.name}" (${c.client?.name ?? '?'})`).join(', ');
+    const text = encodeURIComponent(`ICON ADS: ${expiring.length} campaña(s) vence(n) hoy: ${names}`);
+    fetch(`https://api.callmebot.com/whatsapp.php?phone=${phoneCfg.value}&text=${text}&apikey=${apikeyCfg.value}`)
+      .catch((e) => console.warn('[callmebot-expire]', e.message));
+    console.log(`[campaign-expire] ${expiring.length} campañas vencen hoy — WhatsApp enviado`);
+  } catch (err) {
+    console.warn('[campaign-expire]', err.message);
+  }
+}, 24 * 60 * 60 * 1000);
+
+// #4 — Daily auto-archive expired campaigns (opt-in via settings)
+setInterval(async () => {
+  try {
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'auto_archive_expired' } });
+    if (cfg?.value !== 'true') return;
+    const now = new Date();
+    const result = await prisma.campaign.updateMany({
+      where: { endDate: { lt: now }, deletedAt: null },
+      data: { active: false, deletedAt: now },
+    });
+    if (result.count > 0) {
+      console.log(`[auto-archive] ${result.count} campañas vencidas archivadas`);
+      syslog.addEvent('AUTO_ARCHIVE', 'campaign', null, `${result.count} campañas vencidas archivadas automáticamente`);
+    }
+  } catch (err) {
+    console.warn('[auto-archive]', err.message);
+  }
 }, 24 * 60 * 60 * 1000);
 
 // #42 — Daily backup log
