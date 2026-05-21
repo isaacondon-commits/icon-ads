@@ -194,7 +194,21 @@ export default function TabletsPage() {
                 return (
                   <tr key={t.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
                     <td className="px-5 py-3 font-medium">
-                      <Link href={`/tablets/${t.id}`} className="hover:underline text-blue-600">{t.name}</Link>
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5">
+                          <Link href={`/tablets/${t.id}`} className="hover:underline text-blue-600">{t.name}</Link>
+                          {/* #10 — Badge "Nueva" si fue registrada en las últimas 24h */}
+                          {Date.now() - new Date(t.createdAt).getTime() < 86400000 && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-medium leading-none">
+                              Nueva
+                            </span>
+                          )}
+                        </div>
+                        {/* #6 — Días activo */}
+                        <span className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
+                          {Math.floor((Date.now() - new Date(t.createdAt).getTime()) / 86400000)} días activo
+                        </span>
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-1.5">

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry } from '@/lib/api';
+import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry, AuditPage, RangeStats } from '@/lib/api';
 import UruguayMap from '@/components/UruguayMap';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4','#ec4899','#84cc16'];
@@ -14,17 +14,25 @@ export default function DashboardPage() {
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const [lastWeek, setLastWeek] = useState<WeeklyEntry | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recentActivity, setRecentActivity] = useState<AuditPage['logs']>([]);
+  const [trend30d, setTrend30d] = useState<RangeStats['dailyPlays']>([]);
+  const [serverLatencyMs, setServerLatencyMs] = useState<number | null>(null);
   const isMonday = new Date().getDay() === 1;
 
   useEffect(() => {
+    const t0 = Date.now();
     Promise.allSettled([api.getStats(), api.getTabletMonitor(), api.getStorageStats()])
       .then(([s, m, st]) => {
-        if (s.status === 'fulfilled') setStats(s.value);
+        if (s.status === 'fulfilled') { setStats(s.value); setServerLatencyMs(Date.now() - t0); }
         if (m.status === 'fulfilled') setMonitor(m.value);
         if (st.status === 'fulfilled') setStorage(st.value);
       })
       .finally(() => setLoading(false));
     if (isMonday) api.getWeeklyStats(2).then((weeks) => setLastWeek(weeks[0] ?? null)).catch(() => {});
+    const from30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const to30 = new Date().toISOString().slice(0, 10);
+    api.getRangeStats(from30, to30).then((r) => setTrend30d(r.dailyPlays)).catch(() => {});
+    api.getAuditLogs(1).then((a) => setRecentActivity(a.logs.slice(0, 10))).catch(() => {});
   }, []);
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando estadísticas...</p>;
@@ -47,7 +55,24 @@ export default function DashboardPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          {/* #20 — Server latency indicator */}
+          {serverLatencyMs !== null && (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
+                serverLatencyMs < 800
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : serverLatencyMs < 2500
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+              }`}
+              title="Latencia del servidor (tiempo de respuesta de la última llamada a la API)"
+            >
+              {serverLatencyMs}ms
+            </span>
+          )}
+        </div>
         <a
           href={api.getMetricsCsvUrl()}
           className="text-sm text-blue-600 border border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950 px-3 py-1.5 rounded-lg font-medium"
@@ -161,6 +186,14 @@ export default function DashboardPage() {
         <DonutChart data={stats.playsByCampaign} />
       </div>
 
+      {/* #12 — 30-day trend line chart */}
+      {trend30d.length > 1 && (
+        <div className="card p-6 mb-6">
+          <h2 className="font-semibold mb-4">Tendencia últimos 30 días</h2>
+          <TrendChart data={trend30d} />
+        </div>
+      )}
+
       {/* Map + Storage row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* #5 — Uruguay map */}
@@ -208,7 +241,76 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* #1 — Recent activity log */}
+      {recentActivity.length > 0 && (
+        <div className="card p-6 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold">Actividad reciente</h2>
+            <Link href="/logs" className="text-xs text-blue-600 hover:underline">Ver todo</Link>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+            {recentActivity.map((log) => (
+              <div key={log.id} className="flex items-start justify-between py-2.5 gap-4 text-sm">
+                <div className="min-w-0">
+                  <span className="font-medium">{log.action}</span>
+                  <span className="mx-1.5" style={{ color: 'var(--border-md)' }}>·</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{log.entity}{log.entityId ? ` #${log.entityId}` : ''}</span>
+                  {log.details && (
+                    <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-xs)' }}>{log.details}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{log.user?.name ?? 'Sistema'}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-xs)' }}>
+                    {new Date(log.createdAt).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function TrendChart({ data }: { data: { date: string; count: number }[] }) {
+  if (data.length < 2) return null;
+  const w = 600, h = 120;
+  const padL = 36, padR = 8, padT = 10, padB = 22;
+  const maxY = Math.max(...data.map((d) => d.count), 1);
+  const xScale = (i: number) => padL + (i / (data.length - 1)) * (w - padL - padR);
+  const yScale = (v: number) => padT + (1 - v / maxY) * (h - padT - padB);
+  const linePoints = data.map((d, i) => `${xScale(i)},${yScale(d.count)}`).join(' ');
+  const areaPoints = [
+    `${xScale(0)},${h - padB}`,
+    ...data.map((d, i) => `${xScale(i)},${yScale(d.count)}`),
+    `${xScale(data.length - 1)},${h - padB}`,
+  ].join(' ');
+  const midY = Math.round(maxY / 2);
+  const labelIdxs = [0, Math.floor(data.length / 2), data.length - 1];
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 120 }}>
+      <defs>
+        <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <line x1={padL} y1={yScale(maxY)} x2={w - padR} y2={yScale(maxY)} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3 3" />
+      <line x1={padL} y1={yScale(midY)} x2={w - padR} y2={yScale(midY)} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3 3" />
+      <text x={padL - 4} y={yScale(maxY) + 4} textAnchor="end" fontSize="9" fill="var(--text-xs)">{maxY}</text>
+      <text x={padL - 4} y={yScale(midY) + 4} textAnchor="end" fontSize="9" fill="var(--text-xs)">{midY}</text>
+      <text x={padL - 4} y={yScale(0) + 4} textAnchor="end" fontSize="9" fill="var(--text-xs)">0</text>
+      <polygon points={areaPoints} fill="url(#trendFill)" />
+      <polyline points={linePoints} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {labelIdxs.map((i) => (
+        <text key={i} x={xScale(i)} y={h} textAnchor="middle" fontSize="9" fill="var(--text-xs)">
+          {data[i].date.slice(5)}
+        </text>
+      ))}
+    </svg>
   );
 }
 

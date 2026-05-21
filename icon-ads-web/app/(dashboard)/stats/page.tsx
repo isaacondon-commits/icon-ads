@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -16,6 +16,7 @@ export default function StatsPage() {
   const [loadingWeekly, setLoadingWeekly] = useState(true);
   const [loadingRange, setLoadingRange] = useState(false);
   const [loadingExtra, setLoadingExtra] = useState(false);
+  const [adsNoPlays, setAdsNoPlays] = useState<AdNoPlays[]>([]);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -25,6 +26,7 @@ export default function StatsPage() {
   useEffect(() => {
     api.getWeeklyStats(8).then(setWeekly).finally(() => setLoadingWeekly(false));
     api.getPlaylistStats().then(setPlaylists).catch(() => {});
+    api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -295,6 +297,51 @@ export default function StatsPage() {
           </>
         )}
       </div>
+
+      {/* #13 — Ads with zero plays */}
+      {adsNoPlays.length > 0 && (
+        <div className="card p-6 mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold">Anuncios sin reproducciones</h2>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-medium">
+              {adsNoPlays.length} anuncio{adsNoPlays.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                <th className="text-left pb-2">Anuncio</th>
+                <th className="text-left pb-2">Tipo</th>
+                <th className="text-left pb-2">Campaña</th>
+                <th className="text-right pb-2">Duración</th>
+                <th className="text-right pb-2">Creado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adsNoPlays.map((a) => (
+                <tr key={a.id} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                  <td className="py-2 font-medium max-w-[180px] truncate">{a.name}</td>
+                  <td className="py-2">
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${a.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
+                      {a.type}
+                    </span>
+                  </td>
+                  <td className="py-2 max-w-[180px] truncate" style={{ color: 'var(--text-muted)' }}>
+                    {a.campaign.name}
+                    {!a.campaign.active && (
+                      <span className="ml-1 text-xs text-gray-400">(pausada)</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{a.durationS}s</td>
+                  <td className="py-2 text-right text-xs" style={{ color: 'var(--text-xs)' }}>
+                    {new Date(a.createdAt).toLocaleDateString('es-AR')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

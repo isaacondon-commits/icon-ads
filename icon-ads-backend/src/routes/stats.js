@@ -302,4 +302,19 @@ router.get('/occupancy', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/stats/ads-no-plays — active approved ads with zero plays (#13)
+router.get('/ads-no-plays', async (req, res, next) => {
+  try {
+    const ads = await prisma.ad.findMany({
+      where: { active: true, deletedAt: null, approvalStatus: 'approved', metrics: { none: {} } },
+      select: {
+        id: true, name: true, type: true, durationS: true, createdAt: true,
+        campaign: { select: { id: true, name: true, active: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(ads);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

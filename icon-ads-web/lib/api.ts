@@ -210,6 +210,9 @@ export const api = {
 
   // Occupancy stats (#8)
   getOccupancy: () => request<OccupancyEntry[]>('/api/stats/occupancy'),
+
+  // Ads with zero plays (#13)
+  getAdsNoPlays: () => request<AdNoPlays[]>('/api/stats/ads-no-plays'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -318,6 +321,11 @@ export interface AuditPage {
 export interface HourlyCount { hour: number; count: number; }
 export interface CompletionRate { adId: number; adName: string; totalPlays: number; completedPlays: number; completionRate: number; }
 export interface PlaylistStat { playlistId: number; playlistName: string; tabletCount: number; totalPlays: number; }
+export interface AdNoPlays {
+  id: number; name: string; type: 'video' | 'image'; durationS: number; createdAt: string;
+  campaign: { id: number; name: string; active: boolean };
+}
+
 export interface Notifications {
   total: number; pendingAds: number;
   expiringCampaigns: { id: number; name: string; daysLeft: number }[];
