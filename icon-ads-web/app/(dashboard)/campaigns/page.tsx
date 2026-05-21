@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, Campaign, Client } from '@/lib/api';
+import { api, Campaign, Client, CampaignTemplate, Favorite } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 const PAGE_SIZE = 10;
@@ -62,11 +62,20 @@ export default function CampaignsPage() {
   const [transferTarget, setTransferTarget] = useState<Campaign | null>(null);
   const [transferClientId, setTransferClientId] = useState('');
   const [transferring, setTransferring] = useState(false);
+  const [templates, setTemplates] = useState<CampaignTemplate[]>([]);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
+  const [templateSaveName, setTemplateSaveName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const load = async () => {
-    const [campaignsRes, clientsRes] = await Promise.allSettled([api.getCampaigns(), api.getClients()]);
+    const [campaignsRes, clientsRes, templatesRes, favsRes] = await Promise.allSettled([
+      api.getCampaigns(), api.getClients(), api.getTemplates(), api.getFavorites('campaign'),
+    ]);
     if (campaignsRes.status === 'fulfilled') setCampaigns(campaignsRes.value);
     if (clientsRes.status === 'fulfilled') setClients(clientsRes.value);
+    if (templatesRes.status === 'fulfilled') setTemplates(templatesRes.value);
+    if (favsRes.status === 'fulfilled') setFavorites(favsRes.value);
     setLoading(false);
   };
 
@@ -85,6 +94,7 @@ export default function CampaignsPage() {
     setEditing(null);
     setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '' });
     setError('');
+    setShowTemplateSave(false);
     setShowModal(true);
   };
   const openEdit = (c: Campaign) => {
@@ -155,6 +165,38 @@ export default function CampaignsPage() {
     }
   };
 
+  // #31 — save current form as campaign template
+  const handleSaveTemplate = async () => {
+    if (!templateSaveName.trim()) return;
+    setSavingTemplate(true);
+    try {
+      await api.createTemplate({
+        name: templateSaveName.trim(),
+        cpm: form.cpm ? Number(form.cpm) : null,
+        maxImpressions: form.maxImpressions ? Number(form.maxImpressions) : null,
+        budget: form.budget ? Number(form.budget) : null,
+        targetImpressions: form.targetImpressions ? Number(form.targetImpressions) : null,
+        observations: form.observations || null,
+      });
+      setTemplates(await api.getTemplates());
+      setShowTemplateSave(false);
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  // #44 — toggle campaign favorite
+  const handleToggleFavorite = async (c: Campaign) => {
+    const existing = favorites.find((f) => f.entityId === c.id);
+    if (existing) {
+      await api.removeFavorite(existing.id).catch(() => {});
+      setFavorites((prev) => prev.filter((f) => f.id !== existing.id));
+    } else {
+      const fav = await api.addFavorite('campaign', c.id);
+      setFavorites((prev) => [...prev, fav]);
+    }
+  };
+
   // #15 — pause/resume toggle
   const handleToggle = async (c: Campaign) => {
     setTogglingId(c.id);
@@ -165,6 +207,8 @@ export default function CampaignsPage() {
       setTogglingId(null);
     }
   };
+
+  const favSet = new Set(favorites.filter((f) => f.entityType === 'campaign').map((f) => f.entityId));
 
   return (
     <div>
@@ -267,6 +311,14 @@ export default function CampaignsPage() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex gap-2 justify-end items-center">
+                        {/* #44 — favorite star */}
+                        <button
+                          onClick={() => handleToggleFavorite(c)}
+                          className={`text-base leading-none ${favSet.has(c.id) ? 'text-amber-400' : 'text-gray-300 dark:text-gray-600 hover:text-amber-300'}`}
+                          title={favSet.has(c.id) ? 'Quitar de favoritos' : 'Favorito'}
+                        >
+                          {favSet.has(c.id) ? '★' : '☆'}
+                        </button>
                         <button
                           onClick={() => handleToggle(c)}
                           disabled={togglingId === c.id}
@@ -326,6 +378,25 @@ export default function CampaignsPage() {
       {showModal && (
         <Modal title={editing ? 'Editar campaña' : 'Nueva campaña'} onClose={() => setShowModal(false)}>
           <div className="space-y-4">
+            {/* #31 — template picker (create mode only) */}
+            {!editing && templates.length > 0 && (
+              <Field label="Cargar plantilla (opcional)">
+                <select className="input" defaultValue="" onChange={(e) => {
+                  const tpl = templates.find((t) => t.id === Number(e.target.value));
+                  if (tpl) setForm((prev) => ({
+                    ...prev,
+                    cpm: tpl.cpm?.toString() ?? '',
+                    maxImpressions: tpl.maxImpressions?.toString() ?? '',
+                    budget: tpl.budget?.toString() ?? '',
+                    targetImpressions: tpl.targetImpressions?.toString() ?? '',
+                    observations: tpl.observations ?? '',
+                  }));
+                }}>
+                  <option value="">Sin plantilla</option>
+                  {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </Field>
+            )}
             <Field label="Cliente">
               <select className="input" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
                 <option value="">Seleccionar cliente</option>
@@ -356,6 +427,27 @@ export default function CampaignsPage() {
               <textarea className="input" rows={2} value={form.observations} onChange={(e) => setForm({ ...form, observations: e.target.value })} placeholder="Notas sobre la campaña, requisitos del cliente, etc." style={{ resize: 'vertical' }} />
             </Field>
             {error && <p className="text-red-600 text-sm">{error}</p>}
+            {/* #31 — save as template */}
+            <div className="pt-1">
+              {!showTemplateSave ? (
+                <button onClick={() => { setShowTemplateSave(true); setTemplateSaveName(form.name || 'Plantilla'); }} className="text-xs text-violet-600 hover:underline">
+                  + Guardar como plantilla
+                </button>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <input
+                    className="input flex-1 text-sm"
+                    placeholder="Nombre de la plantilla"
+                    value={templateSaveName}
+                    onChange={(e) => setTemplateSaveName(e.target.value)}
+                  />
+                  <button onClick={handleSaveTemplate} disabled={savingTemplate} className="text-xs bg-violet-600 text-white px-3 py-1.5 rounded-lg disabled:bg-violet-400">
+                    {savingTemplate ? '...' : 'Guardar'}
+                  </button>
+                  <button onClick={() => setShowTemplateSave(false)} className="text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                </div>
+              )}
+            </div>
             <div className="flex gap-2 pt-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
                 {saving ? 'Guardando...' : 'Guardar'}

@@ -257,6 +257,23 @@ export const api = {
     request<AdminNote>('/api/notes', { method: 'POST', body: JSON.stringify({ body }) }),
   deleteNote: (id: number) =>
     request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
+
+  // Campaign templates (#31)
+  getTemplates: () => request<CampaignTemplate[]>('/api/templates'),
+  createTemplate: (data: { name: string; cpm?: number | null; maxImpressions?: number | null; budget?: number | null; targetImpressions?: number | null; observations?: string | null }) =>
+    request<CampaignTemplate>('/api/templates', { method: 'POST', body: JSON.stringify(data) }),
+  deleteTemplate: (id: number) =>
+    request<void>(`/api/templates/${id}`, { method: 'DELETE' }),
+
+  // Favorites (#44)
+  getFavorites: (type?: string) => request<Favorite[]>(`/api/favorites${type ? `?type=${type}` : ''}`),
+  addFavorite: (entityType: string, entityId: number) =>
+    request<Favorite>('/api/favorites', { method: 'POST', body: JSON.stringify({ entityType, entityId }) }),
+  removeFavorite: (id: number) =>
+    request<void>(`/api/favorites/${id}`, { method: 'DELETE' }),
+
+  // Endpoint latency (#43)
+  getLatency: () => request<LatencySummary>('/api/stats/latency'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -421,6 +438,23 @@ export interface MetricsPage {
 
 export interface AdminNote {
   id: number; body: string; authorName: string; createdAt: string;
+}
+
+export interface CampaignTemplate {
+  id: number; name: string;
+  cpm: number | null; maxImpressions: number | null;
+  budget: number | null; targetImpressions: number | null;
+  observations: string | null; createdAt: string;
+}
+
+export interface Favorite {
+  id: number; entityType: string; entityId: number; createdAt: string;
+}
+
+export interface LatencySummary {
+  count: number; avg: number; p95: number;
+  slow: { method: string; path: string; ms: number; status: number; ts: string }[];
+  recent: { method: string; path: string; ms: number; status: number; ts: string }[];
 }
 
 export { BASE };

@@ -52,6 +52,9 @@ const MIGRATIONS = [
   { name: 'ads.tags',                  sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'` },
   // v8 — shared admin notes (#36)
   { name: 'admin_notes',               sql: `CREATE TABLE IF NOT EXISTS admin_notes (id SERIAL PRIMARY KEY, body TEXT NOT NULL, author_name TEXT NOT NULL DEFAULT 'Admin', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v9 — campaign templates (#31) + favorites (#44)
+  { name: 'campaign_templates',        sql: `CREATE TABLE IF NOT EXISTS campaign_templates (id SERIAL PRIMARY KEY, name TEXT NOT NULL, cpm FLOAT, max_impressions INT, budget FLOAT, target_impressions INT, observations TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'favorites',                 sql: `CREATE TABLE IF NOT EXISTS favorites (id SERIAL PRIMARY KEY, entity_type TEXT NOT NULL, entity_id INT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(entity_type, entity_id))` },
 ];
 
 async function runStartupMigrations() {

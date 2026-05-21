@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const latencyTracker = require('../lib/latencyTracker');
 
 router.use(requireAuth);
 
@@ -395,6 +396,11 @@ router.get('/sync-intervals', async (req, res, next) => {
       avgMinutes: r.avgMinutes !== null ? Number(r.avgMinutes) : null,
     })));
   } catch (err) { next(err); }
+});
+
+// GET /api/stats/latency — in-memory endpoint latency summary (#43)
+router.get('/latency', (req, res) => {
+  res.json(latencyTracker.getSummary());
 });
 
 // GET /api/stats/by-zone — tablets and plays grouped by zone (#35)

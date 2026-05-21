@@ -287,3 +287,26 @@ model AdminNote {
 
   @@map("admin_notes")
 }
+
+model CampaignTemplate {
+  id                Int      @id @default(autoincrement())
+  name              String
+  cpm               Float?
+  maxImpressions    Int?     @map("max_impressions")
+  budget            Float?
+  targetImpressions Int?     @map("target_impressions")
+  observations      String?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("campaign_templates")
+}
+
+model Favorite {
+  id         Int      @id @default(autoincrement())
+  entityType String   @map("entity_type")
+  entityId   Int      @map("entity_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([entityType, entityId])
+  @@map("favorites")
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, SystemLogEntry, AuditPage, MetricsPage, BASE } from '@/lib/api';
+import { api, SystemLogEntry, AuditPage, MetricsPage, LatencySummary, BASE } from '@/lib/api';
 
 const ACTION_COLORS: Record<string, string> = {
   CREATE: 'bg-emerald-100 text-emerald-700',
@@ -26,12 +26,13 @@ function badge(action: string) {
 }
 
 export default function LogsPage() {
-  const [tab, setTab] = useState<'live' | 'audit' | 'metrics'>('live');
+  const [tab, setTab] = useState<'live' | 'audit' | 'metrics' | 'latency'>('live');
   const [live, setLive] = useState<SystemLogEntry[]>([]);
   const [audit, setAudit] = useState<AuditPage | null>(null);
   const [auditPage, setAuditPage] = useState(1);
   const [metricsData, setMetricsData] = useState<MetricsPage | null>(null);
   const [metricsPage, setMetricsPage] = useState(1);
+  const [latency, setLatency] = useState<LatencySummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,8 +41,10 @@ export default function LogsPage() {
       api.getLogs().then(setLive).finally(() => setLoading(false));
     } else if (tab === 'audit') {
       api.getAuditLogs(auditPage).then(setAudit).finally(() => setLoading(false));
-    } else {
+    } else if (tab === 'metrics') {
       api.getMetricsPaged(metricsPage).then(setMetricsData).finally(() => setLoading(false));
+    } else {
+      api.getLatency().then(setLatency).finally(() => setLoading(false));
     }
   }, [tab, auditPage, metricsPage]);
 
@@ -51,7 +54,7 @@ export default function LogsPage() {
 
       <div className="flex items-center justify-between mb-6">
         <div className="flex rounded-lg border overflow-hidden w-fit" style={{ borderColor: 'var(--border-md)' }}>
-          {([['live', '⚡ Eventos recientes'], ['audit', '📋 Auditoría completa'], ['metrics', '📊 Reproducciones']] as const).map(([t, label]) => (
+          {([['live', '⚡ Eventos recientes'], ['audit', '📋 Auditoría completa'], ['metrics', '📊 Reproducciones'], ['latency', '⏱ Latencia']] as const).map(([t, label]) => (
             <button
               key={t}
               onClick={() => { setTab(t); setAuditPage(1); setMetricsPage(1); }}
@@ -153,7 +156,7 @@ export default function LogsPage() {
             )}
           </>
         )
-      ) : (
+      ) : tab === 'metrics' ? (
         metricsData && (
           <>
             <div className="card overflow-hidden">
@@ -208,6 +211,71 @@ export default function LogsPage() {
                 </div>
               </div>
             )}
+          </>
+        )
+      ) : (
+        latency && (
+          <>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              {[
+                { label: 'Peticiones registradas', value: latency.count },
+                { label: 'Promedio (ms)', value: latency.avg },
+                { label: 'P95 (ms)', value: latency.p95 },
+              ].map((s) => (
+                <div key={s.label} className="card p-4">
+                  <p className="text-2xl font-bold tabular-nums">{s.value}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {latency.slow.length > 0 && (
+              <div className="card overflow-hidden mb-4">
+                <div className="px-5 py-3 border-b text-xs font-semibold" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+                  PETICIONES LENTAS (&gt;1s)
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {latency.slow.map((r, i) => (
+                      <tr key={i} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                        <td className="px-5 py-2 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{r.method}</td>
+                        <td className="px-5 py-2 text-xs">{r.path}</td>
+                        <td className="px-5 py-2 text-xs text-right">
+                          <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">{r.ms}ms</span>
+                        </td>
+                        <td className="px-5 py-2 text-xs text-right" style={{ color: 'var(--text-xs)' }}>
+                          {new Date(r.ts).toLocaleString('es-AR')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="card overflow-hidden">
+              <div className="px-5 py-3 border-b text-xs font-semibold" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+                ÚLTIMAS 20 PETICIONES
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {latency.recent.map((r, i) => (
+                    <tr key={i} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                      <td className="px-5 py-2 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{r.method}</td>
+                      <td className="px-5 py-2 text-xs">{r.path}</td>
+                      <td className="px-5 py-2 text-xs text-right">
+                        <span className={`px-2 py-0.5 rounded font-medium ${r.ms > 1000 ? 'bg-red-100 text-red-700' : r.ms > 300 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {r.ms}ms
+                        </span>
+                      </td>
+                      <td className="px-5 py-2 text-xs text-right" style={{ color: 'var(--text-xs)' }}>
+                        {new Date(r.ts).toLocaleString('es-AR')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )
       )}

@@ -21,6 +21,9 @@ const notificationRoutes = require('./routes/notifications');
 const settingsRoutes = require('./routes/settings');
 const dashboardRoutes = require('./routes/dashboard');
 const notesRoutes = require('./routes/notes');
+const templatesRoutes = require('./routes/templates');
+const favoritesRoutes = require('./routes/favorites');
+const latencyTracker = require('./lib/latencyTracker');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
@@ -46,6 +49,14 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
   skip: (req) => req.path === '/api/health',
 }));
 app.use(compression());
+
+// Endpoint latency tracker (#43)
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
+  const start = Date.now();
+  res.on('finish', () => latencyTracker.record(req.method, req.path, Date.now() - start, res.statusCode));
+  next();
+});
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -122,6 +133,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notes', notesRoutes);
+app.use('/api/templates', templatesRoutes);
+app.use('/api/favorites', favoritesRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
