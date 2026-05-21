@@ -18,6 +18,9 @@ export default function ClientsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null); // #9
   const [search, setSearch] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('clients_filter_search') ?? '') : '');  // #6 + #14
   const [page, setPage] = useState(1);       // #8
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() =>
+    typeof window !== 'undefined' ? ((localStorage.getItem('clients_view') as 'table' | 'cards') ?? 'table') : 'table'
+  );
 
   const load = () => api.getClients().then(setClients).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
@@ -73,9 +76,22 @@ export default function ClientsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Clientes</h1>
-        <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nuevo cliente
-        </button>
+        <div className="flex items-center gap-2">
+          {/* #34 — view toggle */}
+          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
+            {(['table', 'cards'] as const).map((m) => (
+              <button key={m} onClick={() => { setViewMode(m); localStorage.setItem('clients_view', m); }}
+                className={`px-2.5 py-1.5 text-sm border-r last:border-0 ${viewMode === m ? 'bg-blue-600 text-white' : ''}`}
+                style={{ borderColor: 'var(--border-md)', color: viewMode === m ? 'white' : 'var(--text-muted)' }}
+                title={m === 'table' ? 'Vista tabla' : 'Vista tarjetas'}>
+                {m === 'table' ? '≡' : '⊞'}
+              </button>
+            ))}
+          </div>
+          <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            + Nuevo cliente
+          </button>
+        </div>
       </div>
 
       {/* #6 — search */}
@@ -92,6 +108,38 @@ export default function ClientsPage() {
         <p className="text-gray-500">Cargando...</p>
       ) : filtered.length === 0 ? (
         <p className="text-gray-500">{search ? 'Sin resultados.' : 'No hay clientes.'}</p>
+      ) : viewMode === 'cards' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paged.map((c) => (
+            <div key={c.id} className="card p-5">
+              <div className="flex items-start gap-3 mb-3">
+                {c.color ? (
+                  <div className="w-10 h-10 rounded-lg shrink-0 border border-black/10" style={{ background: c.color }} />
+                ) : (
+                  <div className="w-10 h-10 rounded-lg shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg font-bold" style={{ color: 'var(--text-muted)' }}>
+                    {c.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <Link href={`/clients/${c.id}`} className="font-semibold text-sm text-blue-600 hover:underline truncate block">{c.name}</Link>
+                  <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.company ?? c.email}</p>
+                </div>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${c.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>
+                  {c.active ? 'Activo' : 'Inactivo'}
+                </span>
+              </div>
+              <div className="space-y-1 text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                {c.phone && <p>{c.phone}</p>}
+                {c.contactName && <p>{c.contactName}{c.contactPhone ? ` · ${c.contactPhone}` : ''}</p>}
+              </div>
+              <div className="flex gap-3 text-xs border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline">Editar</button>
+                <Link href={`/clients/${c.id}`} className="text-violet-600 hover:underline">Perfil</Link>
+                <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline ml-auto">Desactivar</button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">

@@ -17,7 +17,15 @@ export default function DashboardPage() {
   const [recentActivity, setRecentActivity] = useState<AuditPage['logs']>([]);
   const [trend30d, setTrend30d] = useState<RangeStats['dailyPlays']>([]);
   const [serverLatencyMs, setServerLatencyMs] = useState<number | null>(null);
+  const [weather, setWeather] = useState<{ temp: number; code: number } | null>(null);
   const isMonday = new Date().getDay() === 1;
+
+  useEffect(() => {
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=-34.9011&longitude=-56.1645&current=temperature_2m,weather_code&timezone=America/Montevideo')
+      .then((r) => r.json())
+      .then((d) => setWeather({ temp: Math.round(d.current.temperature_2m), code: d.current.weather_code }))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const t0 = Date.now();
@@ -87,12 +95,20 @@ export default function DashboardPage() {
             </span>
           )}
         </div>
-        <a
-          href={api.getMetricsCsvUrl()}
-          className="text-sm text-blue-600 border border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950 px-3 py-1.5 rounded-lg font-medium"
-        >
-          Exportar CSV
-        </a>
+        <div className="flex items-center gap-3">
+          {/* #45 — Weather widget (Open-Meteo, Montevideo) */}
+          {weather && (
+            <span className="text-sm font-medium flex items-center gap-1 px-2 py-1 rounded-lg" style={{ color: 'var(--text-muted)', background: 'var(--bg)' }}>
+              {weatherIcon(weather.code)} {weather.temp}°C MVD
+            </span>
+          )}
+          <a
+            href={api.getMetricsCsvUrl()}
+            className="text-sm text-blue-600 border border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950 px-3 py-1.5 rounded-lg font-medium"
+          >
+            Exportar CSV
+          </a>
+        </div>
       </div>
 
       {/* #4 — Monday weekly summary card */}
@@ -145,19 +161,39 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* #16 — Expiring campaign alerts */}
-      {stats.expiringCampaigns.length > 0 && (
-        <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800">
-          <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-2">
-            ⏰ Campañas que vencen pronto
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {stats.expiringCampaigns.map((c) => (
-              <span key={c.id} className={`text-xs px-2 py-1 rounded-full font-medium ${
-                c.daysLeft <= 3 ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300'
-              }`}>
-                {c.name} · {c.daysLeft}d
-              </span>
+      {/* #8 — Próximas a vencer (7 días) — alert cards */}
+      {stats.expiringCampaigns.filter((c) => c.daysLeft <= 7).length > 0 && (
+        <div className="mb-6">
+          <h2 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+            <span>⏰</span>
+            <span>Próximas a vencer</span>
+            <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+              {stats.expiringCampaigns.filter((c) => c.daysLeft <= 7).length} en los próximos 7 días
+            </span>
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {stats.expiringCampaigns.filter((c) => c.daysLeft <= 7).map((c) => (
+              <Link
+                key={c.id}
+                href="/campaigns"
+                className="card p-4 border-l-4 hover:shadow-md transition-shadow"
+                style={{ borderLeftColor: c.daysLeft <= 2 ? '#ef4444' : c.daysLeft <= 5 ? '#f59e0b' : '#eab308' }}
+              >
+                <div className="flex items-start justify-between mb-1">
+                  <p className="font-semibold text-sm leading-tight flex-1 mr-2">{c.name}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                    c.daysLeft <= 2 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
+                    c.daysLeft <= 5 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' :
+                    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+                  }`}>
+                    {c.daysLeft === 0 ? '¡Hoy!' : `${c.daysLeft}d`}
+                  </span>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.clientName}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-xs)' }}>
+                  Vence: {new Date(c.endDate).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </p>
+              </Link>
             ))}
           </div>
         </div>
@@ -287,6 +323,16 @@ export default function DashboardPage() {
       )}
     </div>
   );
+}
+
+function weatherIcon(code: number) {
+  if (code === 0) return '☀';
+  if (code <= 3) return '⛅';
+  if (code <= 48) return '🌫';
+  if (code <= 67) return '🌧';
+  if (code <= 77) return '❄';
+  if (code <= 82) return '🌦';
+  return '⛈';
 }
 
 function TrendChart({ data }: { data: { date: string; count: number }[] }) {

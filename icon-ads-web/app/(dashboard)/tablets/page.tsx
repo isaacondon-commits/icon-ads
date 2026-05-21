@@ -31,6 +31,9 @@ export default function TabletsPage() {
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() =>
+    typeof window !== 'undefined' ? ((localStorage.getItem('tablets_view') as 'table' | 'cards') ?? 'table') : 'table'
+  );
 
   const load = () =>
     Promise.all([api.getTablets(), api.getPlaylists()])
@@ -149,7 +152,18 @@ export default function TabletsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Tablets</h1>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {/* #34 — view toggle */}
+          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
+            {(['table', 'cards'] as const).map((m) => (
+              <button key={m} onClick={() => { setViewMode(m); localStorage.setItem('tablets_view', m); }}
+                className={`px-2.5 py-1.5 text-sm border-r last:border-0 ${viewMode === m ? 'bg-blue-600 text-white' : ''}`}
+                style={{ borderColor: 'var(--border-md)', color: viewMode === m ? 'white' : 'var(--text-muted)' }}
+                title={m === 'table' ? 'Vista tabla' : 'Vista tarjetas'}>
+                {m === 'table' ? '≡' : '⊞'}
+              </button>
+            ))}
+          </div>
           <button onClick={exportCSV} className="border px-3 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}
             title="Exportar a CSV">
             ↓ CSV
@@ -177,6 +191,45 @@ export default function TabletsPage() {
         <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}</div>
       ) : filtered.length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>{search || statusFilter !== 'all' ? 'Sin resultados.' : 'No hay tablets registradas.'}</p>
+      ) : viewMode === 'cards' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paged.map((t) => {
+            const lastMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
+            const isOnline = lastMs && (now - lastMs) < 10 * 60000;
+            return (
+              <div key={t.id} className="card p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-emerald-400' : 'bg-gray-400'}`} />
+                      <Link href={`/tablets/${t.id}`} className="font-semibold text-sm text-blue-600 hover:underline truncate">{t.name}</Link>
+                    </div>
+                    {t.zone && <p className="text-xs ml-4.5" style={{ color: 'var(--text-muted)' }}>{t.zone}</p>}
+                  </div>
+                  {t.batteryLevel != null && (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${t.batteryLevel <= 20 ? 'bg-red-100 text-red-600' : t.batteryLevel <= 50 ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      {t.batteryLevel}%
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex justify-between">
+                    <span>Playlist</span><span className="font-medium">{t.playlist?.name ?? '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Último sync</span><span>{t.lastSync ? new Date(t.lastSync).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Nunca'}</span>
+                  </div>
+                  {t.appVersion && <div className="flex justify-between"><span>APK</span><span className="font-mono">{t.appVersion}</span></div>}
+                </div>
+                <div className="flex gap-3 text-xs border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                  <button onClick={() => handleForceSync(t.id)} disabled={forcingSync === t.id} className="text-violet-600 hover:underline disabled:opacity-40">{forcingSync === t.id ? '...' : 'Sync'}</button>
+                  <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline">Editar</button>
+                  <button onClick={() => setDeleteTarget(t)} className="text-red-500 hover:underline ml-auto">✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="w-full text-sm">

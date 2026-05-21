@@ -7,6 +7,14 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 const PAGE_SIZE = 10;
 const DEFAULT_CPM = 5;
 
+function calendarUrl(c: Campaign) {
+  const fmt = (d: string) => new Date(d).toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+  const title = encodeURIComponent(`ICON ADS — ${c.name}`);
+  const dates = `${fmt(c.startDate)}/${fmt(c.endDate)}`;
+  const details = encodeURIComponent(`Campaña publicitaria ICON ADS${c.client ? ` | Cliente: ${c.client.name}` : ''}`);
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}`;
+}
+
 function daysLeft(endDate: string) {
   return Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000);
 }
@@ -67,6 +75,9 @@ export default function CampaignsPage() {
   const [showTemplateSave, setShowTemplateSave] = useState(false);
   const [templateSaveName, setTemplateSaveName] = useState('');
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(() =>
+    typeof window !== 'undefined' ? ((localStorage.getItem('campaigns_view') as 'table' | 'cards') ?? 'table') : 'table'
+  );
 
   const load = async () => {
     const [campaignsRes, clientsRes, templatesRes, favsRes] = await Promise.allSettled([
@@ -214,9 +225,22 @@ export default function CampaignsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Campañas</h1>
-        <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nueva campaña
-        </button>
+        <div className="flex items-center gap-2">
+          {/* #34 — view toggle */}
+          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
+            {(['table', 'cards'] as const).map((m) => (
+              <button key={m} onClick={() => { setViewMode(m); localStorage.setItem('campaigns_view', m); }}
+                className={`px-2.5 py-1.5 text-sm border-r last:border-0 ${viewMode === m ? 'bg-blue-600 text-white' : ''}`}
+                style={{ borderColor: 'var(--border-md)', color: viewMode === m ? 'white' : 'var(--text-muted)' }}
+                title={m === 'table' ? 'Vista tabla' : 'Vista tarjetas'}>
+                {m === 'table' ? '≡' : '⊞'}
+              </button>
+            ))}
+          </div>
+          <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+            + Nueva campaña
+          </button>
+        </div>
       </div>
 
       <div className="mb-4">
@@ -232,6 +256,43 @@ export default function CampaignsPage() {
         <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : filtered.length === 0 ? (
         <p style={{ color: 'var(--text-muted)' }}>{search ? 'Sin resultados.' : 'No hay campañas.'}</p>
+      ) : viewMode === 'cards' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paged.map((c) => {
+            const plays = c._count?.metrics ?? 0;
+            const effectiveCpm = c.cpm ?? DEFAULT_CPM;
+            const roi = ((plays / 1000) * effectiveCpm).toFixed(2);
+            const isFav = favSet.has(c.id);
+            return (
+              <div key={c.id} className="card p-5">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0 mr-2">
+                    <p className="font-semibold text-sm leading-tight truncate">{c.name}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.client?.name ?? '—'}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button onClick={() => handleToggleFavorite(c)} className={`text-base leading-none ${isFav ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'}`}>{isFav ? '★' : '☆'}</button>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>{c.active ? 'Activa' : 'Pausada'}</span>
+                  </div>
+                </div>
+                <div className="mb-2"><Timeline start={c.startDate} end={c.endDate} /></div>
+                <div className="flex items-center justify-between text-xs mb-3">
+                  <DaysLeftBadge endDate={c.endDate} active={c.active} />
+                  <span className="font-mono" style={{ color: 'var(--text-muted)' }}>${roi}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                  <button onClick={() => handleToggle(c)} disabled={togglingId === c.id} className={`hover:underline disabled:opacity-40 ${c.active ? 'text-amber-600' : 'text-emerald-600'}`}>{togglingId === c.id ? '...' : c.active ? 'Pausar' : 'Reanudar'}</button>
+                  <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline">Editar</button>
+                  <button onClick={() => handleClone(c)} disabled={cloningId === c.id} className="text-violet-600 hover:underline disabled:opacity-40">{cloningId === c.id ? '...' : 'Clonar'}</button>
+                  <a href={calendarUrl(c)} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline" title="Agregar al Google Calendar">Cal.</a>
+                  <a href={api.getCertificateUrl(c.id)} className="text-violet-600 hover:underline">Cert.</a>
+                  <a href={api.getContractUrl(c.id)} className="text-emerald-600 hover:underline">Contrato</a>
+                  <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline">Eliminar</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="w-full text-sm">
@@ -344,6 +405,8 @@ export default function CampaignsPage() {
                           Transferir
                         </button>
                         <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
+                        {/* #60 — Google Calendar link */}
+                        <a href={calendarUrl(c)} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline text-xs" title="Agregar al Google Calendar">Cal.</a>
                         {/* #51 #56 — PDF docs */}
                         <a href={api.getCertificateUrl(c.id)} className="text-violet-600 hover:underline text-xs" title="Certificado de reproducciones PDF">Cert.</a>
                         <a href={api.getContractUrl(c.id)} className="text-emerald-600 hover:underline text-xs" title="Contrato digital PDF">Contrato</a>
