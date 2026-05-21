@@ -33,7 +33,6 @@ import com.iconads.player.data.api.NetworkModule
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.iconads.player.data.model.Ad
 import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.model.SurveyAnswerRequest
