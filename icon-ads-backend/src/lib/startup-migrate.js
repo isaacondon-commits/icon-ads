@@ -44,6 +44,10 @@ const MIGRATIONS = [
   { name: 'clients.contact_name',      sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_name TEXT` },
   { name: 'clients.contact_phone',     sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_phone TEXT` },
   { name: 'tablets.last_ip',           sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_ip TEXT` },
+  // v6 — tablet OS/model indicator (#2), campaign goals (#33)
+  { name: 'tablets.os_version',        sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS os_version TEXT` },
+  { name: 'tablets.device_model',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS device_model TEXT` },
+  { name: 'campaigns.target_impressions', sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_impressions INT` },
 ];
 
 async function runStartupMigrations() {

@@ -51,11 +51,12 @@ model Campaign {
   startDate DateTime  @map("start_date")
   endDate   DateTime  @map("end_date")
   active    Boolean   @default(true)
-  cpm            Float?
-  maxImpressions Int?      @map("max_impressions")
-  budget         Float?
-  observations   String?
-  deletedAt      DateTime? @map("deleted_at")
+  cpm                Float?
+  maxImpressions     Int?      @map("max_impressions")
+  budget             Float?
+  observations       String?
+  targetImpressions  Int?      @map("target_impressions")
+  deletedAt          DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   ads       Ad[]
@@ -173,6 +174,8 @@ model Tablet {
   temperatureC      Float?       @map("temperature_c")
   appVersion        String?      @map("app_version")
   lastIp            String?      @map("last_ip")
+  osVersion         String?      @map("os_version")
+  deviceModel       String?      @map("device_model")
   createdAt  DateTime     @default(now()) @map("created_at")
   updatedAt  DateTime     @updatedAt @map("updated_at")
   metrics    Metric[]

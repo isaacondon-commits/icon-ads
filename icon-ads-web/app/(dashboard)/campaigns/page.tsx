@@ -51,7 +51,7 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
-  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '' });
+  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
@@ -80,13 +80,13 @@ export default function CampaignsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '' });
+    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '' });
     setError('');
     setShowModal(true);
   };
   const openEdit = (c: Campaign) => {
     setEditing(c);
-    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate), cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '', budget: c.budget?.toString() ?? '', observations: c.observations ?? '' });
+    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate), cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '', budget: c.budget?.toString() ?? '', observations: c.observations ?? '', targetImpressions: c.targetImpressions?.toString() ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -104,6 +104,7 @@ export default function CampaignsPage() {
         maxImpressions: form.maxImpressions ? Number(form.maxImpressions) : null,
         budget: form.budget ? Number(form.budget) : null,
         observations: form.observations || null,
+        targetImpressions: form.targetImpressions ? Number(form.targetImpressions) : null,
       };
       editing ? await api.updateCampaign(editing.id, data) : await api.createCampaign(data);
       setShowModal(false);
@@ -205,7 +206,22 @@ export default function CampaignsPage() {
                     </td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                       <div className="font-mono">${roi}</div>
-                      {c.maxImpressions && (
+                      {/* #33 — goal progress */}
+                      {c.targetImpressions != null && c.targetImpressions > 0 && (() => {
+                        const pct = Math.min(100, Math.round((plays / c.targetImpressions) * 100));
+                        return (
+                          <div className="mt-1">
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <div className="w-12 h-1 rounded-full" style={{ background: 'var(--border-md)' }}>
+                                <div className={`h-1 rounded-full ${pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-blue-500' : 'bg-amber-400'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <span style={{ color: 'var(--text-xs)' }}>{pct}%</span>
+                            </div>
+                            <div style={{ color: 'var(--text-xs)' }}>{plays.toLocaleString()}/{c.targetImpressions.toLocaleString()} meta</div>
+                          </div>
+                        );
+                      })()}
+                      {c.maxImpressions && !c.targetImpressions && (
                         <div className="mt-0.5" style={{ color: 'var(--text-xs)' }}>
                           {plays.toLocaleString()}/{c.maxImpressions.toLocaleString()} imp.
                         </div>
@@ -302,6 +318,11 @@ export default function CampaignsPage() {
             {/* #7 — budget */}
             <Field label="Presupuesto total (USD, opcional)">
               <input type="number" step="1" min="0" className="input" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} placeholder="Sin límite de presupuesto" />
+            </Field>
+            {/* #33 — target impressions goal */}
+            <Field label="Meta de impresiones (opcional)">
+              <input type="number" step="1" min="1" className="input" value={form.targetImpressions} onChange={(e) => setForm({ ...form, targetImpressions: e.target.value })} placeholder="Ej: 10000" />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Objetivo informativo de reproducciones. No pausa la campaña.</p>
             </Field>
             {/* #3 — observations */}
             <Field label="Observaciones internas (opcional)">

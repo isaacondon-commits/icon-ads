@@ -80,6 +80,36 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/roi — campaigns ranked by estimated revenue (#15)
+router.get('/roi', async (req, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT c.id AS "campaignId", c.name AS "campaignName",
+             cl.name AS "clientName",
+             c.cpm, c.budget, c.target_impressions AS "targetImpressions",
+             COUNT(m.id)::int AS plays,
+             ROUND((COUNT(m.id)::float / 1000 * COALESCE(c.cpm, 5))::numeric, 2) AS "estimatedRevenue"
+      FROM campaigns c
+      LEFT JOIN metrics m ON m.campaign_id = c.id
+      LEFT JOIN clients cl ON cl.id = c.client_id
+      WHERE c.deleted_at IS NULL
+      GROUP BY c.id, c.name, cl.name, c.cpm, c.budget, c.target_impressions
+      ORDER BY "estimatedRevenue" DESC
+      LIMIT 20
+    `;
+    res.json(rows.map((r) => ({
+      campaignId: Number(r.campaignId),
+      campaignName: r.campaignName,
+      clientName: r.clientName ?? '—',
+      cpm: r.cpm !== null ? Number(r.cpm) : null,
+      budget: r.budget !== null ? Number(r.budget) : null,
+      targetImpressions: r.targetImpressions !== null ? Number(r.targetImpressions) : null,
+      plays: Number(r.plays),
+      estimatedRevenue: Number(r.estimatedRevenue),
+    })));
+  } catch (err) { next(err); }
+});
+
 // GET /api/stats/weekly — week-over-week for last N weeks (#20)
 router.get('/weekly', async (req, res, next) => {
   try {

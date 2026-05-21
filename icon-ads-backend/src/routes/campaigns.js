@@ -16,6 +16,7 @@ const campaignSchema = z.object({
   maxImpressions: z.number().int().positive().nullable().optional(),
   budget: z.number().positive().nullable().optional(),
   observations: z.string().nullable().optional(),
+  targetImpressions: z.number().int().positive().nullable().optional(),
 });
 
 // GET /archived — soft-deleted campaigns (#5)
@@ -53,9 +54,9 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { clientId, name, startDate, endDate, cpm, maxImpressions, budget, observations } = campaignSchema.parse(req.body);
+    const { clientId, name, startDate, endDate, cpm, maxImpressions, budget, observations, targetImpressions } = campaignSchema.parse(req.body);
     const campaign = await prisma.campaign.create({
-      data: { clientId, name, startDate: new Date(startDate), endDate: new Date(endDate), cpm: cpm ?? null, maxImpressions: maxImpressions ?? null, budget: budget ?? null, observations: observations ?? null },
+      data: { clientId, name, startDate: new Date(startDate), endDate: new Date(endDate), cpm: cpm ?? null, maxImpressions: maxImpressions ?? null, budget: budget ?? null, observations: observations ?? null, targetImpressions: targetImpressions ?? null },
       include: { client: { select: { id: true, name: true } } },
     });
     await audit(req, 'CREATE', 'campaign', campaign.id, `Created "${campaign.name}"`);
@@ -105,6 +106,7 @@ router.put('/:id', async (req, res, next) => {
     if (body.endDate) data.endDate = new Date(body.endDate);
     if ('budget' in body) data.budget = body.budget ?? null;
     if ('observations' in body) data.observations = body.observations ?? null;
+    if ('targetImpressions' in body) data.targetImpressions = body.targetImpressions ?? null;
     const campaign = await prisma.campaign.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
     await audit(req, 'UPDATE', 'campaign', campaign.id, `Updated "${campaign.name}"`);
     res.json(campaign);

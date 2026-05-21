@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -19,6 +19,7 @@ export default function StatsPage() {
   const [adsNoPlays, setAdsNoPlays] = useState<AdNoPlays[]>([]);
   const [zoneStats, setZoneStats] = useState<ZoneStat[]>([]);
   const [syncIntervals, setSyncIntervals] = useState<SyncInterval[]>([]);
+  const [roiStats, setRoiStats] = useState<RoiEntry[]>([]);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -31,6 +32,7 @@ export default function StatsPage() {
     api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
     api.getZoneStats().then(setZoneStats).catch(() => {});
     api.getSyncIntervals().then(setSyncIntervals).catch(() => {});
+    api.getRoiStats().then(setRoiStats).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -434,6 +436,57 @@ export default function StatsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* #15 — ROI / rentabilidad por campaña */}
+      {roiStats.length > 0 && (
+        <div className="card p-6 mt-6">
+          <h2 className="font-semibold mb-4">Rentabilidad estimada por campaña (top 20)</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                  <th className="text-left pb-2 w-6">#</th>
+                  <th className="text-left pb-2">Campaña</th>
+                  <th className="text-left pb-2">Cliente</th>
+                  <th className="text-right pb-2">CPM</th>
+                  <th className="text-right pb-2">Reprod.</th>
+                  <th className="text-right pb-2">Ingreso est.</th>
+                  <th className="text-right pb-2">vs Presupuesto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roiStats.map((r, i) => {
+                  const budgetPct = r.budget && r.budget > 0 ? Math.min(100, Math.round((r.estimatedRevenue / r.budget) * 100)) : null;
+                  return (
+                    <tr key={r.campaignId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                      <td className="py-2.5 pr-2 font-bold text-xs" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
+                      <td className="py-2.5 font-medium max-w-[160px] truncate">{r.campaignName}</td>
+                      <td className="py-2.5 max-w-[120px] truncate" style={{ color: 'var(--text-muted)' }}>{r.clientName}</td>
+                      <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                        {r.cpm != null ? `$${r.cpm}` : '—'}
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{r.plays.toLocaleString()}</td>
+                      <td className="py-2.5 text-right font-medium tabular-nums text-emerald-600">${r.estimatedRevenue.toFixed(2)}</td>
+                      <td className="py-2.5 text-right">
+                        {budgetPct != null ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-12 h-1.5 rounded-full" style={{ background: 'var(--border-md)' }}>
+                              <div className={`h-1.5 rounded-full ${budgetPct >= 90 ? 'bg-red-500' : budgetPct >= 60 ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${budgetPct}%` }} />
+                            </div>
+                            <span className="text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>{budgetPct}%</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

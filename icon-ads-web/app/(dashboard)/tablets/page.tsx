@@ -137,7 +137,7 @@ export default function TabletsPage() {
   };
 
   const exportCSV = () => {
-    window.open(`${BASE}/api/admin/export/tablets`, '_blank');
+    window.open(api.getTabletsCsvUrl(), '_blank');
   };
 
   const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [

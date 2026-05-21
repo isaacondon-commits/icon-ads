@@ -231,6 +231,12 @@ export const api = {
 
   // Sync intervals (#14)
   getSyncIntervals: () => request<SyncInterval[]>('/api/stats/sync-intervals'),
+
+  // Tablets CSV export (#24)
+  getTabletsCsvUrl: () => `${BASE}/api/tablets/export`,
+
+  // ROI report (#15)
+  getRoiStats: () => request<RoiEntry[]>('/api/stats/roi'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -247,7 +253,7 @@ export interface Campaign {
   id: number; clientId: number; client?: { id: number; name: string };
   name: string; startDate: string; endDate: string; active: boolean;
   cpm?: number | null; maxImpressions?: number | null;
-  budget?: number | null; observations?: string | null;
+  budget?: number | null; observations?: string | null; targetImpressions?: number | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
   _count?: { metrics: number };
 }
@@ -283,6 +289,7 @@ export interface Tablet {
   notes?: string | null; maintenanceUntil?: string | null;
   driverName?: string | null; licensePlate?: string | null;
   spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null; lastIp?: string | null;
+  osVersion?: string | null; deviceModel?: string | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
@@ -374,6 +381,12 @@ export interface ArchivedAd extends Ad {
 export interface SyncInterval {
   tabletId: number; tabletName: string; zone: string | null;
   syncCount: number; avgMinutes: number | null;
+}
+
+export interface RoiEntry {
+  campaignId: number; campaignName: string; clientName: string;
+  cpm: number | null; budget: number | null; targetImpressions: number | null;
+  plays: number; estimatedRevenue: number;
 }
 
 export { BASE };

@@ -158,6 +158,38 @@ router.post('/', requireAdmin, async (req, res, next) => {
   }
 });
 
+// GET /export — CSV download of all tablets (#24)
+router.get('/export', async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({
+      include: { playlist: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    const now = Date.now();
+    const header = 'id,device_id,name,zone,playlist,status,last_sync,battery,app_version,os_version,device_model,created_at';
+    const rows = tablets.map((t) => {
+      const isOnline = t.lastSync && (now - new Date(t.lastSync).getTime()) < 10 * 60000;
+      return [
+        t.id,
+        t.deviceId,
+        `"${t.name.replace(/"/g, '""')}"`,
+        t.zone ?? '',
+        `"${(t.playlist?.name ?? '').replace(/"/g, '""')}"`,
+        isOnline ? 'online' : 'offline',
+        t.lastSync ? t.lastSync.toISOString() : '',
+        t.batteryLevel ?? '',
+        t.appVersion ?? '',
+        t.osVersion ?? '',
+        t.deviceModel ?? '',
+        t.createdAt.toISOString(),
+      ].join(',');
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="tablets_${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send([header, ...rows].join('\n'));
+  } catch (err) { next(err); }
+});
+
 // GET /:id — full detail with sync history / error logs (#29)
 router.get('/:id', async (req, res, next) => {
   try {

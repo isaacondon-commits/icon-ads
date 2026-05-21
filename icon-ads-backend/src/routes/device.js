@@ -57,6 +57,8 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const batteryLevel = req.query.battery !== undefined ? parseInt(req.query.battery) : undefined;
     const temperatureC = req.query.temp !== undefined ? parseFloat(req.query.temp) : undefined;
     const appVersion = req.query.appVersion || undefined;
+    const osVersion = req.query.osVersion || undefined;
+    const deviceModel = req.query.deviceModel || undefined;
     const tablet = req.tablet;
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
@@ -70,6 +72,8 @@ router.get('/sync', requireDevice, async (req, res, next) => {
         ...(batteryLevel !== undefined ? { batteryLevel } : {}),
         ...(temperatureC !== undefined ? { temperatureC } : {}),
         ...(appVersion !== undefined ? { appVersion } : {}),
+        ...(osVersion !== undefined ? { osVersion } : {}),
+        ...(deviceModel !== undefined ? { deviceModel } : {}),
       },
     });
 
