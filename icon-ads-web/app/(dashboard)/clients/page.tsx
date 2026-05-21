@@ -12,7 +12,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', rut: '', address: '', color: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', rut: '', address: '', color: '', contactName: '', contactPhone: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null); // #9
@@ -35,14 +35,14 @@ export default function ClientsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', email: '', phone: '', company: '', rut: '', address: '', color: '' });
+    setForm({ name: '', email: '', phone: '', company: '', rut: '', address: '', color: '', contactName: '', contactPhone: '' });
     setError('');
     setShowModal(true);
   };
 
   const openEdit = (c: Client) => {
     setEditing(c);
-    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '', rut: c.rut ?? '', address: c.address ?? '', color: c.color ?? '' });
+    setForm({ name: c.name, email: c.email, phone: c.phone ?? '', company: c.company ?? '', rut: c.rut ?? '', address: c.address ?? '', color: c.color ?? '', contactName: c.contactName ?? '', contactPhone: c.contactPhone ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -51,7 +51,7 @@ export default function ClientsPage() {
     setSaving(true);
     setError('');
     try {
-      const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null, color: form.color || null };
+      const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null, color: form.color || null, contactName: form.contactName || null, contactPhone: form.contactPhone || null };
       editing ? await api.updateClient(editing.id, data) : await api.createClient(data);
       setShowModal(false);
       load();
@@ -116,8 +116,16 @@ export default function ClientsPage() {
                     </div>
                   </td>
                   <td className="px-5 py-3 text-gray-500">{c.email}</td>
-                  <td className="px-5 py-3 text-gray-500">{c.company ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-500">{c.phone ?? '—'}</td>
+                  <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>
+                    <div>{c.company ?? '—'}</div>
+                    {/* #17 — commercial contact */}
+                    {c.contactName && (
+                      <div className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
+                        {c.contactName}{c.contactPhone ? ` · ${c.contactPhone}` : ''}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{c.phone ?? '—'}</td>
                   <td className="px-5 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
                       {c.active ? 'Activo' : 'Inactivo'}
@@ -175,6 +183,15 @@ export default function ClientsPage() {
                 {form.color && <button type="button" className="text-xs text-gray-400 hover:text-gray-600" onClick={() => setForm({ ...form, color: '' })}>✕</button>}
               </div>
             </Field>
+            {/* #17 — commercial contact */}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Contacto comercial (opcional)">
+                <input className="input" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} placeholder="Nombre del contacto" />
+              </Field>
+              <Field label="Tel. contacto (opcional)">
+                <input className="input" value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} placeholder="+598 99 000 000" />
+              </Field>
+            </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">

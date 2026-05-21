@@ -125,8 +125,8 @@ export default function TabletDetailPage() {
         </div>
 
         {/* Extra info */}
-        {(tablet.batteryLevel != null || tablet.temperatureC != null || tablet.appVersion) && (
-          <div className="flex gap-4 mt-4 pt-4 border-t text-xs" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+        {(tablet.batteryLevel != null || tablet.temperatureC != null || tablet.appVersion || tablet.lastIp) && (
+          <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t text-xs" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
             {tablet.batteryLevel != null && (
               <span className={`font-medium ${tablet.batteryLevel <= 20 ? 'text-red-500' : tablet.batteryLevel <= 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
                 Batería: {tablet.batteryLevel}%
@@ -134,6 +134,8 @@ export default function TabletDetailPage() {
             )}
             {tablet.temperatureC != null && <span>Temp: {tablet.temperatureC.toFixed(1)}°C</span>}
             {tablet.appVersion && <span className="font-mono">APK: {tablet.appVersion}</span>}
+            {/* #23 — last IP */}
+            {tablet.lastIp && <span className="font-mono" title="Última IP registrada al sincronizar">IP: {tablet.lastIp}</span>}
           </div>
         )}
       </div>

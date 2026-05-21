@@ -51,7 +51,7 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
-  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '' });
+  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
@@ -80,13 +80,13 @@ export default function CampaignsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '' });
+    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '' });
     setError('');
     setShowModal(true);
   };
   const openEdit = (c: Campaign) => {
     setEditing(c);
-    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate), cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '' });
+    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate), cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '', budget: c.budget?.toString() ?? '', observations: c.observations ?? '' });
     setError('');
     setShowModal(true);
   };
@@ -102,6 +102,8 @@ export default function CampaignsPage() {
         endDate: new Date(form.endDate).toISOString(),
         cpm: form.cpm ? Number(form.cpm) : null,
         maxImpressions: form.maxImpressions ? Number(form.maxImpressions) : null,
+        budget: form.budget ? Number(form.budget) : null,
+        observations: form.observations || null,
       };
       editing ? await api.updateCampaign(editing.id, data) : await api.createCampaign(data);
       setShowModal(false);
@@ -201,13 +203,29 @@ export default function CampaignsPage() {
                         {c.active ? 'Activa' : 'Pausada'}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
-                      <div>${roi}</div>
+                    <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      <div className="font-mono">${roi}</div>
                       {c.maxImpressions && (
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
+                        <div className="mt-0.5" style={{ color: 'var(--text-xs)' }}>
                           {plays.toLocaleString()}/{c.maxImpressions.toLocaleString()} imp.
                         </div>
                       )}
+                      {/* #7 — budget % executed */}
+                      {c.budget != null && c.budget > 0 && (() => {
+                        const spent = (plays / 1000) * effectiveCpm;
+                        const pct = Math.min(100, Math.round((spent / c.budget) * 100));
+                        return (
+                          <div className="mt-1">
+                            <div className="flex items-center gap-1">
+                              <div className="w-12 h-1 rounded-full" style={{ background: 'var(--border-md)' }}>
+                                <div className={`h-1 rounded-full ${pct >= 90 ? 'bg-red-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <span style={{ color: 'var(--text-xs)' }}>{pct}%</span>
+                            </div>
+                            <div style={{ color: 'var(--text-xs)' }}>${spent.toFixed(0)}/${c.budget}</div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
                       {new Date(c.updatedAt).toLocaleDateString('es-AR')}
@@ -281,6 +299,14 @@ export default function CampaignsPage() {
               <input type="number" step="1" min="1" className="input" value={form.maxImpressions} onChange={(e) => setForm({ ...form, maxImpressions: e.target.value })} placeholder="Sin límite" />
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>La campaña se pausa automáticamente al alcanzar este número.</p>
             </Field>
+            {/* #7 — budget */}
+            <Field label="Presupuesto total (USD, opcional)">
+              <input type="number" step="1" min="0" className="input" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} placeholder="Sin límite de presupuesto" />
+            </Field>
+            {/* #3 — observations */}
+            <Field label="Observaciones internas (opcional)">
+              <textarea className="input" rows={2} value={form.observations} onChange={(e) => setForm({ ...form, observations: e.target.value })} placeholder="Notas sobre la campaña, requisitos del cliente, etc." style={{ resize: 'vertical' }} />
+            </Field>
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="flex gap-2 pt-2">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
@@ -300,7 +326,7 @@ export default function CampaignsPage() {
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="rounded-xl shadow-xl w-full max-w-md p-6" style={{ background: 'var(--card)' }}>
+      <div className="rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" style={{ background: 'var(--card)' }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-lg">{title}</h2>
           <button onClick={onClose} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>

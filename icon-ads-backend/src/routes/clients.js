@@ -14,6 +14,8 @@ const clientSchema = z.object({
   rut: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   color: z.string().nullable().optional(),
+  contactName: z.string().nullable().optional(),
+  contactPhone: z.string().nullable().optional(),
 });
 
 router.get('/', async (req, res, next) => {

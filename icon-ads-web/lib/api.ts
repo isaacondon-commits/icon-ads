@@ -229,6 +229,7 @@ export interface User { id: number; email: string; name: string; role: string; }
 export interface Client {
   id: number; name: string; email: string; phone?: string; company?: string;
   rut?: string | null; address?: string | null; color?: string | null;
+  contactName?: string | null; contactPhone?: string | null;
   active: boolean; deletedAt?: string; createdAt: string; updatedAt: string;
 }
 export interface ClientProfile extends Client {
@@ -238,6 +239,7 @@ export interface Campaign {
   id: number; clientId: number; client?: { id: number; name: string };
   name: string; startDate: string; endDate: string; active: boolean;
   cpm?: number | null; maxImpressions?: number | null;
+  budget?: number | null; observations?: string | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
   _count?: { metrics: number };
 }
@@ -272,7 +274,7 @@ export interface Tablet {
   timezone?: string | null; scheduleAt?: string | null;
   notes?: string | null; maintenanceUntil?: string | null;
   driverName?: string | null; licensePlate?: string | null;
-  spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null;
+  spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null; lastIp?: string | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;

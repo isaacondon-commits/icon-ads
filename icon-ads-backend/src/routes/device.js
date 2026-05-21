@@ -61,10 +61,12 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
 
+    const clientIp = req.ip ?? req.socket?.remoteAddress ?? null;
     await prisma.tablet.update({
       where: { id: tablet.id },
       data: {
         status: 'online', lastSync: new Date(),
+        lastIp: clientIp,
         ...(batteryLevel !== undefined ? { batteryLevel } : {}),
         ...(temperatureC !== undefined ? { temperatureC } : {}),
         ...(appVersion !== undefined ? { appVersion } : {}),

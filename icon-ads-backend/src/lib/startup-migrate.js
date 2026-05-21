@@ -38,6 +38,12 @@ const MIGRATIONS = [
   { name: 'tablets.group_id',           sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS group_id INT REFERENCES tablet_groups(id) ON DELETE SET NULL` },
   { name: 'campaigns.max_impressions',  sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS max_impressions INT` },
   { name: 'system_config',              sql: `CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v5 — new fields: campaign observations + budget, client commercial contact, tablet last_ip
+  { name: 'campaigns.observations',    sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS observations TEXT` },
+  { name: 'campaigns.budget',          sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS budget FLOAT` },
+  { name: 'clients.contact_name',      sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_name TEXT` },
+  { name: 'clients.contact_phone',     sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_phone TEXT` },
+  { name: 'tablets.last_ip',           sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_ip TEXT` },
 ];
 
 async function runStartupMigrations() {
