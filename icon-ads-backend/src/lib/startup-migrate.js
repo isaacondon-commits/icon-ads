@@ -50,6 +50,8 @@ const MIGRATIONS = [
   { name: 'campaigns.target_impressions', sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_impressions INT` },
   // v7 — ad tags (#16)
   { name: 'ads.tags',                  sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'` },
+  // v8 — shared admin notes (#36)
+  { name: 'admin_notes',               sql: `CREATE TABLE IF NOT EXISTS admin_notes (id SERIAL PRIMARY KEY, body TEXT NOT NULL, author_name TEXT NOT NULL DEFAULT 'Admin', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
 ];
 
 async function runStartupMigrations() {

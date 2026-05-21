@@ -18,6 +18,7 @@ const links = [
   { href: '/calendar', label: 'Calendario', icon: '▦' },
   { href: '/stats', label: 'Estadísticas', icon: '◫' },
   { href: '/archive', label: 'Archivo', icon: '⊗' },
+  { href: '/notes', label: 'Notas', icon: '✎' },
   { href: '/logs', label: 'Logs', icon: '☰' },
   { href: '/groups', label: 'Grupos', icon: '⊞' },
   { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },

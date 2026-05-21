@@ -20,6 +20,7 @@ const adminRoutes = require('./routes/admin');
 const notificationRoutes = require('./routes/notifications');
 const settingsRoutes = require('./routes/settings');
 const dashboardRoutes = require('./routes/dashboard');
+const notesRoutes = require('./routes/notes');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
@@ -120,6 +121,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notes', notesRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

@@ -2,18 +2,33 @@ package com.iconads.player.work
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.StatFs
 import android.util.Log
 import androidx.work.*
 import com.iconads.player.data.api.NetworkModule
 import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.util.DevicePrefs
+import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     private val prefs = DevicePrefs(context)
     private val playlistRepo = PlaylistRepository(context)
+    private val tz: String = ZoneId.systemDefault().id
+
+    private fun now() = Instant.now().toString()
+
+    private fun hasEnoughStorage(minBytes: Long = 500L * 1024 * 1024): Boolean {
+        return try {
+            StatFs(applicationContext.filesDir.path).availableBytes >= minBytes
+        } catch (e: Exception) {
+            true
+        }
+    }
 
     override suspend fun doWork(): Result {
         return try {
@@ -21,7 +36,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             sync()
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Sync falló", e)
+            Log.e(TAG, "[${now()}] Sync falló (intento ${runAttemptCount + 1})", e)
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
@@ -39,7 +54,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         )
         prefs.setToken(response.token)
         prefs.setTabletId(response.tabletId)
-        Log.i(TAG, "Dispositivo registrado — tabletId=${response.tabletId}")
+        Log.i(TAG, "[${now()} $tz] Dispositivo registrado — tabletId=${response.tabletId}")
     }
 
     private suspend fun sync() {
@@ -47,14 +62,24 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val api = NetworkModule.provideDeviceApi(token)
 
         val currentVersion = prefs.getPlaylistVersion()
-        val syncResp = api.sync(currentVersion)
+        val syncResp = api.sync(
+            version = currentVersion,
+            osVersion = Build.VERSION.RELEASE,
+            deviceModel = Build.MODEL,
+        )
 
         if (!syncResp.needsUpdate) {
-            Log.d(TAG, "Ya en versión ${syncResp.version}, sin cambios")
+            Log.d(TAG, "[${now()} $tz] Ya en versión ${syncResp.version}, sin cambios")
             return
         }
 
-        Log.i(TAG, "Nueva versión disponible: ${syncResp.version}")
+        Log.i(TAG, "[${now()} $tz] Nueva versión disponible: ${syncResp.version}")
+
+        if (!hasEnoughStorage()) {
+            Log.e(TAG, "[${now()} $tz] Almacenamiento insuficiente (<500 MB) — abortando descarga")
+            error("Almacenamiento insuficiente para descargar playlist")
+        }
+
         val packageUrl = syncResp.packageUrl
             ?: "api/device/package/${syncResp.version}"
 
@@ -71,7 +96,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 setPackage(applicationContext.packageName)
             }
         )
-        Log.i(TAG, "Sync completado → v${syncResp.version}")
+        Log.i(TAG, "[${now()} $tz] Sync completado → v${syncResp.version}")
     }
 
     companion object {

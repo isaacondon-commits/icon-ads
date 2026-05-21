@@ -278,3 +278,12 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+model AdminNote {
+  id         Int      @id @default(autoincrement())
+  body       String
+  authorName String   @default("Admin") @map("author_name")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("admin_notes")
+}

@@ -397,6 +397,30 @@ router.get('/sync-intervals', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/stats/by-zone — tablets and plays grouped by zone (#35)
+router.get('/by-zone', async (req, res, next) => {
+  try {
+    const cutoff = new Date(Date.now() - 70 * 60 * 1000);
+    const rows = await prisma.$queryRaw`
+      SELECT
+        COALESCE(t.zone, 'Sin zona') AS zone,
+        COUNT(DISTINCT t.id)::int AS tablets,
+        COUNT(DISTINCT CASE WHEN t.last_sync >= ${cutoff} THEN t.id END)::int AS online,
+        COUNT(m.id)::int AS plays
+      FROM tablets t
+      LEFT JOIN metrics m ON m.tablet_id = t.id
+      GROUP BY COALESCE(t.zone, 'Sin zona')
+      ORDER BY plays DESC
+    `;
+    res.json(rows.map((r) => ({
+      zone: r.zone,
+      tablets: Number(r.tablets),
+      online: Number(r.online),
+      plays: Number(r.plays),
+    })));
+  } catch (err) { next(err); }
+});
+
 // GET /api/stats/ads-no-plays — active approved ads with zero plays (#13)
 router.get('/ads-no-plays', async (req, res, next) => {
   try {

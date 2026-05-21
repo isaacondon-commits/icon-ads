@@ -109,6 +109,19 @@ class PlaylistRepository(private val context: Context) {
                     throw SecurityException("Hash inválido: esperado=$expectedHash recibido=${playlistJson.hash}")
                 }
                 Log.i(TAG, "Playlist v$version instalada (${playlistJson.ads.size} ads)")
+            } catch (e: Exception) {
+                // Restore backup so the player keeps working
+                Log.w(TAG, "Error instalando v$version — restaurando backup", e)
+                try {
+                    if (backupDir.exists()) {
+                        currentDir.deleteRecursively()
+                        backupDir.copyRecursively(currentDir, overwrite = true)
+                        Log.i(TAG, "Backup restaurado exitosamente")
+                    }
+                } catch (restoreEx: Exception) {
+                    Log.e(TAG, "Error restaurando backup", restoreEx)
+                }
+                throw e
             } finally {
                 tempZip.delete()
             }

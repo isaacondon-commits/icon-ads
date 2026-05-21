@@ -16,6 +16,8 @@ interface DeviceApi {
         @Query("battery") battery: Int? = null,
         @Query("temp") temp: Float? = null,
         @Query("appVersion") appVersion: String? = null,
+        @Query("osVersion") osVersion: String? = null,
+        @Query("deviceModel") deviceModel: String? = null,
     ): SyncResponse
 
     @Streaming

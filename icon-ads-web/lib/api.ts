@@ -218,8 +218,8 @@ export const api = {
   cloneCampaign: (id: number) =>
     request<Campaign>(`/api/campaigns/${id}/clone`, { method: 'POST' }),
 
-  // Zone stats (#11)
-  getZoneStats: () => request<ZoneStat[]>('/api/admin/stats/zones'),
+  // Zone stats (#35)
+  getZoneStats: () => request<ZoneStat[]>('/api/stats/by-zone'),
 
   // Dashboard summary — all data in one call (#21)
   getDashboardSummary: () => request<DashboardSummary>('/api/dashboard/summary'),
@@ -250,6 +250,13 @@ export const api = {
   // Paginated metrics (#22)
   getMetricsPaged: (page = 1, limit = 50) =>
     request<MetricsPage>(`/api/stats/metrics?page=${page}&limit=${limit}`),
+
+  // Admin notes (#36)
+  getNotes: () => request<AdminNote[]>('/api/notes'),
+  createNote: (body: string) =>
+    request<AdminNote>('/api/notes', { method: 'POST', body: JSON.stringify({ body }) }),
+  deleteNote: (id: number) =>
+    request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -410,6 +417,10 @@ export interface MetricRecord {
 
 export interface MetricsPage {
   total: number; page: number; pages: number; records: MetricRecord[];
+}
+
+export interface AdminNote {
+  id: number; body: string; authorName: string; createdAt: string;
 }
 
 export { BASE };
