@@ -310,3 +310,14 @@ model Favorite {
   @@unique([entityType, entityId])
   @@map("favorites")
 }
+
+model Reminder {
+  id        Int       @id @default(autoincrement())
+  title     String
+  body      String?
+  dueAt     DateTime? @map("due_at")
+  done      Boolean   @default(false)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("reminders")
+}

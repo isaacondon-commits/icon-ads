@@ -23,6 +23,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const notesRoutes = require('./routes/notes');
 const templatesRoutes = require('./routes/templates');
 const favoritesRoutes = require('./routes/favorites');
+const remindersRoutes = require('./routes/reminders');
 const latencyTracker = require('./lib/latencyTracker');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
@@ -135,6 +136,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/favorites', favoritesRoutes);
+app.use('/api/reminders', remindersRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

@@ -64,6 +64,50 @@ export default function ClientProfilePage() {
         </div>
       </div>
 
+      {/* #37 — Price history */}
+      {profile.campaigns.some((c) => c.cpm != null || c.budget != null) && (() => {
+        const priced = [...profile.campaigns]
+          .filter((c) => c.cpm != null || c.budget != null)
+          .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+        return (
+          <div className="card p-6 mb-6">
+            <h2 className="font-semibold mb-4">Historial de precios</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                    <th className="text-left pb-2">Campaña</th>
+                    <th className="text-left pb-2">Período</th>
+                    <th className="text-right pb-2">CPM</th>
+                    <th className="text-right pb-2">Presupuesto</th>
+                    <th className="text-right pb-2">Meta impr.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {priced.map((c) => (
+                    <tr key={c.id} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                      <td className="py-2.5 font-medium max-w-[180px] truncate">{c.name}</td>
+                      <td className="py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {new Date(c.startDate).toLocaleDateString('es-AR')} — {new Date(c.endDate).toLocaleDateString('es-AR')}
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums font-medium">
+                        {c.cpm != null ? `$${c.cpm}` : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums">
+                        {c.budget != null ? <span className="text-emerald-600 font-medium">${c.budget}</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                        {c.targetImpressions != null ? c.targetImpressions.toLocaleString() : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Campaign list */}
         <div className="card overflow-hidden">

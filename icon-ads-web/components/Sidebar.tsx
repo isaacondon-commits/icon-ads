@@ -23,6 +23,8 @@ const links = [
   { href: '/api-control', label: 'Panel API', icon: '⊞' },
   { href: '/archive', label: 'Archivo', icon: '⊗' },
   { href: '/notes', label: 'Notas', icon: '✎' },
+  { href: '/reminders', label: 'Recordatorios', icon: '⏰' },
+  { href: '/impact', label: 'Impacto', icon: '🌿' },
   { href: '/calculator', label: 'Calculadora', icon: '⊞' },
   { href: '/logs', label: 'Logs', icon: '☰' },
   { href: '/groups', label: 'Grupos', icon: '⊞' },

@@ -619,6 +619,60 @@ export default function StatsPage() {
           </div>
         </div>
       )}
+
+      {/* #62 — Competitive benchmarks */}
+      {roiStats.length > 0 && (() => {
+        const avgCpm = roiStats.filter((r) => r.cpm != null).reduce((s, r) => s + (r.cpm ?? 0), 0) / (roiStats.filter((r) => r.cpm != null).length || 1);
+        const totalPlaysAll = roiStats.reduce((s, r) => s + r.plays, 0);
+        const activeCampaignCount = roiStats.length;
+
+        const benchmarks = [
+          {
+            label: 'CPM promedio de plataforma',
+            actual: avgCpm > 0 ? `$${avgCpm.toFixed(2)}` : '—',
+            industry: '$3 – $8',
+            ok: avgCpm >= 3 && avgCpm <= 8,
+            neutral: avgCpm === 0,
+          },
+          {
+            label: 'Reproducciones por campaña',
+            actual: activeCampaignCount > 0 ? Math.round(totalPlaysAll / activeCampaignCount).toLocaleString() : '—',
+            industry: '5.000 – 50.000',
+            ok: activeCampaignCount > 0 && (totalPlaysAll / activeCampaignCount) >= 5000,
+            neutral: activeCampaignCount === 0,
+          },
+        ];
+
+        return (
+          <div className="card p-6 mt-6">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="font-semibold">Benchmarks de industria</h2>
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--border-md)', color: 'var(--text-muted)' }}>referencial</span>
+            </div>
+            <div className="space-y-4">
+              {benchmarks.map((b) => (
+                <div key={b.label} className="flex items-center gap-4 text-sm">
+                  <div className="flex-1">
+                    <p className="font-medium">{b.label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Industria: {b.industry}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-bold tabular-nums ${b.neutral ? '' : b.ok ? 'text-emerald-600' : 'text-amber-500'}`}>{b.actual}</p>
+                    {!b.neutral && (
+                      <p className={`text-xs ${b.ok ? 'text-emerald-600' : 'text-amber-500'}`}>
+                        {b.ok ? 'dentro del rango' : 'fuera del rango'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+              Valores de referencia basados en estándares de publicidad DOOH (Digital Out-of-Home) en Latinoamérica.
+            </p>
+          </div>
+        );
+      })()}
     </div>
   );
 }

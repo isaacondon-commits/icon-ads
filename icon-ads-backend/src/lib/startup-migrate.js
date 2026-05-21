@@ -55,6 +55,8 @@ const MIGRATIONS = [
   // v9 — campaign templates (#31) + favorites (#44)
   { name: 'campaign_templates',        sql: `CREATE TABLE IF NOT EXISTS campaign_templates (id SERIAL PRIMARY KEY, name TEXT NOT NULL, cpm FLOAT, max_impressions INT, budget FLOAT, target_impressions INT, observations TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'favorites',                 sql: `CREATE TABLE IF NOT EXISTS favorites (id SERIAL PRIMARY KEY, entity_type TEXT NOT NULL, entity_id INT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(entity_type, entity_id))` },
+  // v10 — reminders (#39)
+  { name: 'reminders',                 sql: `CREATE TABLE IF NOT EXISTS reminders (id SERIAL PRIMARY KEY, title TEXT NOT NULL, body TEXT, due_at TIMESTAMPTZ, done BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
 ];
 
 async function runStartupMigrations() {

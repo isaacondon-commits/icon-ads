@@ -292,6 +292,14 @@ export const api = {
 
   // Health check (#50)
   getHealth: () => request<HealthCheck>('/api/health'),
+
+  // Reminders (#39)
+  getReminders: () => request<Reminder[]>('/api/reminders'),
+  createReminder: (data: { title: string; body?: string | null; dueAt?: string | null }) =>
+    request<Reminder>('/api/reminders', { method: 'POST', body: JSON.stringify(data) }),
+  updateReminder: (id: number, data: Partial<{ done: boolean; title: string; body: string | null; dueAt: string | null }>) =>
+    request<Reminder>(`/api/reminders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteReminder: (id: number) => request<void>(`/api/reminders/${id}`, { method: 'DELETE' }),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -488,6 +496,11 @@ export interface HealthCheck {
 export interface SlaStat {
   tabletId: number; tabletName: string; zone: string | null;
   syncCount30d: number; activeDays30d: number; coveragePct: number;
+}
+
+export interface Reminder {
+  id: number; title: string; body: string | null;
+  dueAt: string | null; done: boolean; createdAt: string;
 }
 
 export { BASE };
