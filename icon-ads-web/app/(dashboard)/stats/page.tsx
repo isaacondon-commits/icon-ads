@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -22,6 +22,7 @@ export default function StatsPage() {
   const [roiStats, setRoiStats] = useState<RoiEntry[]>([]);
   const [zoneHour, setZoneHour] = useState<ZoneHourEntry[]>([]);
   const [slaStats, setSlaStats] = useState<SlaStat[]>([]);
+  const [monthly, setMonthly] = useState<MonthlyEntry[]>([]);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -37,6 +38,7 @@ export default function StatsPage() {
     api.getRoiStats().then(setRoiStats).catch(() => {});
     api.getZoneHourStats().then(setZoneHour).catch(() => {});
     api.getSlaStats().then(setSlaStats).catch(() => {});
+    api.getMonthlyStats().then(setMonthly).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -91,6 +93,39 @@ export default function StatsPage() {
           </div>
         )}
       </div>
+
+      {/* #38 — Monthly seasonality */}
+      {monthly.length > 0 && (
+        <div className="card p-6 mb-6">
+          <h2 className="font-semibold mb-5">Estacionalidad — últimos 12 meses</h2>
+          {(() => {
+            const maxM = Math.max(...monthly.map((m) => m.count), 1);
+            return (
+              <div className="flex items-end gap-2 h-40">
+                {monthly.map((m, i) => {
+                  const pct = Math.round((m.count / maxM) * 100);
+                  const label = m.month.slice(0, 7); // "YYYY-MM"
+                  const monthName = new Date(m.month + '-01').toLocaleString('es-AR', { month: 'short' });
+                  return (
+                    <div key={m.month} className="flex-1 flex flex-col items-center gap-1" title={`${label}: ${m.count}`}>
+                      <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                        {m.count > 0 ? m.count.toLocaleString() : ''}
+                      </span>
+                      <div className="w-full flex flex-col justify-end" style={{ height: '120px' }}>
+                        <div
+                          className="w-full rounded-t-md transition-all duration-500"
+                          style={{ height: `${Math.max(pct, m.count > 0 ? 4 : 0)}%`, background: CHART_COLORS[i % CHART_COLORS.length] }}
+                        />
+                      </div>
+                      <span className="text-xs text-center" style={{ color: 'var(--text-xs)' }}>{monthName}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* #3 — Playlist comparison */}
       {playlists.length > 0 && (

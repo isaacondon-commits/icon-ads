@@ -283,6 +283,15 @@ export const api = {
 
   // Full JSON backup download URL (#42)
   getBackupUrl: () => `${BASE}/api/admin/backup`,
+
+  // Monthly seasonality (#38)
+  getMonthlyStats: () => request<MonthlyEntry[]>('/api/stats/monthly'),
+
+  // Multi-sheet Excel export URL (#64)
+  getExcelUrl: () => `${BASE}/api/admin/export/excel`,
+
+  // Health check (#50)
+  getHealth: () => request<HealthCheck>('/api/health'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -467,6 +476,14 @@ export interface LatencySummary {
 }
 
 export interface ZoneHourEntry { zone: string; hour: number; count: number; }
+
+export interface MonthlyEntry { month: string; count: number; }
+
+export interface HealthCheck {
+  status: string; db: string; dbError: string | null; r2: boolean;
+  uptime: number; timestamp: string; version: string;
+  env: Record<string, string>;
+}
 
 export interface SlaStat {
   tabletId: number; tabletName: string; zone: string | null;

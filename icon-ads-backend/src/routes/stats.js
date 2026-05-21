@@ -448,6 +448,22 @@ router.get('/sla', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/stats/monthly — plays per month, last 12 months (#38)
+router.get('/monthly', async (req, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT
+        TO_CHAR(DATE_TRUNC('month', played_at AT TIME ZONE 'UTC'), 'YYYY-MM') AS month,
+        COUNT(*)::int AS count
+      FROM metrics
+      WHERE played_at >= NOW() - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', played_at AT TIME ZONE 'UTC')
+      ORDER BY month
+    `;
+    res.json(rows.map((r) => ({ month: String(r.month), count: Number(r.count) })));
+  } catch (err) { next(err); }
+});
+
 // GET /api/stats/by-zone — tablets and plays grouped by zone (#35)
 router.get('/by-zone', async (req, res, next) => {
   try {

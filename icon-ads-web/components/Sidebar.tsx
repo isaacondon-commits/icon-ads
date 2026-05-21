@@ -19,6 +19,8 @@ const links = [
   { href: '/stats', label: 'Estadísticas', icon: '◫' },
   { href: '/executive', label: 'Ejecutivo', icon: '◈' },
   { href: '/inventory', label: 'Inventario', icon: '⊟' },
+  { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },
+  { href: '/api-control', label: 'Panel API', icon: '⊞' },
   { href: '/archive', label: 'Archivo', icon: '⊗' },
   { href: '/notes', label: 'Notas', icon: '✎' },
   { href: '/calculator', label: 'Calculadora', icon: '⊞' },

@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
+const XLSX = require('xlsx');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 
@@ -172,6 +173,56 @@ router.get('/backup', requireAuth, async (req, res, next) => {
       counts: { clients: clients.length, campaigns: campaigns.length, ads: ads.length, playlists: playlists.length, tablets: tablets.length },
       data: { clients, campaigns, ads, playlists, tablets },
     });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/export/excel — multi-sheet XLSX export (#64)
+router.get('/export/excel', requireAuth, async (req, res, next) => {
+  try {
+    const [clients, campaigns, ads, tablets] = await Promise.all([
+      prisma.client.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
+      prisma.campaign.findMany({ where: { deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { name: 'asc' } }),
+      prisma.ad.findMany({
+        where: { deletedAt: null },
+        include: { campaign: { select: { name: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.tablet.findMany({ orderBy: { name: 'asc' } }),
+    ]);
+
+    const wb = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(clients.map((c) => ({
+      ID: c.id, Nombre: c.name, Email: c.email, Empresa: c.company ?? '', Teléfono: c.phone ?? '',
+      RUT: c.rut ?? '', Dirección: c.address ?? '', Activo: c.active ? 'Sí' : 'No',
+      Creado: new Date(c.createdAt).toISOString().slice(0, 10),
+    }))), 'Clientes');
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(campaigns.map((c) => ({
+      ID: c.id, Nombre: c.name, Cliente: c.client?.name ?? '', Inicio: c.startDate ? new Date(c.startDate).toISOString().slice(0, 10) : '',
+      Fin: c.endDate ? new Date(c.endDate).toISOString().slice(0, 10) : '',
+      CPM: c.cpm ?? '', Presupuesto: c.budget ?? '', Activa: c.active ? 'Sí' : 'No',
+    }))), 'Campañas');
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ads.map((a) => ({
+      ID: a.id, Nombre: a.name, Tipo: a.type, Campaña: a.campaign?.name ?? '',
+      Duración: a.durationS, Prioridad: a.priority, Estado: a.approvalStatus,
+      Activo: a.active ? 'Sí' : 'No', Creado: new Date(a.createdAt).toISOString().slice(0, 10),
+    }))), 'Anuncios');
+
+    const now = Date.now();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tablets.map((t) => ({
+      ID: t.id, Nombre: t.name, Zona: t.zone ?? '', DeviceID: t.deviceId,
+      Modelo: t.deviceModel ?? '', Android: t.osVersion ?? '', AppVersion: t.appVersion ?? '',
+      Batería: t.batteryLevel ?? '', Estado: t.lastSync && (now - new Date(t.lastSync).getTime()) < 10 * 60000 ? 'online' : 'offline',
+      ÚltimoSync: t.lastSync ? new Date(t.lastSync).toISOString() : '',
+    }))), 'Tablets');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="iconads_${date}.xlsx"`);
+    res.send(buf);
   } catch (err) { next(err); }
 });
 
