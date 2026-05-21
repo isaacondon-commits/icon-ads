@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { api, HealthCheck, LatencySummary } from '@/lib/api';
+import { BASE } from '@/lib/api';
 
 export default function ApiControlPage() {
   const [health, setHealth] = useState<HealthCheck | null>(null);
   const [latency, setLatency] = useState<LatencySummary | null>(null);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [demoSeeding, setDemoSeeding] = useState(false);
+  const [demoMsg, setDemoMsg] = useState('');
   const [refreshed, setRefreshed] = useState<Date | null>(null);
 
   const load = () => {
@@ -187,7 +190,10 @@ export default function ApiControlPage() {
             Backup JSON
           </a>
           <a href={api.getExcelUrl()} className="text-sm bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-            Exportar Excel (.xlsx)
+            Excel (.xlsx)
+          </a>
+          <a href={api.getPptxUrl()} className="text-sm bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+            PowerPoint (.pptx)
           </a>
           <a href={api.getTabletsCsvUrl()} className="text-sm bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
             Tablets CSV
@@ -196,6 +202,47 @@ export default function ApiControlPage() {
             Auditoría CSV
           </a>
         </div>
+      </div>
+
+      {/* #63 — Demo seed */}
+      <div className="card p-6 mt-6">
+        <h2 className="font-semibold mb-2">Datos de demo</h2>
+        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Crea un cliente y campaña de ejemplo para demostrar la plataforma. Solo se ejecuta una vez.</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setDemoSeeding(true);
+              setDemoMsg('');
+              try {
+                const r = await api.seedDemo();
+                setDemoMsg(`Demo creado: ${r.client.name} (cliente #${r.client.id}), campaña "${r.campaign.name}"`);
+              } catch (e) {
+                setDemoMsg(e instanceof Error ? e.message : 'Error');
+              } finally { setDemoSeeding(false); }
+            }}
+            disabled={demoSeeding}
+            className="text-sm bg-gray-700 hover:bg-gray-600 disabled:bg-gray-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            {demoSeeding ? 'Creando...' : 'Crear datos de demo'}
+          </button>
+          {demoMsg && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{demoMsg}</p>}
+        </div>
+      </div>
+
+      {/* #41 — Swagger link */}
+      <div className="card p-4 mt-6 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium">Documentación de la API</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Swagger UI con todos los endpoints disponibles.</p>
+        </div>
+        <a
+          href={`${BASE}/api/docs`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Abrir Swagger
+        </a>
       </div>
     </div>
   );

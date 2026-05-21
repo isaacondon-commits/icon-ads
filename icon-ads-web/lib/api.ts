@@ -290,6 +290,12 @@ export const api = {
   // Multi-sheet Excel export URL (#64)
   getExcelUrl: () => `${BASE}/api/admin/export/excel`,
 
+  // PowerPoint export URL (#40)
+  getPptxUrl: () => `${BASE}/api/admin/export/pptx`,
+
+  // Demo seed (#63)
+  seedDemo: () => request<{ message: string; client: { id: number; name: string }; campaign: { id: number; name: string } }>('/api/admin/demo-seed', { method: 'POST' }),
+
   // Health check (#50)
   getHealth: () => request<HealthCheck>('/api/health'),
 

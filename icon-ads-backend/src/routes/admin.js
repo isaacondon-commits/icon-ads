@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const XLSX = require('xlsx');
+const PptxGenJS = require('pptxgenjs');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 
@@ -223,6 +224,134 @@ router.get('/export/excel', requireAuth, async (req, res, next) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="iconads_${date}.xlsx"`);
     res.send(buf);
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/export/pptx — PowerPoint metrics export (#40)
+router.get('/export/pptx', requireAuth, async (req, res, next) => {
+  try {
+    const [totalPlays, tabletCount, clientCount, campaignCount, weeklyRows, topCampaigns] = await Promise.all([
+      prisma.metric.count(),
+      prisma.tablet.count(),
+      prisma.client.count({ where: { active: true, deletedAt: null } }),
+      prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+      prisma.$queryRaw`
+        SELECT TO_CHAR(DATE_TRUNC('week', played_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS week, COUNT(*)::int AS count
+        FROM metrics WHERE played_at >= NOW() - INTERVAL '8 weeks'
+        GROUP BY DATE_TRUNC('week', played_at AT TIME ZONE 'UTC') ORDER BY week ASC
+      `,
+      prisma.$queryRaw`
+        SELECT c.name, COUNT(m.id)::int AS plays
+        FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+        GROUP BY c.id, c.name ORDER BY plays DESC LIMIT 5
+      `,
+    ]);
+
+    const pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_16x9';
+    pptx.title = 'ICON ADS — Reporte de métricas';
+
+    // Slide 1 — Cover
+    const s1 = pptx.addSlide();
+    s1.background = { color: '1d4ed8' };
+    s1.addText('ICON ADS', { x: 0.5, y: 1.5, w: 9, h: 1, fontSize: 40, bold: true, color: 'FFFFFF', align: 'center' });
+    s1.addText('Reporte de métricas publicitarias', { x: 0.5, y: 2.7, w: 9, h: 0.6, fontSize: 20, color: 'BFDBFE', align: 'center' });
+    s1.addText(`Generado: ${new Date().toLocaleDateString('es-AR')}`, { x: 0.5, y: 3.5, w: 9, h: 0.4, fontSize: 14, color: 'BFDBFE', align: 'center' });
+
+    // Slide 2 — KPIs
+    const s2 = pptx.addSlide();
+    s2.addText('Resumen ejecutivo', { x: 0.5, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: '111827' });
+    const kpis = [
+      { label: 'Reproducciones totales', value: totalPlays.toLocaleString('es-AR') },
+      { label: 'Tablets activas', value: String(tabletCount) },
+      { label: 'Clientes activos', value: String(clientCount) },
+      { label: 'Campañas activas', value: String(campaignCount) },
+    ];
+    kpis.forEach((k, i) => {
+      const x = (i % 2) * 4.8 + 0.3;
+      const y = Math.floor(i / 2) * 2.2 + 1.2;
+      s2.addShape(pptx.ShapeType.rect, { x, y, w: 4.3, h: 1.8, fill: { color: 'EFF6FF' }, line: { color: 'BFDBFE', width: 1 } });
+      s2.addText(k.value, { x, y: y + 0.2, w: 4.3, h: 0.8, fontSize: 28, bold: true, color: '1d4ed8', align: 'center' });
+      s2.addText(k.label, { x, y: y + 1.0, w: 4.3, h: 0.5, fontSize: 11, color: '6B7280', align: 'center' });
+    });
+
+    // Slide 3 — Top campaigns
+    if (topCampaigns.length > 0) {
+      const s3 = pptx.addSlide();
+      s3.addText('Top 5 campañas por reproducciones', { x: 0.5, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: '111827' });
+      const maxPlays = Math.max(...topCampaigns.map((c) => Number(c.plays)), 1);
+      topCampaigns.forEach((c, i) => {
+        const y = 1.2 + i * 0.8;
+        const barW = (Number(c.plays) / maxPlays) * 7;
+        s3.addText(String(c.name).slice(0, 30), { x: 0.3, y, w: 3, h: 0.5, fontSize: 11, color: '111827' });
+        s3.addShape(pptx.ShapeType.rect, { x: 3.5, y: y + 0.1, w: barW, h: 0.35, fill: { color: '3b82f6' } });
+        s3.addText(Number(c.plays).toLocaleString(), { x: 3.6 + barW, y, w: 1.5, h: 0.5, fontSize: 10, color: '374151' });
+      });
+    }
+
+    // Slide 4 — Weekly trend
+    if (weeklyRows.length > 0) {
+      const s4 = pptx.addSlide();
+      s4.addText('Tendencia semanal (últimas 8 semanas)', { x: 0.5, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: '111827' });
+      const maxW = Math.max(...weeklyRows.map((r) => Number(r.count)), 1);
+      const colW = 8.5 / weeklyRows.length;
+      weeklyRows.forEach((r, i) => {
+        const barH = (Number(r.count) / maxW) * 3;
+        const x = 0.5 + i * colW;
+        const y = 4.5 - barH;
+        s4.addShape(pptx.ShapeType.rect, { x, y, w: colW - 0.1, h: barH, fill: { color: '3b82f6' } });
+        s4.addText(Number(r.count) > 0 ? Number(r.count).toLocaleString() : '', { x, y: y - 0.4, w: colW, h: 0.35, fontSize: 8, color: '374151', align: 'center' });
+        s4.addText(String(r.week).slice(5), { x, y: 4.6, w: colW, h: 0.3, fontSize: 8, color: '6B7280', align: 'center' });
+      });
+    }
+
+    const buf = await pptx.write({ outputType: 'nodebuffer' });
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('Content-Disposition', `attachment; filename="iconads_metricas_${date}.pptx"`);
+    res.send(buf);
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/demo-seed — seed demo data for testing (#63)
+router.post('/demo-seed', requireAuth, async (req, res, next) => {
+  try {
+    const existing = await prisma.client.findFirst({ where: { email: 'demo@iconads.com' } });
+    if (existing) return res.status(409).json({ message: 'Demo data already seeded', clientId: existing.id });
+
+    const demoClient = await prisma.client.create({
+      data: {
+        name: 'Cliente Demo',
+        email: 'demo@iconads.com',
+        company: 'Empresa Demo S.A.',
+        phone: '+598 99 000 000',
+        active: true,
+      },
+    });
+
+    const now = new Date();
+    const start = new Date(now); start.setDate(start.getDate() - 30);
+    const end = new Date(now); end.setDate(end.getDate() + 60);
+
+    const campaign = await prisma.campaign.create({
+      data: {
+        clientId: demoClient.id,
+        name: 'Campaña demo — Lanzamiento',
+        startDate: start,
+        endDate: end,
+        cpm: 5,
+        budget: 500,
+        targetImpressions: 100000,
+        observations: 'Campaña de ejemplo generada automáticamente.',
+        active: true,
+      },
+    });
+
+    res.status(201).json({
+      message: 'Demo data seeded',
+      client: { id: demoClient.id, name: demoClient.name },
+      campaign: { id: campaign.id, name: campaign.name },
+    });
   } catch (err) { next(err); }
 });
 

@@ -24,6 +24,8 @@ const notesRoutes = require('./routes/notes');
 const templatesRoutes = require('./routes/templates');
 const favoritesRoutes = require('./routes/favorites');
 const remindersRoutes = require('./routes/reminders');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
 const latencyTracker = require('./lib/latencyTracker');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
@@ -137,6 +139,73 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/reminders', remindersRoutes);
+
+// #41 — Swagger API docs at /api/docs
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'ICON ADS API',
+      version: '1.0.0',
+      description: 'API para gestión de publicidad digital en tablets de taxi',
+      contact: { name: 'ICON ADS', email: 'admin@iconads.com' },
+    },
+    servers: [{ url: process.env.BACKEND_URL || 'https://icon-ads-backend.onrender.com', description: 'Producción' }, { url: 'http://localhost:3000', description: 'Desarrollo' }],
+    components: {
+      securitySchemes: {
+        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        cookieAuth: { type: 'apiKey', in: 'cookie', name: 'token' },
+      },
+    },
+    security: [{ bearerAuth: [] }, { cookieAuth: [] }],
+    tags: [
+      { name: 'Auth', description: 'Autenticación y sesión' },
+      { name: 'Clients', description: 'Gestión de clientes publicitarios' },
+      { name: 'Campaigns', description: 'Campañas publicitarias' },
+      { name: 'Ads', description: 'Anuncios y archivos multimedia' },
+      { name: 'Playlists', description: 'Listas de reproducción' },
+      { name: 'Tablets', description: 'Dispositivos en campo' },
+      { name: 'Stats', description: 'Métricas y estadísticas' },
+      { name: 'Admin', description: 'Administración del sistema' },
+      { name: 'Notes', description: 'Notas internas' },
+      { name: 'Reminders', description: 'Recordatorios' },
+    ],
+  },
+  apis: [],
+});
+
+// Inline path definitions (no JSDoc scanning needed — avoids filesystem issues)
+swaggerSpec.paths = {
+  '/api/health': { get: { tags: ['Admin'], summary: 'Health check', security: [], responses: { 200: { description: 'System health status' } } } },
+  '/api/auth/login': { post: { tags: ['Auth'], summary: 'Login', security: [], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { email: { type: 'string' }, password: { type: 'string' } }, required: ['email', 'password'] } } } }, responses: { 200: { description: 'JWT token + user' }, 401: { description: 'Invalid credentials' } } } },
+  '/api/auth/logout': { post: { tags: ['Auth'], summary: 'Logout', responses: { 204: { description: 'Logged out' } } } },
+  '/api/auth/me': { get: { tags: ['Auth'], summary: 'Get current user', responses: { 200: { description: 'User object' } } } },
+  '/api/clients': { get: { tags: ['Clients'], summary: 'List all active clients', responses: { 200: { description: 'Array of clients' } } }, post: { tags: ['Clients'], summary: 'Create a client', responses: { 201: { description: 'Created client' } } } },
+  '/api/clients/{id}': { get: { tags: ['Clients'], summary: 'Get client profile with campaigns', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Client profile' }, 404: { description: 'Not found' } } }, put: { tags: ['Clients'], summary: 'Update client', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated client' } } }, delete: { tags: ['Clients'], summary: 'Soft-delete client', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
+  '/api/clients/{id}/proposal': { get: { tags: ['Clients'], summary: 'Download proposal PDF (#32)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'PDF file', content: { 'application/pdf': {} } } } } },
+  '/api/campaigns': { get: { tags: ['Campaigns'], summary: 'List all campaigns', responses: { 200: { description: 'Array of campaigns' } } }, post: { tags: ['Campaigns'], summary: 'Create a campaign', responses: { 201: { description: 'Created campaign' } } } },
+  '/api/campaigns/{id}': { get: { tags: ['Campaigns'], summary: 'Get campaign detail', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Campaign detail' } } }, put: { tags: ['Campaigns'], summary: 'Update campaign', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Campaigns'], summary: 'Delete campaign', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
+  '/api/campaigns/{id}/certificate': { get: { tags: ['Campaigns'], summary: 'Download campaign certificate PDF (#51)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'PDF certificate', content: { 'application/pdf': {} } } } } },
+  '/api/campaigns/{id}/contract': { get: { tags: ['Campaigns'], summary: 'Download digital contract PDF (#56)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'PDF contract', content: { 'application/pdf': {} } } } } },
+  '/api/ads': { get: { tags: ['Ads'], summary: 'List all ads', responses: { 200: { description: 'Array of ads' } } } },
+  '/api/tablets': { get: { tags: ['Tablets'], summary: 'List all tablets', responses: { 200: { description: 'Array of tablets' } } } },
+  '/api/stats': { get: { tags: ['Stats'], summary: 'Global stats summary', responses: { 200: { description: 'Stats object' } } } },
+  '/api/stats/monthly': { get: { tags: ['Stats'], summary: 'Monthly plays (last 12 months) (#38)', responses: { 200: { description: 'Array of {month, count}' } } } },
+  '/api/stats/by-zone': { get: { tags: ['Stats'], summary: 'Plays and tablet count by zone', responses: { 200: { description: 'Array of zone stats' } } } },
+  '/api/stats/sla': { get: { tags: ['Stats'], summary: 'SLA compliance per tablet (#59)', responses: { 200: { description: 'Array of SLA stats' } } } },
+  '/api/stats/latency': { get: { tags: ['Stats'], summary: 'Endpoint latency summary (#43)', responses: { 200: { description: 'Latency summary' } } } },
+  '/api/admin/backup': { get: { tags: ['Admin'], summary: 'Full JSON data backup (#42)', responses: { 200: { description: 'JSON backup file' } } } },
+  '/api/admin/export/excel': { get: { tags: ['Admin'], summary: 'Multi-sheet Excel export (#64)', responses: { 200: { description: 'XLSX file' } } } },
+  '/api/admin/export/pptx': { get: { tags: ['Admin'], summary: 'PowerPoint metrics export (#40)', responses: { 200: { description: 'PPTX file' } } } },
+  '/api/admin/export/tablets': { get: { tags: ['Admin'], summary: 'Tablets CSV export', responses: { 200: { description: 'CSV file' } } } },
+  '/api/admin/demo-seed': { post: { tags: ['Admin'], summary: 'Seed demo client + campaign (#63)', responses: { 201: { description: 'Demo data created' }, 409: { description: 'Already seeded' } } } },
+  '/api/notes': { get: { tags: ['Notes'], summary: 'List admin notes', responses: { 200: { description: 'Array of notes' } } }, post: { tags: ['Notes'], summary: 'Create note', responses: { 201: { description: 'Created note' } } } },
+  '/api/reminders': { get: { tags: ['Reminders'], summary: 'List reminders', responses: { 200: { description: 'Array of reminders' } } }, post: { tags: ['Reminders'], summary: 'Create reminder', responses: { 201: { description: 'Created reminder' } } } },
+  '/api/reminders/{id}': { patch: { tags: ['Reminders'], summary: 'Update reminder (toggle done, edit)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated reminder' } } }, delete: { tags: ['Reminders'], summary: 'Delete reminder', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 204: { description: 'Deleted' } } } },
+};
+
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customSiteTitle: 'ICON ADS API Docs' }));
+app.get('/api/docs.json', (req, res) => res.json(swaggerSpec));
 
 app.use((err, req, res, next) => {
   console.error(err);
