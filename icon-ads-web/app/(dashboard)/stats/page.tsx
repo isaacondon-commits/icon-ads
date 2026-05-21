@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -18,6 +18,7 @@ export default function StatsPage() {
   const [loadingExtra, setLoadingExtra] = useState(false);
   const [adsNoPlays, setAdsNoPlays] = useState<AdNoPlays[]>([]);
   const [zoneStats, setZoneStats] = useState<ZoneStat[]>([]);
+  const [syncIntervals, setSyncIntervals] = useState<SyncInterval[]>([]);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -29,6 +30,7 @@ export default function StatsPage() {
     api.getPlaylistStats().then(setPlaylists).catch(() => {});
     api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
     api.getZoneStats().then(setZoneStats).catch(() => {});
+    api.getSyncIntervals().then(setSyncIntervals).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -343,6 +345,47 @@ export default function StatsPage() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* #14 — Sync intervals per tablet */}
+      {syncIntervals.length > 0 && (
+        <div className="card p-6 mt-6">
+          <h2 className="font-semibold mb-4">Intervalos de sincronización (últimos 7 días)</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                  <th className="text-left pb-2">Tablet</th>
+                  <th className="text-left pb-2">Zona</th>
+                  <th className="text-right pb-2">Syncs</th>
+                  <th className="text-right pb-2">Promedio entre syncs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncIntervals.map((s) => (
+                  <tr key={s.tabletId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                    <td className="py-2.5 font-medium">{s.tabletName}</td>
+                    <td className="py-2.5" style={{ color: 'var(--text-muted)' }}>{s.zone ?? '—'}</td>
+                    <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{s.syncCount}</td>
+                    <td className="py-2.5 text-right">
+                      {s.avgMinutes != null ? (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                          s.avgMinutes <= 6 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : s.avgMinutes <= 15 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                          : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                          {s.avgMinutes} min
+                        </span>
+                      ) : (
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

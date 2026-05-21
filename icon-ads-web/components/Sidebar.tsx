@@ -17,6 +17,7 @@ const links = [
   { href: '/playlists', label: 'Playlists', icon: '≡' },
   { href: '/calendar', label: 'Calendario', icon: '▦' },
   { href: '/stats', label: 'Estadísticas', icon: '◫' },
+  { href: '/archive', label: 'Archivo', icon: '⊗' },
   { href: '/logs', label: 'Logs', icon: '☰' },
   { href: '/groups', label: 'Grupos', icon: '⊞' },
   { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },

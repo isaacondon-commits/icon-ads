@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, TabletDetail, SyncLog, BASE } from '@/lib/api';
+import { api, TabletDetail, SyncLog, PlaylistVersion, BASE } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 
-type Tab = 'errors' | 'sync';
+type Tab = 'errors' | 'sync' | 'playlist';
 
 export default function TabletDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +20,8 @@ export default function TabletDetailPage() {
   const [msgText, setMsgText] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
   const [showMsgModal, setShowMsgModal] = useState(false);
+  const [playlistVersions, setPlaylistVersions] = useState<PlaylistVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
 
   useEffect(() => {
     api.getTablet(Number(id))
@@ -36,6 +38,15 @@ export default function TabletDetailPage() {
       .catch(() => {})
       .finally(() => setLoadingSync(false));
   }, [tablet?.id]);
+
+  useEffect(() => {
+    if (tab !== 'playlist' || !tablet?.playlistId || playlistVersions.length > 0) return;
+    setLoadingVersions(true);
+    api.getPlaylistVersions(tablet.playlistId)
+      .then(setPlaylistVersions)
+      .catch(() => {})
+      .finally(() => setLoadingVersions(false));
+  }, [tab, tablet?.playlistId]);
 
   const handleSendMessage = async () => {
     if (!tablet || !msgText.trim()) return;
@@ -162,16 +173,22 @@ export default function TabletDetailPage() {
       {/* Tabbed log section */}
       <div className="card overflow-hidden">
         <div className="flex border-b" style={{ borderColor: 'var(--border-md)' }}>
-          {(['sync', 'errors'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent'}`}
-              style={tab !== t ? { color: 'var(--text-muted)' } : undefined}
-            >
-              {t === 'sync' ? `Historial de sync (${syncs.length})` : `Errores (${tablet.errorLogs.length})`}
-            </button>
-          ))}
+          {(['sync', 'errors', 'playlist'] as Tab[]).map((t) => {
+            const label =
+              t === 'sync' ? `Historial de sync (${syncs.length})`
+              : t === 'errors' ? `Errores (${tablet.errorLogs.length})`
+              : 'Historial playlist';
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent'}`}
+                style={tab !== t ? { color: 'var(--text-muted)' } : undefined}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         {tab === 'sync' && (
@@ -228,6 +245,46 @@ export default function TabletDetailPage() {
                     <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{e.message}</td>
                     <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-xs)' }}>
                       {new Date(e.occurredAt).toLocaleString('es-AR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        )}
+
+        {tab === 'playlist' && (
+          !tablet.playlistId ? (
+            <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Esta tablet no tiene playlist asignada.</p>
+          ) : loadingVersions ? (
+            <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
+          ) : playlistVersions.length === 0 ? (
+            <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin historial de versiones.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
+                  {['Versión', 'Anuncios', 'Fecha'].map((h) => (
+                    <th key={h} className="text-left px-5 py-2 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {playlistVersions.map((v) => (
+                  <tr key={v.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                    <td className="px-5 py-2.5 font-mono text-xs">
+                      v{v.version}
+                      {v.snapshot.revertedFrom != null && (
+                        <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-sans">
+                          revert de v{v.snapshot.revertedFrom}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {v.snapshot.ads.length} anuncio{v.snapshot.ads.length !== 1 ? 's' : ''}
+                    </td>
+                    <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-xs)' }}>
+                      {new Date(v.createdAt).toLocaleString('es-AR')}
                     </td>
                   </tr>
                 ))}

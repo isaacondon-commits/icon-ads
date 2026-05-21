@@ -43,6 +43,20 @@ const adSchema = z.object({
   endsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
 });
 
+// GET /archived — soft-deleted ads (#5)
+router.get('/archived', async (req, res, next) => {
+  try {
+    const ads = await prisma.ad.findMany({
+      where: { NOT: { deletedAt: null } },
+      include: { campaign: { select: { id: true, name: true, clientId: true, client: { select: { name: true } } } } },
+      orderBy: { deletedAt: 'desc' },
+    });
+    res.json(ads);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const ads = await prisma.ad.findMany({
@@ -209,6 +223,22 @@ router.patch('/:id/reject', async (req, res, next) => {
   try {
     const ad = await prisma.ad.update({ where: { id: Number(req.params.id) }, data: { approvalStatus: 'rejected', active: false } });
     await audit(req, 'REJECT', 'ad', ad.id, `Rejected "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
+    res.json(ad);
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
+    next(err);
+  }
+});
+
+// PATCH /:id/restore — restore soft-deleted ad (#5)
+router.patch('/:id/restore', async (req, res, next) => {
+  try {
+    const ad = await prisma.ad.update({
+      where: { id: Number(req.params.id) },
+      data: { active: true, deletedAt: null, approvalStatus: 'approved' },
+    });
+    await audit(req, 'RESTORE', 'ad', ad.id, `Restored "${ad.name}"`);
     await bumpPlaylistsForAdIds([ad.id]);
     res.json(ad);
   } catch (err) {

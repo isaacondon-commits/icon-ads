@@ -223,6 +223,14 @@ export const api = {
 
   // Dashboard summary — all data in one call (#21)
   getDashboardSummary: () => request<DashboardSummary>('/api/dashboard/summary'),
+
+  // Archive (#5)
+  getArchivedCampaigns: () => request<ArchivedCampaign[]>('/api/campaigns/archived'),
+  getArchivedAds: () => request<ArchivedAd[]>('/api/ads/archived'),
+  restoreAd: (id: number) => request<Ad>(`/api/ads/${id}/restore`, { method: 'PATCH' }),
+
+  // Sync intervals (#14)
+  getSyncIntervals: () => request<SyncInterval[]>('/api/stats/sync-intervals'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -353,6 +361,19 @@ export interface DashboardSummary {
   monitor: TabletMonitorEntry[];
   trend30d: { date: string; count: number }[];
   recentActivity: AuditPage['logs'];
+}
+
+export interface ArchivedCampaign extends Omit<Campaign, '_count'> {
+  _count: { ads: number };
+}
+
+export interface ArchivedAd extends Ad {
+  campaign: { id: number; name: string; clientId: number; client: { name: string } };
+}
+
+export interface SyncInterval {
+  tabletId: number; tabletName: string; zone: string | null;
+  syncCount: number; avgMinutes: number | null;
 }
 
 export { BASE };

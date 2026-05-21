@@ -18,6 +18,23 @@ const campaignSchema = z.object({
   observations: z.string().nullable().optional(),
 });
 
+// GET /archived — soft-deleted campaigns (#5)
+router.get('/archived', async (req, res, next) => {
+  try {
+    const campaigns = await prisma.campaign.findMany({
+      where: { NOT: { deletedAt: null } },
+      include: {
+        client: { select: { id: true, name: true } },
+        _count: { select: { ads: true } },
+      },
+      orderBy: { deletedAt: 'desc' },
+    });
+    res.json(campaigns);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const campaigns = await prisma.campaign.findMany({

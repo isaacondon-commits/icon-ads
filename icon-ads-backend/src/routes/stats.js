@@ -302,6 +302,37 @@ router.get('/occupancy', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/stats/sync-intervals — avg minutes between syncs per tablet, last 7 days (#14)
+router.get('/sync-intervals', async (req, res, next) => {
+  try {
+    const rows = await prisma.$queryRaw`
+      SELECT
+        t.id AS "tabletId",
+        t.name AS "tabletName",
+        t.zone AS "zone",
+        COUNT(sl.id)::int AS "syncCount",
+        CASE WHEN COUNT(sl.id) > 1 THEN
+          ROUND(
+            EXTRACT(EPOCH FROM (MAX(sl.created_at) - MIN(sl.created_at))) /
+            (COUNT(sl.id) - 1) / 60
+          )::int
+        ELSE NULL END AS "avgMinutes"
+      FROM sync_logs sl
+      JOIN tablets t ON t.id = sl.tablet_id
+      WHERE sl.created_at >= NOW() - INTERVAL '7 days' AND sl.success = true
+      GROUP BY t.id, t.name, t.zone
+      ORDER BY "avgMinutes" ASC NULLS LAST
+    `;
+    res.json(rows.map((r) => ({
+      tabletId: Number(r.tabletId),
+      tabletName: r.tabletName,
+      zone: r.zone,
+      syncCount: Number(r.syncCount),
+      avgMinutes: r.avgMinutes !== null ? Number(r.avgMinutes) : null,
+    })));
+  } catch (err) { next(err); }
+});
+
 // GET /api/stats/ads-no-plays — active approved ads with zero plays (#13)
 router.get('/ads-no-plays', async (req, res, next) => {
   try {
