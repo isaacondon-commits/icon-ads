@@ -48,6 +48,8 @@ const MIGRATIONS = [
   { name: 'tablets.os_version',        sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS os_version TEXT` },
   { name: 'tablets.device_model',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS device_model TEXT` },
   { name: 'campaigns.target_impressions', sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_impressions INT` },
+  // v7 — ad tags (#16)
+  { name: 'ads.tags',                  sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'` },
 ];
 
 async function runStartupMigrations() {

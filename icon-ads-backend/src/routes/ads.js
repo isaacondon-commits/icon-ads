@@ -32,6 +32,12 @@ const upload = multer({
 
 router.use(requireAuth);
 
+const parseTags = (v) => {
+  if (!v || v === '') return [];
+  if (Array.isArray(v)) return v.map(String).filter(Boolean);
+  return String(v).split(',').map((s) => s.trim()).filter(Boolean);
+};
+
 const adSchema = z.object({
   campaignId: z.coerce.number().int().positive(),
   name: z.string().min(1),
@@ -41,6 +47,7 @@ const adSchema = z.object({
   targetUrl: z.preprocess((v) => (!v || v === '' ? null : v), z.string().url().nullable().optional()),
   startsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
   endsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
+  tags: z.preprocess(parseTags, z.array(z.string()).optional()),
 });
 
 // GET /archived — soft-deleted ads (#5)
@@ -59,8 +66,9 @@ router.get('/archived', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
+    const tag = req.query.tag ? String(req.query.tag) : undefined;
     const ads = await prisma.ad.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...(tag ? { tags: { has: tag } } : {}) },
       include: { campaign: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -135,13 +143,13 @@ router.post('/confirm', async (req, res, next) => {
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const { campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt } = adSchema.parse(req.body);
+    const { campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
     const fileUrl = `/uploads/${req.file.filename}`;
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
       data: { campaignId, name, type, fileUrl, filename: req.file.filename, durationS, approvalStatus,
-              priority: priority ?? 0, targetUrl: targetUrl ?? null,
+              priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });
@@ -161,6 +169,15 @@ router.get('/pending-count', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// GET /tags — all unique tags across active ads (#16)
+router.get('/tags', async (req, res, next) => {
+  try {
+    const ads = await prisma.ad.findMany({ where: { deletedAt: null }, select: { tags: true } });
+    const all = new Set(ads.flatMap((a) => a.tags));
+    res.json([...all].sort());
+  } catch (err) { next(err); }
 });
 
 router.get('/:id', async (req, res, next) => {

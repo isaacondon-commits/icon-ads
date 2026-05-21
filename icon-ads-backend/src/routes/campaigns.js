@@ -220,6 +220,25 @@ router.post('/:id/clone', async (req, res, next) => {
   }
 });
 
+// PATCH /:id/transfer — transfer campaign to another client (#18)
+router.patch('/:id/transfer', async (req, res, next) => {
+  try {
+    const { clientId } = z.object({ clientId: z.number().int().positive() }).parse(req.body);
+    const id = Number(req.params.id);
+    const campaign = await prisma.campaign.update({
+      where: { id, deletedAt: null },
+      data: { clientId },
+      include: { client: { select: { id: true, name: true } } },
+    });
+    await audit(req, 'TRANSFER', 'campaign', campaign.id, `Transferida al cliente #${clientId} "${campaign.client.name}"`);
+    res.json(campaign);
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });
+    next(err);
+  }
+});
+
 // POST /:id/comments — add comment (#18)
 router.post('/:id/comments', async (req, res, next) => {
   try {

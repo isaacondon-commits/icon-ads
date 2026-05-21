@@ -12,9 +12,11 @@ const PAGE_SIZE = 10;
 export default function AdsPage() {
   const [ads, setAds] = useState<Ad[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '' });
+  const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
   const [playerUrl, setPlayerUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);  // #1
@@ -30,19 +32,18 @@ export default function AdsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () =>
-    Promise.all([api.getAds(), api.getCampaigns()])
-      .then(([a, c]) => { setAds(a); setCampaigns(c); })
+    Promise.all([api.getAds(), api.getCampaigns(), api.getAdTags()])
+      .then(([a, c, t]) => { setAds(a); setCampaigns(c); setAllTags(t); })
       .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
 
-  // #6 — search filter
+  // #6 — search + tag filter
   const filtered = ads.filter((a) => {
     const q = search.toLowerCase();
-    return (
-      a.name.toLowerCase().includes(q) ||
-      (a.campaign?.name ?? '').toLowerCase().includes(q)
-    );
+    const matchSearch = a.name.toLowerCase().includes(q) || (a.campaign?.name ?? '').toLowerCase().includes(q);
+    const matchTag = !tagFilter || (a.tags ?? []).includes(tagFilter);
+    return matchSearch && matchTag;
   });
 
   // #8 — pagination
@@ -50,7 +51,7 @@ export default function AdsPage() {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const openCreate = () => {
-    setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '' });
+    setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
     setFile(null);
     setPreview(null);
     setUploadPct(0);
@@ -101,6 +102,7 @@ export default function AdsPage() {
       fd.append('durationS', form.durationS);
       fd.append('priority', form.priority || '0');
       if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
+      if (form.tags) fd.append('tags', form.tags);
       await api.uploadAdWithProgress(fd, setUploadPct);
       setShowModal(false);
       load();
@@ -144,14 +146,20 @@ export default function AdsPage() {
         </button>
       </div>
 
-      {/* Search + view toggle */}
-      <div className="flex gap-3 mb-4">
+      {/* Search + tag filter + view toggle */}
+      <div className="flex flex-wrap gap-3 mb-4">
         <input
           className="input flex-1 max-w-xs"
           placeholder="Buscar por nombre o campaña..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
+        {allTags.length > 0 && (
+          <select className="input w-auto" value={tagFilter} onChange={(e) => { setTagFilter(e.target.value); setPage(1); }}>
+            <option value="">Todos los tags</option>
+            {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
         {/* #33 — grid/list toggle */}
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
           <button
@@ -197,6 +205,13 @@ export default function AdsPage() {
               <div className="p-4">
                 <p className="font-medium text-sm truncate">{ad.name}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{ad.campaign?.name} · {ad.durationS}s</p>
+                {(ad.tags ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {ad.tags.map((t) => (
+                      <span key={t} className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 cursor-pointer" onClick={(e) => { e.stopPropagation(); setTagFilter(t); }}>{t}</span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between mt-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ad.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
                     {ad.type}
@@ -225,6 +240,7 @@ export default function AdsPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Campaña</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Duración</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Tags</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -256,6 +272,13 @@ export default function AdsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-500">{ad.durationS}s</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {(ad.tags ?? []).map((t) => (
+                        <span key={t} className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 cursor-pointer" onClick={() => { setTagFilter(t); }}>{t}</span>
+                      ))}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => confirmDelete(ad)} className="text-red-500 hover:underline text-xs">Desactivar</button>
                   </td>
@@ -401,6 +424,11 @@ export default function AdsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">URL destino <span className="text-gray-400 font-normal">(opcional)</span></label>
                   <input type="url" className="input" value={form.targetUrl} onChange={(e) => setForm({ ...form, targetUrl: e.target.value })} placeholder="https://..." />
                 </div>
+              </div>
+              {/* #16 — tags */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tags <span className="text-gray-400 font-normal">(opcional, separados por coma)</span></label>
+                <input className="input" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="Ej: promo, verano, cliente-abc" />
               </div>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">

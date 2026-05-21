@@ -237,6 +237,19 @@ export const api = {
 
   // ROI report (#15)
   getRoiStats: () => request<RoiEntry[]>('/api/stats/roi'),
+
+  // Ad tags (#16)
+  getAdTags: () => request<string[]>('/api/ads/tags'),
+  updateAdTags: (id: number, tags: string[]) =>
+    request<Ad>(`/api/ads/${id}`, { method: 'PUT', body: JSON.stringify({ tags }) }),
+
+  // Transfer campaign (#18)
+  transferCampaign: (id: number, clientId: number) =>
+    request<Campaign>(`/api/campaigns/${id}/transfer`, { method: 'PATCH', body: JSON.stringify({ clientId }) }),
+
+  // Paginated metrics (#22)
+  getMetricsPaged: (page = 1, limit = 50) =>
+    request<MetricsPage>(`/api/stats/metrics?page=${page}&limit=${limit}`),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -269,6 +282,7 @@ export interface Ad {
   name: string; type: 'video' | 'image'; fileUrl: string; filename: string;
   durationS: number; active: boolean; approvalStatus: string;
   priority: number; targetUrl?: string | null; startsAt?: string | null; endsAt?: string | null;
+  tags: string[];
   deletedAt?: string; createdAt: string; updatedAt: string;
 }
 export interface PlaylistAd { id: number; adId: number; order: number; ad: Ad; }
@@ -387,6 +401,15 @@ export interface RoiEntry {
   campaignId: number; campaignName: string; clientName: string;
   cpm: number | null; budget: number | null; targetImpressions: number | null;
   plays: number; estimatedRevenue: number;
+}
+
+export interface MetricRecord {
+  id: number; tabletName: string; adName: string; campaignName: string;
+  playedAt: string; durationPlayedS: number; completed: boolean; error: boolean;
+}
+
+export interface MetricsPage {
+  total: number; page: number; pages: number; records: MetricRecord[];
 }
 
 export { BASE };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, SystemLogEntry, AuditPage, BASE } from '@/lib/api';
+import { api, SystemLogEntry, AuditPage, MetricsPage, BASE } from '@/lib/api';
 
 const ACTION_COLORS: Record<string, string> = {
   CREATE: 'bg-emerald-100 text-emerald-700',
@@ -26,21 +26,24 @@ function badge(action: string) {
 }
 
 export default function LogsPage() {
-  const [tab, setTab] = useState<'live' | 'audit'>('live');
+  const [tab, setTab] = useState<'live' | 'audit' | 'metrics'>('live');
   const [live, setLive] = useState<SystemLogEntry[]>([]);
   const [audit, setAudit] = useState<AuditPage | null>(null);
   const [auditPage, setAuditPage] = useState(1);
+  const [metricsData, setMetricsData] = useState<MetricsPage | null>(null);
+  const [metricsPage, setMetricsPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     if (tab === 'live') {
-      setLoading(true);
       api.getLogs().then(setLive).finally(() => setLoading(false));
-    } else {
-      setLoading(true);
+    } else if (tab === 'audit') {
       api.getAuditLogs(auditPage).then(setAudit).finally(() => setLoading(false));
+    } else {
+      api.getMetricsPaged(metricsPage).then(setMetricsData).finally(() => setLoading(false));
     }
-  }, [tab, auditPage]);
+  }, [tab, auditPage, metricsPage]);
 
   return (
     <div>
@@ -48,16 +51,16 @@ export default function LogsPage() {
 
       <div className="flex items-center justify-between mb-6">
         <div className="flex rounded-lg border overflow-hidden w-fit" style={{ borderColor: 'var(--border-md)' }}>
-        {(['live', 'audit'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => { setTab(t); setAuditPage(1); }}
-            className={`px-4 py-2 text-sm font-medium border-r last:border-0 ${tab === t ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-            style={{ borderColor: 'var(--border-md)' }}
-          >
-            {t === 'live' ? '⚡ Eventos recientes' : '📋 Auditoría completa'}
-          </button>
-        ))}
+          {([['live', '⚡ Eventos recientes'], ['audit', '📋 Auditoría completa'], ['metrics', '📊 Reproducciones']] as const).map(([t, label]) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setAuditPage(1); setMetricsPage(1); }}
+              className={`px-4 py-2 text-sm font-medium border-r last:border-0 ${tab === t ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+              style={{ borderColor: 'var(--border-md)' }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         {tab === 'audit' && (
           <a
@@ -103,7 +106,7 @@ export default function LogsPage() {
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : tab === 'audit' ? (
         audit && (
           <>
             <div className="card overflow-hidden">
@@ -145,6 +148,63 @@ export default function LogsPage() {
                 <div className="flex gap-1">
                   <button disabled={auditPage === 1} onClick={() => setAuditPage(p => p - 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: 'var(--border-md)' }}>‹</button>
                   <button disabled={auditPage === audit.pages} onClick={() => setAuditPage(p => p + 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: 'var(--border-md)' }}>›</button>
+                </div>
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        metricsData && (
+          <>
+            <div className="card overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Tablet</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Anuncio</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Campaña</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Fecha</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Duración</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metricsData.records.length === 0 ? (
+                    <tr><td colSpan={6} className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin reproducciones.</td></tr>
+                  ) : (
+                    metricsData.records.map((m) => (
+                      <tr key={m.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                        <td className="px-5 py-2.5 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{m.tabletName ?? '—'}</td>
+                        <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{m.adName ?? '—'}</td>
+                        <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{m.campaignName ?? '—'}</td>
+                        <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-xs)' }}>
+                          {new Date(m.playedAt).toLocaleString('es-AR')}
+                        </td>
+                        <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {m.durationPlayedS != null ? `${m.durationPlayedS}s` : '—'}
+                        </td>
+                        <td className="px-5 py-2.5 text-xs">
+                          {m.error ? (
+                            <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">✗ error</span>
+                          ) : m.completed ? (
+                            <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-medium">✓</span>
+                          ) : (
+                            <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium">parcial</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {metricsData.pages > 1 && (
+              <div className="flex items-center justify-between mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+                <span>{metricsData.total} reproducciones · página {metricsData.page} de {metricsData.pages}</span>
+                <div className="flex gap-1">
+                  <button disabled={metricsPage === 1} onClick={() => setMetricsPage(p => p - 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: 'var(--border-md)' }}>‹</button>
+                  <button disabled={metricsPage === metricsData.pages} onClick={() => setMetricsPage(p => p + 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: 'var(--border-md)' }}>›</button>
                 </div>
               </div>
             )}

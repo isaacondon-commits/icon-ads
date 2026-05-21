@@ -229,6 +229,40 @@ router.get('/completion', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/metrics — paginated raw play records (#22)
+router.get('/metrics', async (req, res, next) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 50);
+    const skip = (page - 1) * limit;
+    const [total, records] = await Promise.all([
+      prisma.metric.count(),
+      prisma.metric.findMany({
+        skip, take: limit,
+        orderBy: { playedAt: 'desc' },
+        include: {
+          tablet: { select: { name: true } },
+          ad: { select: { name: true } },
+          campaign: { select: { name: true } },
+        },
+      }),
+    ]);
+    res.json({
+      total, page, pages: Math.ceil(total / limit),
+      records: records.map((m) => ({
+        id: m.id,
+        tabletName: m.tablet.name,
+        adName: m.ad.name,
+        campaignName: m.campaign.name,
+        playedAt: m.playedAt,
+        durationPlayedS: m.durationPlayedS,
+        completed: m.completed,
+        error: m.error,
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/stats/metrics/export — CSV download
 router.get('/metrics/export', async (req, res, next) => {
   try {

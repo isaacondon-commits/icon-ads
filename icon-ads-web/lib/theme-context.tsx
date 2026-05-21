@@ -9,9 +9,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>('light');
 
   useEffect(() => {
-    const stored = (localStorage.getItem('theme') as Theme) || 'light';
-    setTheme(stored);
-    document.documentElement.classList.toggle('dark', stored === 'dark');
+    const stored = localStorage.getItem('theme') as Theme | null;
+    let initial: Theme;
+    if (stored) {
+      initial = stored;
+    } else {
+      const h = new Date().getHours();
+      initial = h >= 20 || h < 8 ? 'dark' : 'light';
+    }
+    setTheme(initial);
+    document.documentElement.classList.toggle('dark', initial === 'dark');
   }, []);
 
   const toggle = () => {

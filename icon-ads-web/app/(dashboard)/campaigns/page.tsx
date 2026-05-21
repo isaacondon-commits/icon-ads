@@ -59,6 +59,9 @@ export default function CampaignsPage() {
   const [page, setPage] = useState(1);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [cloningId, setCloningId] = useState<number | null>(null);
+  const [transferTarget, setTransferTarget] = useState<Campaign | null>(null);
+  const [transferClientId, setTransferClientId] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   const load = async () => {
     const [campaignsRes, clientsRes] = await Promise.allSettled([api.getCampaigns(), api.getClients()]);
@@ -133,6 +136,22 @@ export default function CampaignsPage() {
       alert(e instanceof Error ? e.message : 'Error al clonar');
     } finally {
       setCloningId(null);
+    }
+  };
+
+  // #18 — transfer campaign to another client
+  const handleTransfer = async () => {
+    if (!transferTarget || !transferClientId) return;
+    setTransferring(true);
+    try {
+      await api.transferCampaign(transferTarget.id, Number(transferClientId));
+      setTransferTarget(null);
+      setTransferClientId('');
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error al transferir');
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -264,6 +283,14 @@ export default function CampaignsPage() {
                         >
                           {cloningId === c.id ? '...' : 'Clonar'}
                         </button>
+                        {/* #18 — transfer */}
+                        <button
+                          onClick={() => { setTransferTarget(c); setTransferClientId(''); }}
+                          className="text-cyan-600 hover:underline text-xs"
+                          title="Transferir a otro cliente"
+                        >
+                          Transferir
+                        </button>
                         <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
                         <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Eliminar</button>
                       </div>
@@ -339,6 +366,41 @@ export default function CampaignsPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* #18 — Transfer modal */}
+      {transferTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl shadow-xl w-full max-w-sm p-6" style={{ background: 'var(--card)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold">Transferir campaña</h2>
+              <button onClick={() => setTransferTarget(null)} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
+            </div>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-muted)' }}>
+              Campaña: <span className="font-medium">{transferTarget.name}</span><br />
+              Cliente actual: <span className="font-medium">{transferTarget.client?.name ?? '—'}</span>
+            </p>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Nuevo cliente</label>
+            <select className="input w-full mb-4" value={transferClientId} onChange={(e) => setTransferClientId(e.target.value)}>
+              <option value="">Seleccionar cliente...</option>
+              {clients.filter((c) => c.active && c.id !== transferTarget.clientId).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={handleTransfer}
+                disabled={transferring || !transferClientId}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-400 text-white py-2 rounded-lg text-sm font-medium"
+              >
+                {transferring ? 'Transfiriendo...' : 'Transferir'}
+              </button>
+              <button onClick={() => setTransferTarget(null)} className="flex-1 border py-2 rounded-lg text-sm" style={{ borderColor: 'var(--border-md)' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
