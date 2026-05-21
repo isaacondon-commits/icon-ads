@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api, ClientProfile } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
@@ -45,9 +46,17 @@ export default function ClientProfilePage() {
             <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{profile.email}</p>
             {profile.company && <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{profile.company}</p>}
           </div>
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${profile.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-            {profile.active ? 'Activo' : 'Inactivo'}
-          </span>
+          <div className="flex items-center gap-2">
+            <a
+              href={api.getProposalUrl(profile.id)}
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+            >
+              Propuesta PDF
+            </a>
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${profile.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+              {profile.active ? 'Activo' : 'Inactivo'}
+            </span>
+          </div>
         </div>
         {/* Summary row */}
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t" style={{ borderColor: 'var(--border-md)' }}>

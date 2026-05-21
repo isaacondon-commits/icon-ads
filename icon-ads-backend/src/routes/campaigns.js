@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForCampaignId } = require('../lib/bumpPlaylists');
+const pdf = require('../lib/pdfHelper');
 
 router.use(requireAuth);
 
@@ -65,6 +66,119 @@ router.post('/', async (req, res, next) => {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);
   }
+});
+
+// GET /:id/certificate — verified plays certificate PDF (#51)
+router.get('/:id/certificate', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const [campaign, playCount, playsPerDay] = await Promise.all([
+      prisma.campaign.findUnique({ where: { id }, include: { client: true } }),
+      prisma.metric.count({ where: { campaignId: id } }),
+      prisma.$queryRaw`
+        SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
+        FROM metrics WHERE campaign_id = ${id}
+        GROUP BY DATE(played_at AT TIME ZONE 'UTC') ORDER BY date ASC LIMIT 30
+      `,
+    ]);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    const doc = pdf.createDoc();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="certificado_${id}.pdf"`);
+
+    pdf.header(doc, 'Certificado de campaña', 'Reproducciones verificadas por ICON ADS');
+
+    pdf.sectionTitle(doc, 'Datos de la campaña');
+    pdf.row(doc, 'Campaña', campaign.name);
+    pdf.row(doc, 'Cliente', campaign.client?.name ?? '—');
+    pdf.row(doc, 'Período', `${pdf.fmtDate(campaign.startDate)} al ${pdf.fmtDate(campaign.endDate)}`);
+    if (campaign.cpm) pdf.row(doc, 'CPM acordado', `$${campaign.cpm}`);
+    if (campaign.budget) pdf.row(doc, 'Presupuesto', `$${campaign.budget}`);
+
+    pdf.sectionTitle(doc, 'Reproducciones verificadas');
+    pdf.row(doc, 'Total de reproducciones', playCount.toLocaleString('es-AR'), true);
+    if (campaign.cpm) pdf.row(doc, 'Ingreso estimado', `$${((playCount / 1000) * campaign.cpm).toFixed(2)}`, true);
+    if (campaign.targetImpressions) {
+      const pct = Math.round((playCount / campaign.targetImpressions) * 100);
+      pdf.row(doc, 'Meta de impresiones', campaign.targetImpressions.toLocaleString('es-AR'));
+      pdf.row(doc, 'Cumplimiento', `${pct}%`, true);
+    }
+
+    pdf.sectionTitle(doc, 'Certificación');
+    doc.fontSize(10).font('Helvetica').fillColor(pdf.BLACK)
+      .text(`ICON ADS certifica que la campaña "${campaign.name}" del cliente "${campaign.client?.name}" registró ${playCount.toLocaleString('es-AR')} reproducciones verificadas en el sistema entre el ${pdf.fmtDate(campaign.startDate)} y el ${pdf.fmtDate(campaign.endDate)}.`, 50, doc.y, { width: doc.page.width - 100, lineGap: 4 });
+    doc.moveDown(0.5);
+    doc.text(`Los datos son registrados en tiempo real desde las tablets instaladas en la flota de taxis. Este documento fue generado el ${pdf.fmtDate(new Date())}.`, 50, doc.y, { width: doc.page.width - 100, lineGap: 4 });
+
+    doc.moveDown(2);
+    doc.moveTo(50, doc.y).lineTo(250, doc.y).strokeColor('#111827').stroke();
+    doc.fontSize(8).fillColor(pdf.GRAY).text('Firma autorizada — ICON ADS', 50, doc.y + 4);
+
+    pdf.footer(doc);
+    doc.pipe(res);
+    doc.end();
+  } catch (err) { next(err); }
+});
+
+// GET /:id/contract — digital contract PDF (#56)
+router.get('/:id/contract', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const campaign = await prisma.campaign.findUnique({ where: { id }, include: { client: true } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    const doc = pdf.createDoc();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="contrato_${id}.pdf"`);
+
+    pdf.header(doc, 'Contrato de servicios publicitarios', 'ICON ADS · Publicidad digital en taxi');
+
+    pdf.sectionTitle(doc, 'Las partes');
+    pdf.row(doc, 'Prestador', 'ICON ADS S.A.S. — Montevideo, Uruguay');
+    pdf.row(doc, 'Cliente', campaign.client?.name ?? '—');
+    if (campaign.client?.company) pdf.row(doc, 'Empresa', campaign.client.company);
+    if (campaign.client?.rut) pdf.row(doc, 'RUT', campaign.client.rut);
+    if (campaign.client?.email) pdf.row(doc, 'Email', campaign.client.email);
+    if (campaign.client?.address) pdf.row(doc, 'Dirección', campaign.client.address);
+
+    pdf.sectionTitle(doc, 'Objeto del contrato');
+    pdf.row(doc, 'Campaña', campaign.name);
+    pdf.row(doc, 'Inicio', pdf.fmtDate(campaign.startDate));
+    pdf.row(doc, 'Fin', pdf.fmtDate(campaign.endDate));
+    if (campaign.cpm) pdf.row(doc, 'CPM (USD/1000 impresiones)', `$${campaign.cpm}`);
+    if (campaign.budget) pdf.row(doc, 'Presupuesto total', `$${campaign.budget}`);
+    if (campaign.maxImpressions) pdf.row(doc, 'Máximo de impresiones', campaign.maxImpressions.toLocaleString('es-AR'));
+    if (campaign.targetImpressions) pdf.row(doc, 'Meta de impresiones', campaign.targetImpressions.toLocaleString('es-AR'));
+    if (campaign.observations) pdf.row(doc, 'Observaciones', campaign.observations);
+
+    pdf.sectionTitle(doc, 'Condiciones generales');
+    const clauses = [
+      '1. ICON ADS se compromete a distribuir el contenido publicitario del Cliente en las tablets instaladas en la flota de taxis activa durante el período pactado.',
+      '2. El Cliente declara que el material publicitario entregado cumple con la normativa vigente y no infringe derechos de terceros.',
+      '3. La facturación se realizará en base a las reproducciones efectivas registradas en el sistema, al CPM acordado.',
+      '4. Cualquier modificación al presente contrato deberá ser acordada por escrito entre ambas partes.',
+      '5. La jurisdicción para dirimir cualquier controversia será la de los tribunales de Montevideo, Uruguay.',
+    ];
+    doc.moveDown(0.3);
+    for (const c of clauses) {
+      doc.fontSize(9).font('Helvetica').fillColor(pdf.BLACK).text(c, 50, doc.y, { width: doc.page.width - 100, lineGap: 3 });
+      doc.moveDown(0.4);
+    }
+
+    doc.moveDown(1.5);
+    const sigY = doc.y;
+    doc.moveTo(50, sigY).lineTo(220, sigY).strokeColor('#111827').stroke();
+    doc.moveTo(330, sigY).lineTo(500, sigY).strokeColor('#111827').stroke();
+    doc.fontSize(8).fillColor(pdf.GRAY).text('ICON ADS S.A.S.', 50, sigY + 4);
+    doc.text(campaign.client?.name ?? 'Cliente', 330, sigY + 4);
+    doc.fontSize(8).text(`Fecha: ${pdf.fmtDate(new Date())}`, 50, sigY + 16);
+    doc.text(`Fecha: ___/___/______`, 330, sigY + 16);
+
+    pdf.footer(doc);
+    doc.pipe(res);
+    doc.end();
+  } catch (err) { next(err); }
 });
 
 // GET /:id — with ads, metrics summary, comments (#8, #18)

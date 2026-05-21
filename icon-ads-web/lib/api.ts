@@ -293,6 +293,11 @@ export const api = {
   // Health check (#50)
   getHealth: () => request<HealthCheck>('/api/health'),
 
+  // PDF exports (#32 #51 #56)
+  getProposalUrl: (clientId: number) => `${BASE}/api/clients/${clientId}/proposal`,
+  getCertificateUrl: (campaignId: number) => `${BASE}/api/campaigns/${campaignId}/certificate`,
+  getContractUrl: (campaignId: number) => `${BASE}/api/campaigns/${campaignId}/contract`,
+
   // Reminders (#39)
   getReminders: () => request<Reminder[]>('/api/reminders'),
   createReminder: (data: { title: string; body?: string | null; dueAt?: string | null }) =>

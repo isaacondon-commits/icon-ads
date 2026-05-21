@@ -344,6 +344,9 @@ export default function CampaignsPage() {
                           Transferir
                         </button>
                         <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
+                        {/* #51 #56 — PDF docs */}
+                        <a href={api.getCertificateUrl(c.id)} className="text-violet-600 hover:underline text-xs" title="Certificado de reproducciones PDF">Cert.</a>
+                        <a href={api.getContractUrl(c.id)} className="text-emerald-600 hover:underline text-xs" title="Contrato digital PDF">Contrato</a>
                         <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Eliminar</button>
                       </div>
                     </td>
