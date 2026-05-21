@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry, AuditPage, RangeStats } from '@/lib/api';
+import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry, AuditPage, RangeStats, DashboardSummary } from '@/lib/api';
 import UruguayMap from '@/components/UruguayMap';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4','#ec4899','#84cc16'];
@@ -21,18 +21,32 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const t0 = Date.now();
-    Promise.allSettled([api.getStats(), api.getTabletMonitor(), api.getStorageStats()])
-      .then(([s, m, st]) => {
-        if (s.status === 'fulfilled') { setStats(s.value); setServerLatencyMs(Date.now() - t0); }
-        if (m.status === 'fulfilled') setMonitor(m.value);
-        if (st.status === 'fulfilled') setStorage(st.value);
+    // #21 — single summary call replaces 4 separate requests
+    api.getDashboardSummary()
+      .then((summary: DashboardSummary) => {
+        setServerLatencyMs(Date.now() - t0);
+        setStats(summary.stats);
+        setMonitor(summary.monitor);
+        setTrend30d(summary.trend30d);
+        setRecentActivity(summary.recentActivity);
+      })
+      .catch(() => {
+        // fallback to individual calls if summary endpoint fails
+        const t1 = Date.now();
+        Promise.allSettled([api.getStats(), api.getTabletMonitor()])
+          .then(([s, m]) => {
+            if (s.status === 'fulfilled') { setStats(s.value); setServerLatencyMs(Date.now() - t1); }
+            if (m.status === 'fulfilled') setMonitor(m.value);
+          });
+        const from30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        const to30 = new Date().toISOString().slice(0, 10);
+        api.getRangeStats(from30, to30).then((r) => setTrend30d(r.dailyPlays)).catch(() => {});
+        api.getAuditLogs(1).then((a) => setRecentActivity(a.logs.slice(0, 10))).catch(() => {});
       })
       .finally(() => setLoading(false));
+    // Storage stats kept separate (reads filesystem on server)
+    api.getStorageStats().then(setStorage).catch(() => {});
     if (isMonday) api.getWeeklyStats(2).then((weeks) => setLastWeek(weeks[0] ?? null)).catch(() => {});
-    const from30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    const to30 = new Date().toISOString().slice(0, 10);
-    api.getRangeStats(from30, to30).then((r) => setTrend30d(r.dailyPlays)).catch(() => {});
-    api.getAuditLogs(1).then((a) => setRecentActivity(a.logs.slice(0, 10))).catch(() => {});
   }, []);
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando estadísticas...</p>;

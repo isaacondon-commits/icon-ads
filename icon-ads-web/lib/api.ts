@@ -213,6 +213,16 @@ export const api = {
 
   // Ads with zero plays (#13)
   getAdsNoPlays: () => request<AdNoPlays[]>('/api/stats/ads-no-plays'),
+
+  // Clone campaign (#9)
+  cloneCampaign: (id: number) =>
+    request<Campaign>(`/api/campaigns/${id}/clone`, { method: 'POST' }),
+
+  // Zone stats (#11)
+  getZoneStats: () => request<ZoneStat[]>('/api/admin/stats/zones'),
+
+  // Dashboard summary — all data in one call (#21)
+  getDashboardSummary: () => request<DashboardSummary>('/api/dashboard/summary'),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -330,6 +340,17 @@ export interface Notifications {
   total: number; pendingAds: number;
   expiringCampaigns: { id: number; name: string; daysLeft: number }[];
   offlineTablets: { id: number; name: string; offlineMinutes: number | null }[];
+}
+
+export interface ZoneStat {
+  zone: string; tablets: number; online: number; plays: number;
+}
+
+export interface DashboardSummary {
+  stats: SystemStats;
+  monitor: TabletMonitorEntry[];
+  trend30d: { date: string; count: number }[];
+  recentActivity: AuditPage['logs'];
 }
 
 export { BASE };

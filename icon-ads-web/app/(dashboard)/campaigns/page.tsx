@@ -58,6 +58,7 @@ export default function CampaignsPage() {
   const [search, setSearch] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('campaigns_filter_search') ?? '') : '');
   const [page, setPage] = useState(1);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [cloningId, setCloningId] = useState<number | null>(null);
 
   const load = async () => {
     const [campaignsRes, clientsRes] = await Promise.allSettled([api.getCampaigns(), api.getClients()]);
@@ -117,6 +118,19 @@ export default function CampaignsPage() {
     await api.deleteCampaign(deleteTarget.id).catch(() => {});
     setDeleteTarget(null);
     load();
+  };
+
+  // #9 — clone campaign
+  const handleClone = async (c: Campaign) => {
+    setCloningId(c.id);
+    try {
+      await api.cloneCampaign(c.id);
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error al clonar');
+    } finally {
+      setCloningId(null);
+    }
   };
 
   // #15 — pause/resume toggle
@@ -206,6 +220,15 @@ export default function CampaignsPage() {
                           className={`text-xs hover:underline disabled:opacity-40 ${c.active ? 'text-amber-600' : 'text-emerald-600'}`}
                         >
                           {togglingId === c.id ? '...' : c.active ? 'Pausar' : 'Reanudar'}
+                        </button>
+                        {/* #9 — clone campaign */}
+                        <button
+                          onClick={() => handleClone(c)}
+                          disabled={cloningId === c.id}
+                          className="text-violet-600 hover:underline text-xs disabled:opacity-40"
+                          title="Clonar campaña con todos sus anuncios"
+                        >
+                          {cloningId === c.id ? '...' : 'Clonar'}
                         </button>
                         <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
                         <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Eliminar</button>

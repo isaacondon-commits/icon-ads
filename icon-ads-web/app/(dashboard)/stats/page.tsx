@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -17,6 +17,7 @@ export default function StatsPage() {
   const [loadingRange, setLoadingRange] = useState(false);
   const [loadingExtra, setLoadingExtra] = useState(false);
   const [adsNoPlays, setAdsNoPlays] = useState<AdNoPlays[]>([]);
+  const [zoneStats, setZoneStats] = useState<ZoneStat[]>([]);
 
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
@@ -27,6 +28,7 @@ export default function StatsPage() {
     api.getWeeklyStats(8).then(setWeekly).finally(() => setLoadingWeekly(false));
     api.getPlaylistStats().then(setPlaylists).catch(() => {});
     api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
+    api.getZoneStats().then(setZoneStats).catch(() => {});
     fetchRange(defaultFrom, defaultTo);
   }, []);
 
@@ -297,6 +299,55 @@ export default function StatsPage() {
           </>
         )}
       </div>
+
+      {/* #11 — Performance by zone */}
+      {zoneStats.length > 0 && (
+        <div className="card p-6 mt-6">
+          <h2 className="font-semibold mb-4">Rendimiento por zona</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                  <th className="text-left pb-2">Zona</th>
+                  <th className="text-right pb-2">Tablets</th>
+                  <th className="text-right pb-2">Online</th>
+                  <th className="text-right pb-2">Reproducciones</th>
+                  <th className="text-right pb-2">Plays / tablet</th>
+                </tr>
+              </thead>
+              <tbody>
+                {zoneStats.map((z) => {
+                  const playsPerTablet = z.tablets > 0 ? Math.round(z.plays / z.tablets) : 0;
+                  const maxPlays = Math.max(...zoneStats.map((s) => s.plays), 1);
+                  const barPct = Math.round((z.plays / maxPlays) * 100);
+                  return (
+                    <tr key={z.zone} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                      <td className="py-2.5 font-medium">{z.zone}</td>
+                      <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{z.tablets}</td>
+                      <td className="py-2.5 text-right">
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${z.online > 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>
+                          {z.online}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 rounded-full" style={{ background: 'var(--border-md)' }}>
+                            <div className="h-1.5 rounded-full bg-blue-500" style={{ width: `${barPct}%` }} />
+                          </div>
+                          <span className="tabular-nums font-medium">{z.plays.toLocaleString()}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                        {playsPerTablet.toLocaleString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* #13 — Ads with zero plays */}
       {adsNoPlays.length > 0 && (

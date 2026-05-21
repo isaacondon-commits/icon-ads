@@ -135,14 +135,64 @@ router.patch('/:id/pause', async (req, res, next) => {
   }
 });
 
-// PATCH /:id/resume — resume campaign (#15)
+// PATCH /:id/resume — resume campaign (#15) + validate has approved ads (#25)
 router.patch('/:id/resume', async (req, res, next) => {
   try {
-    const campaign = await prisma.campaign.update({ where: { id: Number(req.params.id) }, data: { active: true } });
+    const id = Number(req.params.id);
+    const approvedAds = await prisma.ad.count({
+      where: { campaignId: id, active: true, deletedAt: null, approvalStatus: 'approved' },
+    });
+    if (approvedAds === 0) {
+      return res.status(400).json({ error: 'La campaña no tiene anuncios aprobados. Agregá al menos un anuncio antes de activarla.' });
+    }
+    const campaign = await prisma.campaign.update({ where: { id }, data: { active: true } });
     await audit(req, 'RESUME', 'campaign', campaign.id, `Resumed "${campaign.name}"`);
     res.json(campaign);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });
+    next(err);
+  }
+});
+
+// POST /:id/clone — clone campaign with all its ads (#9)
+router.post('/:id/clone', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const original = await prisma.campaign.findUnique({
+      where: { id, deletedAt: null },
+      include: { ads: { where: { deletedAt: null, active: true } } },
+    });
+    if (!original) return res.status(404).json({ error: 'Campaign not found' });
+    const clone = await prisma.campaign.create({
+      data: {
+        clientId: original.clientId,
+        name: `${original.name} (copia)`,
+        startDate: original.startDate,
+        endDate: original.endDate,
+        cpm: original.cpm,
+        maxImpressions: original.maxImpressions,
+        active: false,
+        ads: {
+          create: original.ads.map((ad) => ({
+            name: ad.name,
+            type: ad.type,
+            fileUrl: ad.fileUrl,
+            filename: ad.filename,
+            durationS: ad.durationS,
+            active: ad.active,
+            approvalStatus: ad.approvalStatus,
+            priority: ad.priority,
+            targetUrl: ad.targetUrl ?? null,
+            startsAt: ad.startsAt ?? null,
+            endsAt: ad.endsAt ?? null,
+          })),
+        },
+      },
+      include: { client: { select: { id: true, name: true } }, _count: { select: { metrics: true } } },
+    });
+    await audit(req, 'CLONE', 'campaign', clone.id, `Clonada de campaña #${id} "${original.name}"`);
+    res.status(201).json(clone);
+  } catch (err) {
     next(err);
   }
 });
