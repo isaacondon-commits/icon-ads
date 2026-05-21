@@ -64,6 +64,10 @@ const MIGRATIONS = [
   { name: 'referrals',                 sql: `CREATE TABLE IF NOT EXISTS referrals (id SERIAL PRIMARY KEY, referrer_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, referred_id INT REFERENCES clients(id) ON DELETE SET NULL, code TEXT NOT NULL UNIQUE, used BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   // v13 — driver points (#69)
   { name: 'driver_points',             sql: `CREATE TABLE IF NOT EXISTS driver_points (id SERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE UNIQUE, points INT NOT NULL DEFAULT 0, syncs_30d INT NOT NULL DEFAULT 0, last_calculated TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v14 — zones / geofencing (#67)
+  { name: 'zones',                     sql: `CREATE TABLE IF NOT EXISTS zones (id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, polygon JSONB NOT NULL DEFAULT '[]', color TEXT NOT NULL DEFAULT '#3b82f6', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  // v15 — public API keys (#70)
+  { name: 'api_keys',                  sql: `CREATE TABLE IF NOT EXISTS api_keys (id SERIAL PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, active BOOLEAN NOT NULL DEFAULT true, last_used TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
 ];
 
 async function runStartupMigrations() {

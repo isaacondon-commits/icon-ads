@@ -27,6 +27,8 @@ const remindersRoutes = require('./routes/reminders');
 const abtestsRoutes = require('./routes/abtests');
 const referralsRoutes = require('./routes/referrals');
 const driverpointsRoutes = require('./routes/driverpoints');
+const zonesRoutes = require('./routes/zones');
+const publicRoutes = require('./routes/public');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const latencyTracker = require('./lib/latencyTracker');
@@ -145,6 +147,8 @@ app.use('/api/reminders', remindersRoutes);
 app.use('/api/abtests', abtestsRoutes);
 app.use('/api/referrals', referralsRoutes);
 app.use('/api/driver-points', driverpointsRoutes);
+app.use('/api/zones', zonesRoutes);
+app.use('/api/v1/public', publicRoutes);
 
 // #41 — Swagger API docs at /api/docs
 const swaggerSpec = swaggerJsdoc({
@@ -161,6 +165,7 @@ const swaggerSpec = swaggerJsdoc({
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
         cookieAuth: { type: 'apiKey', in: 'cookie', name: 'token' },
+        apiKeyHeader: { type: 'apiKey', in: 'header', name: 'X-API-Key' },
       },
     },
     security: [{ bearerAuth: [] }, { cookieAuth: [] }],
@@ -175,6 +180,7 @@ const swaggerSpec = swaggerJsdoc({
       { name: 'Admin', description: 'Administración del sistema' },
       { name: 'Notes', description: 'Notas internas' },
       { name: 'Reminders', description: 'Recordatorios' },
+      { name: 'Public API', description: 'API pública de sólo lectura (requiere X-API-Key)' },
     ],
   },
   apis: [],
@@ -205,6 +211,13 @@ swaggerSpec.paths = {
   '/api/admin/export/pptx': { get: { tags: ['Admin'], summary: 'PowerPoint metrics export (#40)', responses: { 200: { description: 'PPTX file' } } } },
   '/api/admin/export/tablets': { get: { tags: ['Admin'], summary: 'Tablets CSV export', responses: { 200: { description: 'CSV file' } } } },
   '/api/admin/demo-seed': { post: { tags: ['Admin'], summary: 'Seed demo client + campaign (#63)', responses: { 201: { description: 'Demo data created' }, 409: { description: 'Already seeded' } } } },
+  '/api/admin/api-keys': { get: { tags: ['Admin'], summary: 'List public API keys (#70)', responses: { 200: { description: 'Array of API keys (masked)' } } }, post: { tags: ['Admin'], summary: 'Create API key (#70)', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } } }, responses: { 201: { description: 'Created API key (full key shown once)' } } } },
+  '/api/admin/api-keys/{id}': { delete: { tags: ['Admin'], summary: 'Revoke API key (#70)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Revoked' } } } },
+  '/api/zones': { get: { tags: ['Admin'], summary: 'List geofence zones with tablet counts (#67)', responses: { 200: { description: 'Array of zones' } } }, post: { tags: ['Admin'], summary: 'Create zone (#67)', responses: { 201: { description: 'Created zone' } } } },
+  '/api/zones/{id}': { put: { tags: ['Admin'], summary: 'Update zone (#67)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated zone' } } }, delete: { tags: ['Admin'], summary: 'Delete zone (#67)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
+  '/api/v1/public/stats': { get: { tags: ['Public API'], summary: 'Summary stats (requires X-API-Key header) (#70)', security: [{ apiKeyHeader: [] }], responses: { 200: { description: 'Stats object' }, 401: { description: 'No API key' }, 403: { description: 'Invalid key' } } } },
+  '/api/v1/public/zones': { get: { tags: ['Public API'], summary: 'Zones with tablet counts (requires X-API-Key) (#70)', security: [{ apiKeyHeader: [] }], responses: { 200: { description: 'Array of zone stats' } } } },
+  '/api/v1/public/campaigns': { get: { tags: ['Public API'], summary: 'Active campaigns list (requires X-API-Key) (#70)', security: [{ apiKeyHeader: [] }], responses: { 200: { description: 'Array of campaigns' } } } },
   '/api/notes': { get: { tags: ['Notes'], summary: 'List admin notes', responses: { 200: { description: 'Array of notes' } } }, post: { tags: ['Notes'], summary: 'Create note', responses: { 201: { description: 'Created note' } } } },
   '/api/reminders': { get: { tags: ['Reminders'], summary: 'List reminders', responses: { 200: { description: 'Array of reminders' } } }, post: { tags: ['Reminders'], summary: 'Create reminder', responses: { 201: { description: 'Created reminder' } } } },
   '/api/reminders/{id}': { patch: { tags: ['Reminders'], summary: 'Update reminder (toggle done, edit)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated reminder' } } }, delete: { tags: ['Reminders'], summary: 'Delete reminder', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 204: { description: 'Deleted' } } } },

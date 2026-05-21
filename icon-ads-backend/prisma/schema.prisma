@@ -364,3 +364,25 @@ model DriverPoints {
 
   @@map("driver_points")
 }
+
+model Zone {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  polygon     Json     @default("[]")
+  color       String   @default("#3b82f6")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("zones")
+}
+
+model ApiKey {
+  id        Int       @id @default(autoincrement())
+  name      String
+  key       String    @unique
+  active    Boolean   @default(true)
+  lastUsed  DateTime? @map("last_used")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("api_keys")
+}

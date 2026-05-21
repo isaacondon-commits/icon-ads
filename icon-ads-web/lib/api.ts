@@ -331,6 +331,20 @@ export const api = {
   updateReminder: (id: number, data: Partial<{ done: boolean; title: string; body: string | null; dueAt: string | null }>) =>
     request<Reminder>(`/api/reminders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteReminder: (id: number) => request<void>(`/api/reminders/${id}`, { method: 'DELETE' }),
+
+  // Zones / Geofencing (#67)
+  getZones: () => request<Zone[]>('/api/zones'),
+  createZone: (data: { name: string; description?: string; polygon?: [number, number][]; color?: string }) =>
+    request<Zone>('/api/zones', { method: 'POST', body: JSON.stringify(data) }),
+  updateZone: (id: number, data: Partial<{ name: string; description: string; polygon: [number, number][]; color: string }>) =>
+    request<Zone>(`/api/zones/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteZone: (id: number) => request<void>(`/api/zones/${id}`, { method: 'DELETE' }),
+
+  // Public API keys (#70)
+  getApiKeys: () => request<ApiKey[]>('/api/admin/api-keys'),
+  createApiKey: (name: string) =>
+    request<ApiKey>('/api/admin/api-keys', { method: 'POST', body: JSON.stringify({ name }) }),
+  revokeApiKey: (id: number) => request<void>(`/api/admin/api-keys/${id}`, { method: 'DELETE' }),
 };
 
 export interface User { id: number; email: string; name: string; role: string; }
@@ -552,6 +566,17 @@ export interface Referral {
 export interface DriverPointsEntry {
   id: number; tabletId: number; points: number; syncs30d: number; lastCalculated: string;
   tablet: { id: number; name: string; zone: string | null; driverName: string | null; licensePlate: string | null };
+}
+
+export interface Zone {
+  id: number; name: string; description: string | null;
+  polygon: [number, number][]; color: string; createdAt: string;
+  tabletCount?: number;
+}
+
+export interface ApiKey {
+  id: number; name: string; key: string;
+  active: boolean; lastUsed: string | null; createdAt: string;
 }
 
 export { BASE };

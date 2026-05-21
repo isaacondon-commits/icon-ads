@@ -28,6 +28,8 @@ const links = [
   { href: '/abtests', label: 'A/B Tests', icon: '⊟' },
   { href: '/referrals', label: 'Referidos', icon: '◎' },
   { href: '/driver-points', label: 'Puntos taxistas', icon: '★' },
+  { href: '/geofencing', label: 'Geofencing', icon: '◎' },
+  { href: '/public-api', label: 'API pública', icon: '⊞' },
   { href: '/calculator', label: 'Calculadora', icon: '⊞' },
   { href: '/logs', label: 'Logs', icon: '☰' },
   { href: '/groups', label: 'Grupos', icon: '⊞' },

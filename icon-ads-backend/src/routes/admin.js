@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const XLSX = require('xlsx');
 const PptxGenJS = require('pptxgenjs');
@@ -352,6 +353,33 @@ router.post('/demo-seed', requireAuth, async (req, res, next) => {
       client: { id: demoClient.id, name: demoClient.name },
       campaign: { id: campaign.id, name: campaign.name },
     });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/api-keys — list public API keys (#70)
+router.get('/api-keys', requireAuth, async (req, res, next) => {
+  try {
+    const keys = await prisma.apiKey.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(keys.map((k) => ({ ...k, key: k.key.slice(0, 14) + '...' })));
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/api-keys — create a new API key (#70)
+router.post('/api-keys', requireAuth, async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    const key = 'ICADS-' + crypto.randomBytes(20).toString('hex').toUpperCase();
+    const apiKey = await prisma.apiKey.create({ data: { name, key } });
+    res.status(201).json(apiKey);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/admin/api-keys/:id — revoke an API key (#70)
+router.delete('/api-keys/:id', requireAuth, async (req, res, next) => {
+  try {
+    await prisma.apiKey.update({ where: { id: Number(req.params.id) }, data: { active: false } });
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
