@@ -119,7 +119,7 @@ router.get('/presign', async (req, res, next) => {
 router.post('/confirm', async (req, res, next) => {
   try {
     if (!r2.isConfigured) return res.status(503).json({ error: 'R2 not configured' });
-    const { key, publicUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt } = adSchema.extend({
+    const { key, publicUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.extend({
       key: z.string().min(1),
       publicUrl: z.string().url(),
     }).parse(req.body);
@@ -127,7 +127,7 @@ router.post('/confirm', async (req, res, next) => {
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
       data: { campaignId, name, type, fileUrl: publicUrl, filename, durationS, approvalStatus,
-              priority: priority ?? 0, targetUrl: targetUrl ?? null,
+              priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });

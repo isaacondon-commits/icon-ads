@@ -110,6 +110,7 @@ export const api = {
             durationS: formData.get('durationS'),
             priority: formData.get('priority'),
             targetUrl: formData.get('targetUrl') || null,
+            tags: formData.get('tags') || null,
           }),
         });
         onProgress(100);
