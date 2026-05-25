@@ -420,7 +420,9 @@ export interface Tablet {
   osVersion?: string | null; deviceModel?: string | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
-  lastSync?: string | null; status: 'online' | 'offline' | 'syncing'; createdAt: string; updatedAt: string;
+  lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
+  manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
+  createdAt: string; updatedAt: string;
 }
 export interface TabletDetail extends Tablet {
   errorLogs: { id: number; errorType: string; message: string; occurredAt: string }[];

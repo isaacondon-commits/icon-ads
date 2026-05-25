@@ -94,6 +94,12 @@ export default function CampaignsPage() {
 
   const toDateInput = (iso: string) => iso?.slice(0, 10) ?? '';
 
+  // Parse a YYYY-MM-DD string as local midnight to avoid UTC timezone shift
+  const parseLocalDate = (s: string) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d).toISOString();
+  };
+
   const filtered = campaigns.filter((c) => {
     const q = search.toLowerCase();
     return c.name.toLowerCase().includes(q) || (c.client?.name ?? '').toLowerCase().includes(q);
@@ -122,8 +128,8 @@ export default function CampaignsPage() {
       const data = {
         clientId: Number(form.clientId),
         name: form.name,
-        startDate: new Date(form.startDate).toISOString(),
-        endDate: new Date(form.endDate).toISOString(),
+        startDate: parseLocalDate(form.startDate),
+        endDate: parseLocalDate(form.endDate),
         cpm: form.cpm ? Number(form.cpm) : null,
         maxImpressions: form.maxImpressions ? Number(form.maxImpressions) : null,
         budget: form.budget ? Number(form.budget) : null,

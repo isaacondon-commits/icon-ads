@@ -19,7 +19,7 @@ export default function TabletsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Tablet | null>(null);
-  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '' });
+  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
@@ -69,7 +69,7 @@ export default function TabletsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '' });
+    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa' });
     setError(''); setShowModal(true);
   };
 
@@ -85,6 +85,7 @@ export default function TabletsPage() {
       driverName: t.driverName ?? '',
       licensePlate: t.licensePlate ?? '',
       spotPrice: t.spotPrice != null ? String(t.spotPrice) : '',
+      manualStatus: t.manualStatus ?? 'activa',
     });
     setError(''); setShowModal(true);
   };
@@ -102,6 +103,7 @@ export default function TabletsPage() {
         driverName: form.driverName || null,
         licensePlate: form.licensePlate || null,
         spotPrice: form.spotPrice ? Number(form.spotPrice) : null,
+        manualStatus: form.manualStatus as 'activa' | 'mantenimiento' | 'bloqueada',
       };
       editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
       setShowModal(false); load();
@@ -203,6 +205,11 @@ export default function TabletsPage() {
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isOnline ? 'bg-emerald-400' : 'bg-gray-400'}`} />
                       <Link href={`/tablets/${t.id}`} className="font-semibold text-sm text-blue-600 hover:underline truncate">{t.name}</Link>
+                      {t.manualStatus && t.manualStatus !== 'activa' && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0 ${t.manualStatus === 'bloqueada' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                          {t.manualStatus}
+                        </span>
+                      )}
                     </div>
                     {t.zone && <p className="text-xs ml-4.5" style={{ color: 'var(--text-muted)' }}>{t.zone}</p>}
                   </div>
@@ -274,9 +281,16 @@ export default function TabletsPage() {
                     </td>
                     <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{t.zone ?? '—'}</td>
                     <td className="px-5 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
-                        {isOnline ? 'online' : 'offline'}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${isOnline ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
+                          {isOnline ? 'online' : 'offline'}
+                        </span>
+                        {t.manualStatus && t.manualStatus !== 'activa' && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${t.manualStatus === 'bloqueada' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                            {t.manualStatus}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                       {t.batteryLevel != null ? (
@@ -364,6 +378,13 @@ export default function TabletsPage() {
               </div>
               <Field label="Precio por spot (USD, opcional)">
                 <input type="number" min="0" step="0.01" className="input" value={form.spotPrice} onChange={(e) => setForm({ ...form, spotPrice: e.target.value })} placeholder="0.00" />
+              </Field>
+              <Field label="Estado operativo">
+                <select className="input" value={form.manualStatus} onChange={(e) => setForm({ ...form, manualStatus: e.target.value })}>
+                  <option value="activa">Activa</option>
+                  <option value="mantenimiento">En mantenimiento</option>
+                  <option value="bloqueada">Bloqueada (kiosco)</option>
+                </select>
               </Field>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">

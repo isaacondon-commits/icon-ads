@@ -5,6 +5,7 @@ import { api, Ad, Campaign, BASE } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 const MAX_SIZE_MB = 100;
+const mediaUrl = (fileUrl: string) => fileUrl.startsWith('http') ? fileUrl : `${BASE}${fileUrl}`;
 const ALLOWED_TYPES = ['video/mp4', 'image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const PAGE_SIZE = 10;
@@ -189,17 +190,15 @@ export default function AdsPage() {
               {/* #11 — thumbnail, click to preview */}
               <div
                 className="h-36 bg-gray-100 flex items-center justify-center overflow-hidden cursor-pointer relative group"
-                onClick={() => setPlayerUrl(`${BASE}${ad.fileUrl}`)}
+                onClick={() => setPlayerUrl(mediaUrl(ad.fileUrl))}
               >
                 {ad.type === 'image' ? (
-                  <img src={`${BASE}${ad.fileUrl}`} alt={ad.name} className="h-full w-full object-cover" />
+                  <img src={mediaUrl(ad.fileUrl)} alt={ad.name} className="h-full w-full object-cover" />
                 ) : (
-                  <>
-                    <video src={`${BASE}${ad.fileUrl}`} className="h-full w-full object-cover" muted />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
-                      <span className="text-white text-3xl">▶</span>
-                    </div>
-                  </>
+                  <div className="w-full h-full bg-gray-800 flex flex-col items-center justify-center gap-1 group-hover:bg-gray-700 transition-colors">
+                    <span className="text-white text-3xl">▶</span>
+                    <span className="text-gray-400 text-xs">Video</span>
+                  </div>
                 )}
               </div>
               <div className="p-4">
@@ -250,17 +249,14 @@ export default function AdsPage() {
                   <td className="px-4 py-2">
                     <div
                       className="w-12 h-8 rounded overflow-hidden bg-gray-100 cursor-pointer relative group"
-                      onClick={() => setPlayerUrl(`${BASE}${ad.fileUrl}`)}
+                      onClick={() => setPlayerUrl(mediaUrl(ad.fileUrl))}
                     >
                       {ad.type === 'image' ? (
-                        <img src={`${BASE}${ad.fileUrl}`} alt="" className="w-full h-full object-cover" />
+                        <img src={mediaUrl(ad.fileUrl)} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <>
-                          <video src={`${BASE}${ad.fileUrl}`} className="w-full h-full object-cover" muted />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
-                            <span className="text-white text-xs">▶</span>
-                          </div>
-                        </>
+                        <div className="w-full h-full bg-gray-800 flex items-center justify-center group-hover:bg-gray-700 transition-colors">
+                          <span className="text-white text-xs">▶</span>
+                        </div>
                       )}
                     </div>
                   </td>

@@ -71,6 +71,8 @@ const MIGRATIONS = [
   // v16 — driver surveys (#47)
   { name: 'surveys',                   sql: `CREATE TABLE IF NOT EXISTS surveys (id SERIAL PRIMARY KEY, question TEXT NOT NULL, options JSONB NOT NULL DEFAULT '[]', active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'survey_answers',            sql: `CREATE TABLE IF NOT EXISTS survey_answers (id SERIAL PRIMARY KEY, survey_id INT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, option_index INT NOT NULL, answered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(survey_id, tablet_id))` },
+  // v18 — tablet manual status (activa / mantenimiento / bloqueada)
+  { name: 'tablets.manual_status', sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS manual_status TEXT NOT NULL DEFAULT 'activa'` },
   // v17 — GPS real-time location
   { name: 'tablets.last_lat',          sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_lat FLOAT` },
   { name: 'tablets.last_lng',          sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_lng FLOAT` },

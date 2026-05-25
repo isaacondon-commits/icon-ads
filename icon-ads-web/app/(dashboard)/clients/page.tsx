@@ -241,7 +241,7 @@ export default function ClientsPage() {
               </Field>
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-4 pb-2 sticky bottom-0 bg-white">
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
                 {saving ? 'Guardando...' : 'Guardar'}
               </button>
@@ -259,12 +259,14 @@ export default function ClientsPage() {
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0 border-b border-gray-100">
           <h2 className="font-semibold text-lg">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
-        {children}
+        <div className="overflow-y-auto flex-1 px-6 py-4">
+          {children}
+        </div>
       </div>
     </div>
   );
