@@ -1,8 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
 }
+
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties()
+if (keystorePropsFile.exists()) keystoreProps.load(keystorePropsFile.inputStream())
 
 android {
     namespace = "com.iconads.player"
@@ -12,14 +18,24 @@ android {
         applicationId = "com.iconads.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
 
         buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(keystoreProps["storeFile"] as? String ?: "iconads-release.keystore")
+            storePassword = keystoreProps["storePassword"] as? String ?: ""
+            keyAlias = keystoreProps["keyAlias"] as? String ?: "iconads"
+            keyPassword = keystoreProps["keyPassword"] as? String ?: ""
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

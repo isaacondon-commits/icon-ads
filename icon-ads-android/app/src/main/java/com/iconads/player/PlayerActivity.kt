@@ -82,6 +82,7 @@ class PlayerActivity : AppCompatActivity() {
 
         setupWindow()
         setupExoPlayer()
+        showOnboardingStatus("Conectando con el servidor...")
         // Registro + sync + upload de métricas inmediatos, sin esperar WorkManager
         lifecycleScope.launch {
             registerNow()
@@ -302,8 +303,26 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun showOnboardingStatus(message: String) {
+        binding.loadingView.visibility = View.VISIBLE
+        binding.loadingStatusText.text = message
+    }
+
     private fun showLoading(show: Boolean) {
-        binding.loadingView.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) {
+            binding.loadingView.alpha = 1f
+            binding.loadingView.visibility = View.VISIBLE
+            binding.loadingStatusText.text = "Cargando contenido..."
+        } else {
+            binding.loadingView.animate()
+                .alpha(0f)
+                .setDuration(500)
+                .withEndAction {
+                    binding.loadingView.visibility = View.GONE
+                    binding.loadingView.alpha = 1f
+                }
+                .start()
+        }
     }
 
     // ── Registro + sync inmediatos ───────────────────────────────────────────
@@ -459,6 +478,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         val deviceId = DevicePrefs.getDeviceId(this)
         Log.i(TAG, "registerNow: iniciando — deviceId=$deviceId url=${BuildConfig.BASE_URL}/api/device/register")
+        withContext(Dispatchers.Main) { showOnboardingStatus("Conectando con el servidor...") }
         try {
             val response = withContext(Dispatchers.IO) {
                 NetworkModule.provideDeviceApi(null).register(
@@ -471,9 +491,13 @@ class PlayerActivity : AppCompatActivity() {
             prefs.setToken(response.token)
             prefs.setTabletId(response.tabletId)
             Log.i(TAG, "registerNow: OK — tabletId=${response.tabletId} token=${response.token.take(8)}…")
-            withContext(Dispatchers.Main) { vibrate(300) }
+            withContext(Dispatchers.Main) {
+                showOnboardingStatus("Tablet registrada — sincronizando contenido...")
+                vibrate(300)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "registerNow: FALLÓ [${e.javaClass.simpleName}] ${e.message} — backend=${BuildConfig.BASE_URL}", e)
+            withContext(Dispatchers.Main) { showOnboardingStatus("Sin conexión — reintentando...") }
         }
     }
 

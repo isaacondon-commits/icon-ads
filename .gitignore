@@ -27,6 +27,7 @@ icon-ads-backend/prisma/migrations/*.db
 *.iml
 .gradle/
 icon-ads-android/local.properties
+icon-ads-android/keystore.properties
 icon-ads-android/app/build/
 icon-ads-android/build/
 icon-ads-android/.idea/
