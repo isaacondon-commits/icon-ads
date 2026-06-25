@@ -35,6 +35,7 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const latencyTracker = require('./lib/latencyTracker');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
+const supabaseStorage = require('./lib/supabase-storage');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
 const syslog = require('./lib/systemLog');
 
@@ -115,6 +116,7 @@ app.get('/api/health', async (req, res) => {
     db: dbStatus,
     dbError,
     r2: r2.isConfigured,
+    supabase_storage: supabaseStorage.isConfigured,
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version ?? '1.0.0',
@@ -124,6 +126,8 @@ app.get('/api/health', async (req, res) => {
       JWT_SECRET: process.env.JWT_SECRET ? 'set' : 'UNSET — auth will fail',
       DATABASE_URL: process.env.DATABASE_URL ? 'set' : 'UNSET — DB unavailable',
       DIRECT_URL: process.env.DIRECT_URL ? 'set' : 'unset (schema migrations may fail)',
+      SUPABASE_URL: process.env.SUPABASE_URL ? 'set' : 'unset (storage uses local disk)',
+      SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? 'set' : 'unset (storage uses local disk)',
     },
   });
 });

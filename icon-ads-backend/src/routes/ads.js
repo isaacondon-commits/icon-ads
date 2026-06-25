@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const prisma = require('../lib/prisma');
 const r2 = require('../lib/r2');
+const supabaseStorage = require('../lib/supabase-storage');
 const { requireAuth } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
@@ -12,17 +13,9 @@ const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: uploadDir,
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
-  },
-});
-
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
     if (ALLOWED_EXT.test(file.originalname)) cb(null, true);
     else cb(new Error('Tipo de archivo no permitido. Aceptados: mp4, jpg, png, webp'));
@@ -78,9 +71,13 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// GET /api/stats/storage — storage usage from uploads dir (#28)
+// GET /api/ads/storage-stats — storage usage
 router.get('/storage-stats', async (req, res, next) => {
   try {
+    const adCount = await prisma.ad.count({ where: { deletedAt: null, active: true } });
+    if (supabaseStorage.isConfigured) {
+      return res.json({ totalBytes: 0, totalMB: 0, fileCount: adCount, adCount, storage: 'supabase' });
+    }
     let totalBytes = 0;
     let fileCount = 0;
     if (fs.existsSync(uploadDir)) {
@@ -90,8 +87,7 @@ router.get('/storage-stats', async (req, res, next) => {
         try { totalBytes += fs.statSync(path.join(uploadDir, f)).size; } catch { /* skip */ }
       }
     }
-    const adCount = await prisma.ad.count({ where: { deletedAt: null, active: true } });
-    res.json({ totalBytes, totalMB: Math.round(totalBytes / 1024 / 1024), fileCount, adCount });
+    res.json({ totalBytes, totalMB: Math.round(totalBytes / 1024 / 1024), fileCount, adCount, storage: 'disk' });
   } catch (err) {
     next(err);
   }
@@ -141,22 +137,36 @@ router.post('/confirm', async (req, res, next) => {
 
 // POST /api/ads/upload — must be before /:id routes
 router.post('/upload', upload.single('file'), async (req, res, next) => {
+  let diskPath = null;
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const { campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
-    const fileUrl = `/uploads/${req.file.filename}`;
+
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(req.file.originalname);
+    const filename = `${unique}${ext}`;
+
+    let fileUrl;
+    if (supabaseStorage.isConfigured) {
+      fileUrl = await supabaseStorage.uploadFile(filename, req.file.buffer, req.file.mimetype);
+    } else {
+      diskPath = path.join(uploadDir, filename);
+      fs.writeFileSync(diskPath, req.file.buffer);
+      fileUrl = `/uploads/${filename}`;
+    }
+
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl, filename: req.file.filename, durationS, approvalStatus,
+      data: { campaignId, name, type, fileUrl, filename, durationS, approvalStatus,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });
-    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus})`);
+    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus}) via ${supabaseStorage.isConfigured ? 'supabase' : 'disk'}`);
     res.status(201).json(ad);
   } catch (err) {
-    if (req.file) fs.unlink(req.file.path, () => {});
+    if (diskPath) fs.unlink(diskPath, () => {});
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);
   }
