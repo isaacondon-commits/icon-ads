@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
             },
           ]
         : []),
+      // Supabase Storage
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+      },
     ],
   },
 };
