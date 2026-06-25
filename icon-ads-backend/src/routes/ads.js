@@ -3,12 +3,37 @@ const { z } = require('zod');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const sharp = require('sharp');
 const prisma = require('../lib/prisma');
 const r2 = require('../lib/r2');
 const supabaseStorage = require('../lib/supabase-storage');
 const { requireAuth } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
+
+const IMAGE_MAX = 10 * 1024 * 1024;
+const VIDEO_MAX = 100 * 1024 * 1024;
+
+function detectMimeFromBuffer(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp';
+  if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'video/mp4';
+  return null;
+}
+
+async function compressImage(buffer, mimetype) {
+  try {
+    const s = sharp(buffer).resize(1920, 1080, { fit: 'inside', withoutEnlargement: true });
+    if (mimetype === 'image/png') return await s.png({ quality: 80 }).toBuffer();
+    if (mimetype === 'image/webp') return await s.webp({ quality: 80 }).toBuffer();
+    return await s.jpeg({ quality: 80 }).toBuffer();
+  } catch {
+    return buffer;
+  }
+}
 
 const uploadDir = path.join(__dirname, '../../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -140,7 +165,21 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
   let diskPath = null;
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const isVideo = /\.(mp4)$/i.test(req.file.originalname);
+    const maxSize = isVideo ? VIDEO_MAX : IMAGE_MAX;
+    if (req.file.buffer.length > maxSize) {
+      return res.status(400).json({ error: `Tamaño máximo: ${isVideo ? '100MB para videos' : '10MB para imágenes'}` });
+    }
+    const detectedMime = detectMimeFromBuffer(req.file.buffer);
+    if (!detectedMime) {
+      return res.status(400).json({ error: 'El archivo no es una imagen o video válido (firma inválida)' });
+    }
+
     const { campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
+
+    let fileBuffer = req.file.buffer;
+    if (!isVideo) fileBuffer = await compressImage(fileBuffer, req.file.mimetype);
 
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(req.file.originalname);
@@ -148,10 +187,10 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
 
     let fileUrl;
     if (supabaseStorage.isConfigured) {
-      fileUrl = await supabaseStorage.uploadFile(filename, req.file.buffer, req.file.mimetype);
+      fileUrl = await supabaseStorage.uploadFile(filename, fileBuffer, req.file.mimetype);
     } else {
       diskPath = path.join(uploadDir, filename);
-      fs.writeFileSync(diskPath, req.file.buffer);
+      fs.writeFileSync(diskPath, fileBuffer);
       fileUrl = `/uploads/${filename}`;
     }
 

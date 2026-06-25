@@ -36,6 +36,7 @@ const latencyTracker = require('./lib/latencyTracker');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
 const supabaseStorage = require('./lib/supabase-storage');
+const { withCache } = require('./lib/cache');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
 const syslog = require('./lib/systemLog');
 
@@ -54,7 +55,18 @@ async function refreshMaintenanceMode() {
 }
 setInterval(refreshMaintenanceMode, 60_000);
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', '*.supabase.co'],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
   skip: (req) => req.path === '/api/health',
 }));
@@ -139,12 +151,12 @@ app.use('/api/ads', adRoutes);
 app.use('/api/playlists', playlistRoutes);
 app.use('/api/tablets', tabletRoutes);
 app.use('/api/device', deviceRoutes);
-app.use('/api/stats', statsRoutes);
+app.use('/api/stats', withCache(5 * 60 * 1000), statsRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/dashboard', withCache(5 * 60 * 1000), dashboardRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/favorites', favoritesRoutes);
@@ -383,6 +395,47 @@ setInterval(async () => {
     console.warn('[cleanup]', err.message);
   }
 }, 24 * 60 * 60 * 1000);
+
+// Weekly backup — every Sunday at 3am, uploads JSON+CSV to Supabase Storage /backups/
+async function runWeeklyBackup() {
+  const tag = new Date().toISOString().slice(0, 10);
+  console.log(`[weekly-backup] Iniciando backup ${tag}`);
+  try {
+    const [tablets, campaigns, metrics] = await Promise.all([
+      prisma.tablet.findMany(),
+      prisma.campaign.findMany({ where: { deletedAt: null }, include: { client: { select: { name: true } }, ads: { select: { id: true, name: true, type: true } } } }),
+      prisma.metric.findMany({ where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } }),
+    ]);
+    const csvRows = ['id,ad_id,campaign_id,played_at,duration_s,completed']
+      .concat(metrics.map((m) => `${m.id},${m.adId},${m.campaignId},${m.playedAt?.toISOString() ?? ''},${m.durationPlayedS},${m.completed}`));
+    const files = [
+      { name: `backups/${tag}/tablets.json`, buf: Buffer.from(JSON.stringify(tablets, null, 2)), mime: 'application/json' },
+      { name: `backups/${tag}/campaigns.json`, buf: Buffer.from(JSON.stringify(campaigns, null, 2)), mime: 'application/json' },
+      { name: `backups/${tag}/metrics.csv`, buf: Buffer.from(csvRows.join('\n')), mime: 'text/csv' },
+    ];
+    if (supabaseStorage.isConfigured) {
+      for (const f of files) await supabaseStorage.uploadFile(f.name, f.buf, f.mime);
+      console.log(`[weekly-backup] ${files.length} archivos subidos a Supabase Storage en backups/${tag}/`);
+    } else {
+      console.warn('[weekly-backup] Supabase no configurado — backup omitido');
+    }
+    syslog.addEvent('WEEKLY_BACKUP', 'system', null, `Backup ${tag}: ${tablets.length} tablets, ${campaigns.length} campañas, ${metrics.length} métricas`);
+  } catch (err) {
+    console.error('[weekly-backup] Error:', err.message);
+  }
+}
+
+function scheduleWeeklyBackup() {
+  const now = new Date();
+  const next = new Date(now);
+  const daysUntilSunday = ((7 - now.getDay()) % 7) || 7;
+  next.setDate(now.getDate() + daysUntilSunday);
+  next.setHours(3, 0, 0, 0);
+  const delay = next.getTime() - now.getTime();
+  setTimeout(() => { runWeeklyBackup(); scheduleWeeklyBackup(); }, delay);
+  console.log(`[weekly-backup] Próximo backup dominical: ${next.toISOString()}`);
+}
+scheduleWeeklyBackup();
 
 app.refreshMaintenanceMode = refreshMaintenanceMode;
 module.exports = app;
