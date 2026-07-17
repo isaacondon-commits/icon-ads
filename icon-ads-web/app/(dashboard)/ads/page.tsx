@@ -30,6 +30,7 @@ export default function AdsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [hoveredAdId, setHoveredAdId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () =>
@@ -187,13 +188,21 @@ export default function AdsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {paged.map((ad) => (
             <div key={ad.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              {/* #11 — thumbnail, click to preview */}
+              {/* #11 — thumbnail, hover to preview video, click for full preview */}
               <div
                 className="h-36 bg-gray-100 flex items-center justify-center overflow-hidden cursor-pointer relative group"
                 onClick={() => setPlayerUrl(mediaUrl(ad.fileUrl))}
+                onMouseEnter={() => setHoveredAdId(ad.id)}
+                onMouseLeave={() => setHoveredAdId(null)}
               >
                 {ad.type === 'image' ? (
                   <img src={mediaUrl(ad.fileUrl)} alt={ad.name} className="h-full w-full object-cover" />
+                ) : hoveredAdId === ad.id ? (
+                  <video
+                    src={mediaUrl(ad.fileUrl)}
+                    className="h-full w-full object-cover"
+                    muted autoPlay loop playsInline
+                  />
                 ) : (
                   <div className="w-full h-full bg-gray-800 flex flex-col items-center justify-center gap-1 group-hover:bg-gray-700 transition-colors">
                     <span className="text-white text-3xl">▶</span>
@@ -250,9 +259,17 @@ export default function AdsPage() {
                     <div
                       className="w-12 h-8 rounded overflow-hidden bg-gray-100 cursor-pointer relative group"
                       onClick={() => setPlayerUrl(mediaUrl(ad.fileUrl))}
+                      onMouseEnter={() => setHoveredAdId(ad.id)}
+                      onMouseLeave={() => setHoveredAdId(null)}
                     >
                       {ad.type === 'image' ? (
                         <img src={mediaUrl(ad.fileUrl)} alt="" className="w-full h-full object-cover" />
+                      ) : hoveredAdId === ad.id ? (
+                        <video
+                          src={mediaUrl(ad.fileUrl)}
+                          className="w-full h-full object-cover"
+                          muted autoPlay loop playsInline
+                        />
                       ) : (
                         <div className="w-full h-full bg-gray-800 flex items-center justify-center group-hover:bg-gray-700 transition-colors">
                           <span className="text-white text-xs">▶</span>
