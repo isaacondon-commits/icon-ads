@@ -243,6 +243,10 @@ class PlayerActivity : AppCompatActivity() {
     // ── Reproducción ─────────────────────────────────────────────────────────
 
     private fun playNext() {
+        // A playlist reload can land an empty list while a video/image callback
+        // is already in flight (e.g. campaign expired mid-playback) — guard
+        // against a modulo-by-zero crash.
+        if (ads.isEmpty()) return
         currentIndex = (currentIndex + 1) % ads.size
         playAd(ads[currentIndex])
     }

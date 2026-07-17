@@ -17,6 +17,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const h = new Date().getHours();
       initial = h >= 20 || h < 8 ? 'dark' : 'light';
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage/clock on mount to pick initial theme, not a compiler target
     setTheme(initial);
     document.documentElement.classList.toggle('dark', initial === 'dark');
   }, []);

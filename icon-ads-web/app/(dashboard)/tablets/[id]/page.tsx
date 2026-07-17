@@ -28,25 +28,29 @@ export default function TabletDetailPage() {
       .then(setTablet)
       .catch(() => router.push('/tablets'))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, router]);
 
   useEffect(() => {
     if (!tablet) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch when tablet id changes, not a compiler target
     setLoadingSync(true);
     api.getSyncHistory(tablet.id)
       .then(({ syncs: s, uptimePct7d: u }) => { setSyncs(s); setUptimePct7d(u); })
       .catch(() => {})
       .finally(() => setLoadingSync(false));
+    // Narrowed to tablet.id on purpose — only re-fetch when the tablet identity changes, not on every field update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tablet?.id]);
 
   useEffect(() => {
     if (tab !== 'playlist' || !tablet?.playlistId || playlistVersions.length > 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch when the playlist tab is opened, not a compiler target
     setLoadingVersions(true);
     api.getPlaylistVersions(tablet.playlistId)
       .then(setPlaylistVersions)
       .catch(() => {})
       .finally(() => setLoadingVersions(false));
-  }, [tab, tablet?.playlistId]);
+  }, [tab, tablet?.playlistId, playlistVersions.length]);
 
   const handleSendMessage = async () => {
     if (!tablet || !msgText.trim()) return;
@@ -64,6 +68,7 @@ export default function TabletDetailPage() {
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>;
   if (!tablet) return null;
 
+  // eslint-disable-next-line react-hooks/purity -- online status reads wall-clock time; no React Compiler in use, no SSR of this data
   const now = Date.now();
   const lastSyncMs = tablet.lastSync ? new Date(tablet.lastSync).getTime() : 0;
   const offlineMin = lastSyncMs ? Math.floor((now - lastSyncMs) / 60000) : null;

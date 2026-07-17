@@ -53,6 +53,7 @@ export default function TabletComparePage() {
     finally { setLoading(false); }
   };
 
+  // eslint-disable-next-line react-hooks/purity -- online status reads wall-clock time; no React Compiler in use, no SSR of this data
   const now = Date.now();
   const isOnline = (t: TabletDetail) => t.lastSync ? (now - new Date(t.lastSync).getTime()) < 10 * 60000 : false;
 

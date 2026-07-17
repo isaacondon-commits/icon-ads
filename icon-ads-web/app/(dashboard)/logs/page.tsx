@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, SystemLogEntry, AuditPage, MetricsPage, LatencySummary, BASE } from '@/lib/api';
+import { api, SystemLogEntry, AuditPage, MetricsPage, LatencySummary } from '@/lib/api';
 
 const ACTION_COLORS: Record<string, string> = {
   CREATE: 'bg-emerald-100 text-emerald-700',
@@ -36,6 +36,7 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on tab change, not a compiler target
     setLoading(true);
     if (tab === 'live') {
       api.getLogs().then(setLive).finally(() => setLoading(false));

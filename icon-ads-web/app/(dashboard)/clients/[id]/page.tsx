@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { api, ClientProfile } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
@@ -18,7 +17,7 @@ export default function ClientProfilePage() {
       .then(setProfile)
       .catch(() => router.push('/clients'))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, router]);
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando perfil...</p>;
   if (!profile) return null;

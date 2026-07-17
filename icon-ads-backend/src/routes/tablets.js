@@ -9,6 +9,11 @@ const { audit } = require('../lib/auditLog');
 
 router.use(requireAuth);
 
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  next();
+});
+
 const tabletSchema = z.object({
   deviceId: z.string().min(1),
   name: z.string().min(1),

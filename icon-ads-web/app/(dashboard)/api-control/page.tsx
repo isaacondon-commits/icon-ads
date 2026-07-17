@@ -27,6 +27,7 @@ export default function ApiControlPage() {
     }).finally(() => setLoading(false));
   };
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount, not a compiler target
   useEffect(() => { load(); }, []);
 
   const dbOk = health?.db === 'ok';

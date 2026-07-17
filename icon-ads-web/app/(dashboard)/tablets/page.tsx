@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, Tablet, Playlist, BASE } from '@/lib/api';
+import { api, Tablet, Playlist } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useToast } from '@/lib/toast-context';
 
@@ -42,6 +42,12 @@ export default function TabletsPage() {
 
   useEffect(() => { load(); }, []);
 
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa' });
+    setError(''); setShowModal(true);
+  };
+
   // Keyboard shortcuts (#12)
   useEffect(() => {
     const onNew = () => openCreate();
@@ -49,9 +55,9 @@ export default function TabletsPage() {
     document.addEventListener('iconads:new', onNew);
     document.addEventListener('iconads:close-modal', onClose);
     return () => { document.removeEventListener('iconads:new', onNew); document.removeEventListener('iconads:close-modal', onClose); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // eslint-disable-next-line react-hooks/purity -- online status / "new" badge reads wall-clock time; no React Compiler in use, no SSR of this data
   const now = Date.now();
   const filtered = tablets.filter((t) => {
     const q = search.toLowerCase();
@@ -66,12 +72,6 @@ export default function TabletsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa' });
-    setError(''); setShowModal(true);
-  };
 
   const openEdit = (t: Tablet) => {
     setEditing(t);
@@ -105,7 +105,8 @@ export default function TabletsPage() {
         spotPrice: form.spotPrice ? Number(form.spotPrice) : null,
         manualStatus: form.manualStatus as 'activa' | 'mantenimiento' | 'bloqueada',
       };
-      editing ? await api.updateTablet(editing.id, data) : await api.createTablet(data);
+      if (editing) await api.updateTablet(editing.id, data);
+      else await api.createTablet(data);
       setShowModal(false); load();
       show(editing ? 'Tablet actualizada' : 'Tablet creada');
     } catch (e) {
@@ -258,7 +259,7 @@ export default function TabletsPage() {
                         <div className="flex items-center gap-1.5">
                           <Link href={`/tablets/${t.id}`} className="hover:underline text-blue-600">{t.name}</Link>
                           {/* #10 — Badge "Nueva" si fue registrada en las últimas 24h */}
-                          {Date.now() - new Date(t.createdAt).getTime() < 86400000 && (
+                          {now - new Date(t.createdAt).getTime() < 86400000 && (
                             <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-medium leading-none">
                               Nueva
                             </span>
@@ -266,7 +267,7 @@ export default function TabletsPage() {
                         </div>
                         {/* #6 — Días activo */}
                         <span className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
-                          {Math.floor((Date.now() - new Date(t.createdAt).getTime()) / 86400000)} días activo
+                          {Math.floor((now - new Date(t.createdAt).getTime()) / 86400000)} días activo
                         </span>
                       </div>
                     </td>

@@ -24,23 +24,11 @@ export default function StatsPage() {
   const [slaStats, setSlaStats] = useState<SlaStat[]>([]);
   const [monthly, setMonthly] = useState<MonthlyEntry[]>([]);
 
+  // eslint-disable-next-line react-hooks/purity -- default date range reads wall-clock time; no React Compiler in use, no SSR of this data
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
   const defaultTo = toInputDate(new Date());
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
-
-  useEffect(() => {
-    api.getWeeklyStats(8).then(setWeekly).finally(() => setLoadingWeekly(false));
-    api.getPlaylistStats().then(setPlaylists).catch(() => {});
-    api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
-    api.getZoneStats().then(setZoneStats).catch(() => {});
-    api.getSyncIntervals().then(setSyncIntervals).catch(() => {});
-    api.getRoiStats().then(setRoiStats).catch(() => {});
-    api.getZoneHourStats().then(setZoneHour).catch(() => {});
-    api.getSlaStats().then(setSlaStats).catch(() => {});
-    api.getMonthlyStats().then(setMonthly).catch(() => {});
-    fetchRange(defaultFrom, defaultTo);
-  }, []);
 
   const fetchRange = (f: string, t: string) => {
     setLoadingRange(true);
@@ -57,6 +45,21 @@ export default function StatsPage() {
       if (p.status === 'fulfilled') setPlaylists(p.value);
     }).finally(() => { setLoadingRange(false); setLoadingExtra(false); });
   };
+
+  useEffect(() => {
+    api.getWeeklyStats(8).then(setWeekly).finally(() => setLoadingWeekly(false));
+    api.getPlaylistStats().then(setPlaylists).catch(() => {});
+    api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
+    api.getZoneStats().then(setZoneStats).catch(() => {});
+    api.getSyncIntervals().then(setSyncIntervals).catch(() => {});
+    api.getRoiStats().then(setRoiStats).catch(() => {});
+    api.getZoneHourStats().then(setZoneHour).catch(() => {});
+    api.getSlaStats().then(setSlaStats).catch(() => {});
+    api.getMonthlyStats().then(setMonthly).catch(() => {});
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount, not a compiler target
+    fetchRange(defaultFrom, defaultTo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const maxWeekly = Math.max(...weekly.map((w) => w.count), 1);
 

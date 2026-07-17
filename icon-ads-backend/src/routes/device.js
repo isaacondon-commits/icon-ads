@@ -127,9 +127,9 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const cacheDir = path.join(__dirname, '../../cache');
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Only include active, non-deleted, non-rejected ads
+    // Only include active, non-deleted, approved ads
     const adsPayload = playlist.playlistAds
-      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus !== 'rejected')
+      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus === 'approved')
       .map(({ ad, order }) => ({
         id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
         duration_s: ad.durationS, order, campaignId: ad.campaignId,

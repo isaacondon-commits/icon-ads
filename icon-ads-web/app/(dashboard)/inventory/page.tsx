@@ -20,6 +20,7 @@ export default function InventoryPage() {
     api.getTablets().then(setTablets).finally(() => setLoading(false));
   }, []);
 
+  // eslint-disable-next-line react-hooks/purity -- online/offline status reads wall-clock time; no React Compiler in use, no SSR of this data
   const now = Date.now();
   const onlineThreshold = 10 * 60 * 1000;
 

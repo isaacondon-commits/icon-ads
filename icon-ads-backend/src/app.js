@@ -80,18 +80,12 @@ app.use((req, res, next) => {
   next();
 });
 
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again in a minute.' },
-});
-app.use('/api', apiLimiter);
-
 const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3001')
   .split(',').map((s) => s.trim());
 
+// CORS must run before the rate limiter — otherwise a 429 response is sent
+// without CORS headers, and the browser reports a confusing "CORS blocked"
+// error instead of the real rate-limit message.
 app.use(cors({
   origin: (origin, cb) => {
     // Allow server-side requests (no Origin header) and any localhost port in dev
@@ -102,6 +96,15 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again in a minute.' },
+});
+app.use('/api', apiLimiter);
 app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -246,7 +249,11 @@ app.get('/api/docs.json', (req, res) => res.json(swaggerSpec));
 
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+  const status = err.status || 500;
+  const message = status < 500 || process.env.NODE_ENV !== 'production'
+    ? (err.message || 'Internal server error')
+    : 'Internal server error';
+  res.status(status).json({ error: message });
 });
 
 // #7 — Offline tablet alert check every 30 minutes

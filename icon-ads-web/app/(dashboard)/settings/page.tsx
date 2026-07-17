@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const [callmebotApikeyInput, setCallmebotApikeyInput] = useState('');
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local form inputs from loaded settings, not a compiler target
     setRetentionInput(settings['metrics_retention_days'] ?? '90');
     setWebhookInput(settings['webhook_url'] ?? '');
     setGaInput(settings['ga_measurement_id'] ?? '');
@@ -163,7 +164,7 @@ export default function SettingsPage() {
             <h2 className="font-semibold mb-1">WhatsApp — alertas via CallMeBot</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
               Envía WhatsApp al número configurado cuando: (1) una tablet lleva más de 2h offline, (2) una campaña vence hoy.
-              Antes de configurar, enviá "I allow callmebot to send me messages" al +34644605090 en WhatsApp.
+              Antes de configurar, enviá &quot;I allow callmebot to send me messages&quot; al +34644605090 en WhatsApp.
             </p>
             <div className="space-y-3">
               <div className="flex gap-3">

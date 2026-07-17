@@ -128,10 +128,15 @@ class PlaylistRepository(private val context: Context) {
         }
 
     private fun extractZip(zip: File, destDir: File) {
+        val destCanonicalPath = destDir.canonicalPath
         ZipInputStream(zip.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val dest = File(destDir, entry.name)
+                // Zip Slip guard: reject entries that would escape destDir via ../ traversal.
+                if (!dest.canonicalPath.startsWith(destCanonicalPath + File.separator)) {
+                    throw SecurityException("Entrada de ZIP fuera de destino: ${entry.name}")
+                }
                 if (entry.isDirectory) {
                     dest.mkdirs()
                 } else {

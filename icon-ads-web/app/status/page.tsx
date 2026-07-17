@@ -46,6 +46,7 @@ export default function StatusPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch + polling on mount, not a compiler target
     check();
     const id = setInterval(check, 30_000);
     return () => clearInterval(id);

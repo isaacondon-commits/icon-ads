@@ -6,6 +6,11 @@ const PptxGenJS = require('pptxgenjs');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  next();
+});
+
 // POST /api/admin/seed — creates the first superadmin if no users exist
 router.post('/seed', async (req, res, next) => {
   try {
