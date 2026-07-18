@@ -374,6 +374,15 @@ class PlayerActivity : AppCompatActivity() {
             prefs.setPlaylistVersion(syncResp.version)
             Log.i(TAG, "syncNow: instalación OK — difundiendo actualización")
             sendBroadcast(Intent(SyncWorker.ACTION_PLAYLIST_UPDATED).apply { setPackage(packageName) })
+        } catch (e: retrofit2.HttpException) {
+            if (e.code() == 401) {
+                // Token rechazado — probablemente revocado desde el panel admin.
+                // Limpiamos el token local para que el ciclo periódico se re-registre.
+                Log.w(TAG, "syncNow: token rechazado (401) — limpiando para re-registrar")
+                prefs.clearToken()
+            } else {
+                Log.e(TAG, "syncNow: HTTP ${e.code()} — ${e.message()}")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "syncNow: FALLÓ ${e.javaClass.simpleName}: ${e.message}", e)
         }

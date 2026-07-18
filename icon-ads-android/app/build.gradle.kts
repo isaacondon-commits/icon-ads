@@ -10,6 +10,14 @@ val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties()
 if (keystorePropsFile.exists()) keystoreProps.load(keystorePropsFile.inputStream())
 
+// Shared enrollment secret sent on device registration, matched against
+// ENROLLMENT_SECRET on the backend. Not a per-device credential — it just proves
+// the caller is a real ICON ADS build, not an arbitrary script hitting the public
+// /api/device/register endpoint with a guessed deviceId. See TECHNICAL.md.
+val enrollmentPropsFile = rootProject.file("enrollment.properties")
+val enrollmentProps = Properties()
+if (enrollmentPropsFile.exists()) enrollmentProps.load(enrollmentPropsFile.inputStream())
+
 android {
     namespace = "com.iconads.player"
     compileSdk = 34
@@ -18,10 +26,11 @@ android {
         applicationId = "com.iconads.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
 
         buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
+        buildConfigField("String", "ENROLLMENT_KEY", "\"${enrollmentProps["key"] as? String ?: ""}\"")
     }
 
     signingConfigs {

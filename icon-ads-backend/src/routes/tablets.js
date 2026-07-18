@@ -390,4 +390,22 @@ router.post('/:id/force-sync', requireAdmin, async (req, res, next) => {
   }
 });
 
+// POST /:id/regenerate-token — revoke the current device token and issue a new
+// one (lost/stolen tablet, or suspected token leak). The tablet detects the old
+// token stops working (401 on its next sync) and re-registers automatically —
+// it doesn't need to be touched, as long as it can still reach the deviceId it
+// registered with.
+router.post('/:id/regenerate-token', requireAdmin, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const token = crypto.randomBytes(32).toString('hex');
+    const tablet = await prisma.tablet.update({ where: { id }, data: { token } });
+    await audit(req, 'REGENERATE_TOKEN', 'tablet', id, `Regenerated token for "${tablet.name}"`);
+    res.json({ ok: true, message: 'Token regenerado. La tablet se re-registrará sola en su próximo intento de sync.' });
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Tablet not found' });
+    next(err);
+  }
+});
+
 module.exports = router;

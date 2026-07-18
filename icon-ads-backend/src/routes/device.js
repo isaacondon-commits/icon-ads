@@ -44,6 +44,19 @@ const errorSchema = z.object({
 // POST /api/device/register — first call from a new device
 router.post('/register', registerLimiter, async (req, res, next) => {
   try {
+    // Optional: require a shared enrollment key baked into the APK (X-Enrollment-Key).
+    // deviceId (Android's ANDROID_ID) isn't secret, so without this check anyone who
+    // obtains a deviceId could re-register and get back that tablet's live token.
+    // Skipped entirely if ENROLLMENT_SECRET isn't configured, so this stays opt-in
+    // until it's set on the server and rolled out to the fleet's APK.
+    if (process.env.ENROLLMENT_SECRET) {
+      const key = req.headers['x-enrollment-key'];
+      if (key !== process.env.ENROLLMENT_SECRET) {
+        console.warn(`[SECURITY] Register rechazado — enrollment key inválida, ip=${req.ip}`);
+        return res.status(401).json({ error: 'Invalid enrollment key' });
+      }
+    }
+
     const { deviceId, name, zone } = z.object({
       deviceId: z.string().min(1),
       name: z.string().min(1).optional(),

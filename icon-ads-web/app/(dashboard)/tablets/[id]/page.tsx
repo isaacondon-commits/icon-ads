@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api, TabletDetail, SyncLog, PlaylistVersion, BASE } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 type Tab = 'errors' | 'sync' | 'playlist';
 
@@ -22,6 +23,8 @@ export default function TabletDetailPage() {
   const [showMsgModal, setShowMsgModal] = useState(false);
   const [playlistVersions, setPlaylistVersions] = useState<PlaylistVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     api.getTablet(Number(id))
@@ -65,6 +68,18 @@ export default function TabletDetailPage() {
     } finally { setSendingMsg(false); }
   };
 
+  const handleRegenerateToken = async () => {
+    if (!tablet) return;
+    setRegenerating(true);
+    try {
+      const res = await api.regenerateTabletToken(tablet.id);
+      show(res.message);
+      setShowRegenConfirm(false);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al regenerar token', 'error');
+    } finally { setRegenerating(false); }
+  };
+
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>;
   if (!tablet) return null;
 
@@ -99,6 +114,13 @@ export default function TabletDetailPage() {
               className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200"
             >
               Enviar mensaje
+            </button>
+            <button
+              onClick={() => setShowRegenConfirm(true)}
+              title="Invalida el token actual — usar si la tablet se perdió o robó"
+              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-red-50 dark:hover:bg-red-950 text-red-600 border-red-200"
+            >
+              Regenerar token
             </button>
           </div>
         </div>
@@ -336,6 +358,16 @@ export default function TabletDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showRegenConfirm && (
+        <ConfirmDialog
+          title="Regenerar token"
+          message="El token actual queda inválido de inmediato. La tablet lo va a detectar solo (401 en su próximo sync) y se re-registra sin intervención, siempre que pueda alcanzar el mismo deviceId. Usar si la tablet se perdió, se robó, o sospechás que el token se filtró."
+          confirmLabel={regenerating ? 'Regenerando...' : 'Regenerar'}
+          onConfirm={handleRegenerateToken}
+          onCancel={() => setShowRegenConfirm(false)}
+        />
       )}
     </div>
   );

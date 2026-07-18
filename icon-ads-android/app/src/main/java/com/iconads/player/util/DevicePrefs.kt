@@ -9,6 +9,7 @@ class DevicePrefs(context: Context) {
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)
     fun setToken(token: String) = prefs.edit().putString(KEY_TOKEN, token).apply()
+    fun clearToken() = prefs.edit().remove(KEY_TOKEN).apply()
 
     fun getPlaylistVersion(): Int = prefs.getInt(KEY_VERSION, 0)
     fun setPlaylistVersion(v: Int) = prefs.edit().putInt(KEY_VERSION, v).apply()
