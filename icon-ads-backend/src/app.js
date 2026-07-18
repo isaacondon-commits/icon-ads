@@ -86,13 +86,18 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3001')
 // CORS must run before the rate limiter — otherwise a 429 response is sent
 // without CORS headers, and the browser reports a confusing "CORS blocked"
 // error instead of the real rate-limit message.
+const isProd = process.env.NODE_ENV === 'production';
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow server-side requests (no Origin header) and any localhost port in dev
-    if (!origin || origin.startsWith('http://localhost:') || allowedOrigins.includes(origin)) {
+    // Allow server-side requests (no Origin header). Allow any localhost port
+    // only outside production — in prod that bypass would let a page running
+    // on the visitor's own machine make credentialed requests to the API.
+    if (!origin || (!isProd && origin.startsWith('http://localhost:')) || allowedOrigins.includes(origin)) {
       return cb(null, true);
     }
-    cb(new Error(`CORS: origin not allowed — ${origin}`));
+    const err = new Error(`CORS: origin not allowed — ${origin}`);
+    err.status = 403;
+    cb(err);
   },
   credentials: true,
 }));

@@ -4,9 +4,25 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
+const rateLimit = require('express-rate-limit');
 const prisma = require('../lib/prisma');
 const { requireDevice } = require('../middleware/deviceAuth');
+const { audit } = require('../lib/auditLog');
 const forceSyncFlags = require('../lib/forceSyncFlags');
+
+// Registration re-issues the existing token for a known deviceId with no further
+// proof of possession (deviceId — Android's ANDROID_ID — isn't a secret). Keying
+// this limiter by deviceId (not IP) slows down someone hammering one known/guessed
+// deviceId to harvest its token, without throttling legitimate bulk provisioning
+// of many different tablets from the same site/IP.
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (typeof req.body?.deviceId === 'string' && req.body.deviceId) || req.ip,
+  message: { error: 'Demasiados intentos de registro para este dispositivo. Intentá de nuevo en 1 hora.' },
+});
 
 const metricsSchema = z.array(
   z.object({
@@ -26,7 +42,7 @@ const errorSchema = z.object({
 });
 
 // POST /api/device/register — first call from a new device
-router.post('/register', async (req, res, next) => {
+router.post('/register', registerLimiter, async (req, res, next) => {
   try {
     const { deviceId, name, zone } = z.object({
       deviceId: z.string().min(1),
@@ -36,6 +52,9 @@ router.post('/register', async (req, res, next) => {
 
     const existing = await prisma.tablet.findUnique({ where: { deviceId } });
     if (existing) {
+      // Re-registration of an already-known device — logged for visibility since
+      // this is the same call an attacker with a leaked deviceId would make.
+      await audit(req, 'DEVICE_REREGISTER', 'tablet', existing.id, `deviceId=${deviceId} ip=${req.ip}`);
       return res.json({ token: existing.token, tabletId: existing.id });
     }
 
