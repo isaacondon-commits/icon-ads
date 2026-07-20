@@ -220,11 +220,25 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     for (const { ad } of playlist.playlistAds) {
       const filePath = path.join(uploadDir, ad.filename);
       if (fs.existsSync(filePath)) {
-        console.log(`[package] + media/${ad.filename}`);
+        console.log(`[package] + media/${ad.filename} (disco)`);
         archive.file(filePath, { name: `media/${ad.filename}` });
-      } else {
-        console.warn(`[package] archivo no encontrado: ${filePath}`);
+        continue;
       }
+      // Storage migrated to Supabase/R2 (#41) — file isn't on local disk, fetch it
+      // from its public URL instead of skipping it silently.
+      if (ad.fileUrl && /^https?:\/\//.test(ad.fileUrl)) {
+        try {
+          const remote = await fetch(ad.fileUrl);
+          if (!remote.ok) throw new Error(`HTTP ${remote.status}`);
+          const buf = Buffer.from(await remote.arrayBuffer());
+          console.log(`[package] + media/${ad.filename} (remoto, ${(buf.length / 1024).toFixed(0)} KB)`);
+          archive.append(buf, { name: `media/${ad.filename}` });
+        } catch (fetchErr) {
+          console.warn(`[package] no se pudo descargar ${ad.fileUrl}: ${fetchErr.message}`);
+        }
+        continue;
+      }
+      console.warn(`[package] archivo no encontrado: ${filePath}`);
     }
     archive.finalize();
   } catch (err) {
