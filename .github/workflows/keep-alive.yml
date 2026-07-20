@@ -1,0 +1,29 @@
+name: Keep-alive ping
+
+# Evita que Supabase pause el proyecto por inactividad (free tier pausa a los 7 días
+# sin actividad) y mantiene el backend en Render menos "dormido".
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/health y verificar estado de la DB
+        run: |
+          response=$(curl -s -w "\n%{http_code}" https://icon-ads-backend.onrender.com/api/health)
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+          echo "HTTP $code"
+          echo "$body"
+          if [ "$code" != "200" ]; then
+            echo "::error::Health check devolvió HTTP $code"
+            exit 1
+          fi
+          db_status=$(echo "$body" | grep -o '"db":"[^"]*"' | cut -d'"' -f4)
+          if [ "$db_status" != "ok" ]; then
+            echo "::error::DB status = $db_status"
+            exit 1
+          fi
