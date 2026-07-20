@@ -4,6 +4,28 @@ import { useState } from 'react';
 
 const DEFAULT_CPM = 5;
 
+function Slider({ label, value, min, max, step = 1, unit = '', onChange }: {
+  label: string; value: number; min: number; max: number; step?: number; unit?: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <label className="font-medium" style={{ color: 'var(--text-muted)' }}>{label}</label>
+        <span className="font-bold tabular-nums">{unit}{value.toLocaleString()}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-blue-600"
+      />
+      <div className="flex justify-between text-xs" style={{ color: 'var(--text-xs)' }}>
+        <span>{unit}{min}</span><span>{unit}{max}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function CalculatorPage() {
   const [tablets, setTablets] = useState(10);
   const [weeks, setWeeks] = useState(4);
@@ -15,28 +37,6 @@ export default function CalculatorPage() {
   const revenue = (impressions / 1000) * cpm;
   const dailyRevenue = revenue / totalDays;
   const weeklyRevenue = revenue / weeks;
-
-  function Slider({ label, value, min, max, step = 1, unit = '', onChange }: {
-    label: string; value: number; min: number; max: number; step?: number; unit?: string;
-    onChange: (v: number) => void;
-  }) {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <label className="font-medium" style={{ color: 'var(--text-muted)' }}>{label}</label>
-          <span className="font-bold tabular-nums">{unit}{value.toLocaleString()}</span>
-        </div>
-        <input
-          type="range" min={min} max={max} step={step} value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full accent-blue-600"
-        />
-        <div className="flex justify-between text-xs" style={{ color: 'var(--text-xs)' }}>
-          <span>{unit}{min}</span><span>{unit}{max}</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>

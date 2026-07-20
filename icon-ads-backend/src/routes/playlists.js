@@ -7,6 +7,11 @@ const { audit } = require('../lib/auditLog');
 
 router.use(requireAuth);
 
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  next();
+});
+
 const playlistSchema = z.object({ name: z.string().min(1) });
 const playlistAdsSchema = z.array(z.object({ adId: z.number().int().positive(), order: z.number().int().min(0) }));
 

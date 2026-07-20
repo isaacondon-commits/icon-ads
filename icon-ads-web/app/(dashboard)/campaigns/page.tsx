@@ -32,6 +32,7 @@ function DaysLeftBadge({ endDate, active }: { endDate: string; active: boolean }
 function Timeline({ start, end }: { start: string; end: string }) {
   const startMs = new Date(start).getTime();
   const endMs = new Date(end).getTime();
+  // eslint-disable-next-line react-hooks/purity -- progress bar reads wall-clock time; no React Compiler in use, no SSR of this data
   const now = Date.now();
   const total = endMs - startMs;
   const elapsed = Math.max(0, Math.min(now - startMs, total));
@@ -90,6 +91,7 @@ export default function CampaignsPage() {
     setLoading(false);
   };
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount, not a compiler target
   useEffect(() => { load(); }, []);
 
   const toDateInput = (iso: string) => iso?.slice(0, 10) ?? '';
@@ -136,7 +138,8 @@ export default function CampaignsPage() {
         observations: form.observations || null,
         targetImpressions: form.targetImpressions ? Number(form.targetImpressions) : null,
       };
-      editing ? await api.updateCampaign(editing.id, data) : await api.createCampaign(data);
+      if (editing) await api.updateCampaign(editing.id, data);
+      else await api.createCampaign(data);
       setShowModal(false);
       load();
     } catch (e) {
@@ -240,7 +243,8 @@ export default function CampaignsPage() {
   const handleToggle = async (c: Campaign) => {
     setTogglingId(c.id);
     try {
-      c.active ? await api.pauseCampaign(c.id) : await api.resumeCampaign(c.id);
+      if (c.active) await api.pauseCampaign(c.id);
+      else await api.resumeCampaign(c.id);
       load();
     } finally {
       setTogglingId(null);

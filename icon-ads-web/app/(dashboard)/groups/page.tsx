@@ -16,7 +16,6 @@ export default function GroupsPage() {
   const [form, setForm] = useState({ name: '', playlistId: '' });
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TabletGroup | null>(null);
-  const [assigningTablet, setAssigningTablet] = useState<{ tablet: Tablet; groupId: string } | null>(null);
 
   const load = () =>
     Promise.allSettled([api.getTabletGroups(), api.getTablets(), api.getPlaylists()])
@@ -36,7 +35,8 @@ export default function GroupsPage() {
     setSaving(true);
     try {
       const data = { name: form.name, playlistId: form.playlistId ? Number(form.playlistId) : null };
-      editing ? await api.updateTabletGroup(editing.id, data) : await api.createTabletGroup(data);
+      if (editing) await api.updateTabletGroup(editing.id, data);
+      else await api.createTabletGroup(data);
       setShowModal(false);
       show(editing ? 'Grupo actualizado' : 'Grupo creado');
       load();
@@ -63,7 +63,7 @@ export default function GroupsPage() {
       load();
     } catch (e) {
       show(e instanceof Error ? e.message : 'Error', 'error');
-    } finally { setAssigningTablet(null); }
+    }
   };
 
   return (

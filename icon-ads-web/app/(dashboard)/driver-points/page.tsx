@@ -63,7 +63,7 @@ export default function DriverPointsPage() {
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : entries.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos. Presioná "Recalcular" para inicializar.</p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos. Presioná &quot;Recalcular&quot; para inicializar.</p>
         </div>
       ) : (
         <div className="card overflow-x-auto">

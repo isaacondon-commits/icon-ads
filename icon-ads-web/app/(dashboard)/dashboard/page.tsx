@@ -55,7 +55,7 @@ export default function DashboardPage() {
     // Storage stats kept separate (reads filesystem on server)
     api.getStorageStats().then(setStorage).catch(() => {});
     if (isMonday) api.getWeeklyStats(2).then((weeks) => setLastWeek(weeks[0] ?? null)).catch(() => {});
-  }, []);
+  }, [isMonday]);
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando estadísticas...</p>;
   if (!stats) return <p className="text-red-500">Error al cargar estadísticas.</p>;

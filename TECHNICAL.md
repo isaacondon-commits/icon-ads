@@ -37,6 +37,7 @@
 | `FRONTEND_URL` | URL del panel web (para CORS) | ✅ |
 | `SUPABASE_URL` | URL del proyecto Supabase | Para Storage |
 | `SUPABASE_SERVICE_KEY` | service_role key de Supabase | Para Storage |
+| `ENROLLMENT_SECRET` | Secreto compartido que la APK envía en `X-Enrollment-Key` al registrarse (`POST /api/device/register`). Si no está seteada, el chequeo se salta (compatible con APKs viejas). Debe coincidir con `key=` en `icon-ads-android/enrollment.properties` | Recomendada |
 
 **Formato DATABASE_URL (Supabase pooler con PgBouncer):**
 ```
@@ -80,6 +81,22 @@ postgresql://postgres.[project-ref]:[password]@aws-1-us-east-1.pooler.supabase.c
 - Android SDK (`C:\Users\isaac\AppData\Local\Android\Sdk`)
 - Archivo `icon-ads-android/keystore.properties` (no commiteado — ver nota de seguridad)
 - Archivo `icon-ads-android/iconads-release.keystore` (no commiteado)
+- Archivo `icon-ads-android/enrollment.properties` (no commiteado — opcional pero recomendado, ver abajo)
+
+### Enrollment key (registro de tablets)
+`POST /api/device/register` acepta cualquier `deviceId` sin más prueba de identidad — como el `deviceId` (ANDROID_ID de Android) no es secreto, cualquiera que lo obtenga podría re-registrarse y robar el token de esa tablet. Para cerrar eso, la APK manda un secreto compartido en el header `X-Enrollment-Key`, verificado contra `ENROLLMENT_SECRET` en el backend.
+
+1. Generar un secreto fuerte una sola vez, por ejemplo: `openssl rand -hex 32`
+2. Setear `ENROLLMENT_SECRET` con ese valor en las variables de entorno de Render.
+3. Crear `icon-ads-android/enrollment.properties`:
+```properties
+key=<el mismo valor que ENROLLMENT_SECRET>
+```
+4. Recompilar y desplegar la APK en toda la flota.
+
+Si `ENROLLMENT_SECRET` no está seteada en el backend, este chequeo se salta por completo — así una APK vieja (sin `enrollment.properties`) sigue funcionando hasta que se actualice la flota. Una vez que todas las tablets corren la APK nueva, setear `ENROLLMENT_SECRET` en Render activa la protección.
+
+**Si se pierde o roba una tablet:** desde el panel admin, en el detalle de la tablet, botón "Regenerar token" — invalida el token actual al instante. La tablet detecta el 401 en su próximo intento de sync, borra el token local y se re-registra sola (siempre que pueda mandar la `X-Enrollment-Key` correcta y el mismo `deviceId`). No hace falta tocar el dispositivo físico.
 
 ### Keystore (firma de release)
 Si el keystore no existe, generarlo una sola vez:
@@ -139,6 +156,7 @@ APK de salida: `app/build/outputs/apk/debug/app-debug.apk`
 | `POST` | `/api/campaigns` | Crear campaña |
 | `POST` | `/api/ads/upload` | Subir archivo (imagen/video) a Supabase Storage |
 | `GET` | `/api/tablets` | Listar tablets con estado online/offline |
+| `POST` | `/api/tablets/:id/regenerate-token` | Invalida el token actual de la tablet y genera uno nuevo (tablet perdida/robada) |
 | `GET` | `/api/stats` | Estadísticas globales (cacheado 5 min) |
 | `GET` | `/api/health` | Health check público — `{status, db, supabase_storage, uptime}` |
 | `GET` | `/api/admin/backup` | Exportar JSON completo |

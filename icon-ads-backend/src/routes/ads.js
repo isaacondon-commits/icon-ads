@@ -50,6 +50,11 @@ const upload = multer({
 
 router.use(requireAuth);
 
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  next();
+});
+
 const parseTags = (v) => {
   if (!v || v === '') return [];
   if (Array.isArray(v)) return v.map(String).filter(Boolean);

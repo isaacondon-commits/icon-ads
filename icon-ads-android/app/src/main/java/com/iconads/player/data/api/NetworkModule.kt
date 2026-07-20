@@ -23,6 +23,16 @@ object NetworkModule {
                         chain.proceed(req)
                     }
                 }
+                // Only meaningful on /register (checked there if ENROLLMENT_SECRET is
+                // configured server-side); harmless to send on every request.
+                if (BuildConfig.ENROLLMENT_KEY.isNotBlank()) {
+                    addInterceptor { chain ->
+                        val req = chain.request().newBuilder()
+                            .addHeader("X-Enrollment-Key", BuildConfig.ENROLLMENT_KEY)
+                            .build()
+                        chain.proceed(req)
+                    }
+                }
                 if (BuildConfig.DEBUG) {
                     addInterceptor(
                         HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }

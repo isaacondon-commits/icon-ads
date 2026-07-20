@@ -7,6 +7,11 @@ const pdf = require('../lib/pdfHelper');
 
 router.use(requireAuth);
 
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
+  next();
+});
+
 const clientSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),

@@ -45,6 +45,7 @@ export default function MonitorPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch + polling on mount, not a compiler target
     fetchData();
     resetCountdown();
     const poll = setInterval(() => { fetchData(); resetCountdown(); }, POLL_INTERVAL * 1000);
@@ -52,7 +53,6 @@ export default function MonitorPage() {
       clearInterval(poll);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const online = entries.filter((e) => e.status === 'online').length;

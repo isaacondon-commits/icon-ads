@@ -4,9 +4,25 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
+const rateLimit = require('express-rate-limit');
 const prisma = require('../lib/prisma');
 const { requireDevice } = require('../middleware/deviceAuth');
+const { audit } = require('../lib/auditLog');
 const forceSyncFlags = require('../lib/forceSyncFlags');
+
+// Registration re-issues the existing token for a known deviceId with no further
+// proof of possession (deviceId — Android's ANDROID_ID — isn't a secret). Keying
+// this limiter by deviceId (not IP) slows down someone hammering one known/guessed
+// deviceId to harvest its token, without throttling legitimate bulk provisioning
+// of many different tablets from the same site/IP.
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (typeof req.body?.deviceId === 'string' && req.body.deviceId) || req.ip,
+  message: { error: 'Demasiados intentos de registro para este dispositivo. Intentá de nuevo en 1 hora.' },
+});
 
 const metricsSchema = z.array(
   z.object({
@@ -26,8 +42,21 @@ const errorSchema = z.object({
 });
 
 // POST /api/device/register — first call from a new device
-router.post('/register', async (req, res, next) => {
+router.post('/register', registerLimiter, async (req, res, next) => {
   try {
+    // Optional: require a shared enrollment key baked into the APK (X-Enrollment-Key).
+    // deviceId (Android's ANDROID_ID) isn't secret, so without this check anyone who
+    // obtains a deviceId could re-register and get back that tablet's live token.
+    // Skipped entirely if ENROLLMENT_SECRET isn't configured, so this stays opt-in
+    // until it's set on the server and rolled out to the fleet's APK.
+    if (process.env.ENROLLMENT_SECRET) {
+      const key = req.headers['x-enrollment-key'];
+      if (key !== process.env.ENROLLMENT_SECRET) {
+        console.warn(`[SECURITY] Register rechazado — enrollment key inválida, ip=${req.ip}`);
+        return res.status(401).json({ error: 'Invalid enrollment key' });
+      }
+    }
+
     const { deviceId, name, zone } = z.object({
       deviceId: z.string().min(1),
       name: z.string().min(1).optional(),
@@ -36,6 +65,9 @@ router.post('/register', async (req, res, next) => {
 
     const existing = await prisma.tablet.findUnique({ where: { deviceId } });
     if (existing) {
+      // Re-registration of an already-known device — logged for visibility since
+      // this is the same call an attacker with a leaked deviceId would make.
+      await audit(req, 'DEVICE_REREGISTER', 'tablet', existing.id, `deviceId=${deviceId} ip=${req.ip}`);
       return res.json({ token: existing.token, tabletId: existing.id });
     }
 
@@ -127,9 +159,9 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const cacheDir = path.join(__dirname, '../../cache');
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Only include active, non-deleted, non-rejected ads
+    // Only include active, non-deleted, approved ads
     const adsPayload = playlist.playlistAds
-      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus !== 'rejected')
+      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus === 'approved')
       .map(({ ad, order }) => ({
         id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
         duration_s: ad.durationS, order, campaignId: ad.campaignId,

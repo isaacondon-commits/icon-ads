@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
+import type * as Leaflet from 'leaflet';
 import { api, TabletLiveLocation, LocationPoint } from '@/lib/api';
 
 // Montevideo center
@@ -9,13 +10,19 @@ const MVD = [-34.9011, -56.1645] as [number, number];
 
 type Filter = 'all' | 'online' | 'offline' | 'no-playlist';
 
+declare global {
+  interface Window {
+    __iconads_showHistory?: (id: number, name: string) => void;
+  }
+}
+
 export default function MapPage() {
   const mapRef = useRef<HTMLDivElement>(null);
-  const leafletMap = useRef<any>(null);
-  const markersRef = useRef<Record<number, any>>({});
-  const routeLayerRef = useRef<any>(null);
-  const heatLayerRef = useRef<any>(null);
-  const lRef = useRef<any>(null);
+  const leafletMap = useRef<Leaflet.Map | null>(null);
+  const markersRef = useRef<Record<number, Leaflet.Marker>>({});
+  const routeLayerRef = useRef<Leaflet.Polyline | null>(null);
+  const heatLayerRef = useRef<Leaflet.LayerGroup | null>(null);
+  const lRef = useRef<typeof Leaflet | null>(null);
 
   const [tablets, setTablets] = useState<TabletLiveLocation[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
@@ -38,6 +45,7 @@ export default function MapPage() {
   // Load Leaflet and init map
   useEffect(() => {
     if (!mapRef.current || leafletMap.current) return;
+    let cancelled = false;
 
     // Leaflet CSS
     if (!document.getElementById('lf-css')) {
@@ -49,18 +57,21 @@ export default function MapPage() {
     }
 
     import('leaflet').then((mod) => {
+      // Component unmounted (e.g. Strict Mode double-invoke) before the module loaded — skip init.
+      if (cancelled || !mapRef.current || leafletMap.current) return;
+
       const L = mod.default;
       lRef.current = L;
 
       // Fix default icon paths for webpack/Next.js
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      const map = L.map(mapRef.current!, {
+      const map = L.map(mapRef.current, {
         center: MVD,
         zoom: 13,
         zoomControl: true,
@@ -75,6 +86,17 @@ export default function MapPage() {
       heatLayerRef.current = L.layerGroup().addTo(map);
       setMapReady(true);
     });
+
+    return () => {
+      cancelled = true;
+      if (leafletMap.current) {
+        leafletMap.current.remove();
+        leafletMap.current = null;
+        heatLayerRef.current = null;
+        markersRef.current = {};
+        setMapReady(false);
+      }
+    };
   }, []);
 
   const buildIcon = useCallback((t: TabletLiveLocation) => {
@@ -114,14 +136,14 @@ export default function MapPage() {
 
   // Expose history function to the popup button
   useEffect(() => {
-    (window as any).__iconads_showHistory = async (id: number, name: string) => {
+    window.__iconads_showHistory = async (id: number, name: string) => {
       setSelectedId(id);
       try {
         const data = await api.getTabletLocationHistory(id);
         setSelectedHistory({ name, points: data.locations });
       } catch { setSelectedHistory({ name, points: [] }); }
     };
-    return () => { delete (window as any).__iconads_showHistory; };
+    return () => { delete window.__iconads_showHistory; };
   }, []);
 
   // Draw/update route when selectedHistory changes
@@ -140,7 +162,7 @@ export default function MapPage() {
     }
   }, [selectedHistory]);
 
-  const updateMarkers = useCallback((data: TabletLiveLocation[], L: any, map: any) => {
+  const updateMarkers = useCallback((data: TabletLiveLocation[], L: typeof Leaflet, map: Leaflet.Map) => {
     const shown = new Set<number>();
 
     data.forEach((t) => {
@@ -169,7 +191,7 @@ export default function MapPage() {
     });
   }, [buildIcon]);
 
-  const updateHeatmap = useCallback((data: TabletLiveLocation[], L: any) => {
+  const updateHeatmap = useCallback((data: TabletLiveLocation[], L: typeof Leaflet) => {
     const layer = heatLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
@@ -201,6 +223,7 @@ export default function MapPage() {
   // Initial load + auto-refresh
   useEffect(() => {
     if (!mapReady) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch + polling once the map is ready, not a compiler target
     refresh();
     const id = setInterval(refresh, 60_000);
     return () => clearInterval(id);

@@ -55,7 +55,8 @@ export default function ClientsPage() {
     setError('');
     try {
       const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null, color: form.color || null, contactName: form.contactName || null, contactPhone: form.contactPhone || null };
-      editing ? await api.updateClient(editing.id, data) : await api.createClient(data);
+      if (editing) await api.updateClient(editing.id, data);
+      else await api.createClient(data);
       setShowModal(false);
       load();
     } catch (e) {

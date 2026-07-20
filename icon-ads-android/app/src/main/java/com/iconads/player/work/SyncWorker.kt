@@ -62,11 +62,22 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val api = NetworkModule.provideDeviceApi(token)
 
         val currentVersion = prefs.getPlaylistVersion()
-        val syncResp = api.sync(
-            version = currentVersion,
-            osVersion = Build.VERSION.RELEASE,
-            deviceModel = Build.MODEL,
-        )
+        val syncResp = try {
+            api.sync(
+                version = currentVersion,
+                osVersion = Build.VERSION.RELEASE,
+                deviceModel = Build.MODEL,
+            )
+        } catch (e: retrofit2.HttpException) {
+            if (e.code() == 401) {
+                // Token rechazado — probablemente revocado desde el panel admin.
+                // Limpiamos el token local; el próximo ciclo se re-registra solo.
+                Log.w(TAG, "[${now()} $tz] Token rechazado (401) — limpiando para re-registrar")
+                prefs.clearToken()
+                return
+            }
+            throw e
+        }
 
         if (!syncResp.needsUpdate) {
             Log.d(TAG, "[${now()} $tz] Ya en versión ${syncResp.version}, sin cambios")
