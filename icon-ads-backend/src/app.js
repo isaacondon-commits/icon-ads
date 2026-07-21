@@ -36,6 +36,7 @@ const latencyTracker = require('./lib/latencyTracker');
 const prisma = require('./lib/prisma');
 const r2 = require('./lib/r2');
 const supabaseStorage = require('./lib/supabase-storage');
+const firebaseAdmin = require('./lib/firebase-admin');
 const { withCache } = require('./lib/cache');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
 const syslog = require('./lib/systemLog');
@@ -137,6 +138,7 @@ app.get('/api/health', async (req, res) => {
     dbError,
     r2: r2.isConfigured,
     supabase_storage: supabaseStorage.isConfigured,
+    fcm: firebaseAdmin.isConfigured,
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version ?? '1.0.0',

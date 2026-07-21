@@ -1,10 +1,8 @@
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
 
-const isConfigured = !!process.env.FIREBASE_SERVICE_ACCOUNT;
-
 let app = null;
-if (isConfigured) {
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     app = initializeApp({ credential: cert(serviceAccount) });
@@ -12,6 +10,11 @@ if (isConfigured) {
     console.error('[firebase-admin] FIREBASE_SERVICE_ACCOUNT inválido:', err.message);
   }
 }
+
+// True only if the app actually initialized — not just "the env var is set" —
+// so callers (e.g. /api/health) can tell a malformed credential apart from a
+// working one instead of reporting "configured" either way.
+const isConfigured = app !== null;
 
 // Data-only push (no `notification` field) so it's delivered silently to
 // FcmService.onMessageReceived even while the app is in the foreground/kiosk mode,
