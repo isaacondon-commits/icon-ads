@@ -103,6 +103,15 @@ export const api = {
             // a cacheControl field and the file under an empty field name — not
             // a raw body, unlike R2's presigned PUT. Let the browser set the
             // multipart Content-Type (with boundary) itself.
+            // It also sits behind Supabase's API gateway, which requires the
+            // project's public anon key on every request — the upload token in
+            // the URL alone isn't enough to get past the gateway.
+            const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            if (anonKey) {
+              xhr.setRequestHeader('apikey', anonKey);
+              xhr.setRequestHeader('Authorization', `Bearer ${anonKey}`);
+            }
+            xhr.setRequestHeader('x-upsert', 'false');
             const body = new FormData();
             body.append('cacheControl', '3600');
             body.append('', file);
