@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { api, Ad, Campaign, BASE } from '@/lib/api';
+import { api, Ad, Campaign, BASE, StorageStats } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 const MAX_SIZE_MB = 100;
@@ -33,6 +33,7 @@ export default function AdsPage() {
   const [approvingId, setApprovingId] = useState<number | null>(null);
   const [pausingId, setPausingId] = useState<number | null>(null);
   const [hoveredAdId, setHoveredAdId] = useState<number | null>(null);
+  const [storage, setStorage] = useState<StorageStats | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () =>
@@ -41,6 +42,7 @@ export default function AdsPage() {
       .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.getStorageStats().then(setStorage).catch(() => {}); }, [ads.length]);
 
   // #6 — search + tag filter
   const filtered = ads.filter((a) => {
@@ -200,6 +202,25 @@ export default function AdsPage() {
           + Subir anuncio
         </button>
       </div>
+
+      {/* Storage usage bar */}
+      {storage && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
+          <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+            <span>{storage.totalMB} MB usados{storage.quotaMB ? ` de ${storage.quotaMB >= 1024 ? `${(storage.quotaMB / 1024).toFixed(1)} GB` : `${storage.quotaMB} MB`}` : ''}</span>
+            <span>{storage.fileCount} archivos{storage.usedPct != null ? ` · ${storage.usedPct}%` : ''}</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-2">
+            <div
+              className={`h-2 rounded-full transition-all duration-700 ${(storage.usedPct ?? 0) > 90 ? 'bg-red-500' : (storage.usedPct ?? 0) > 70 ? 'bg-amber-500' : 'bg-blue-500'}`}
+              style={{ width: `${Math.min(100, storage.usedPct ?? 0)}%` }}
+            />
+          </div>
+          {(storage.usedPct ?? 0) > 90 && (
+            <p className="text-xs text-red-600 mt-1.5">Espacio casi agotado — borrá o pausá anuncios que ya no uses.</p>
+          )}
+        </div>
+      )}
 
       {/* Search + tag filter + view toggle */}
       <div className="flex flex-wrap gap-3 mb-4">
