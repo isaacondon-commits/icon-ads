@@ -120,12 +120,13 @@ export const api = {
         onProgress(100);
         return ad;
       } catch (err: unknown) {
-        // If R2 is not configured (503), fall through to direct upload
-        if (!(err instanceof Error) || !err.message.includes('R2 not configured')) throw err;
+        // No direct-upload storage configured (503) — fall through to the
+        // backend-buffered upload (local dev only, disk storage)
+        if (!(err instanceof Error) || !err.message.includes('Direct upload not configured')) throw err;
       }
     }
 
-    // Fallback: direct upload through backend (local dev / R2 not configured)
+    // Fallback: direct upload through backend (local dev / no cloud storage configured)
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${BASE}/api/ads/upload`);
@@ -457,7 +458,10 @@ export interface TabletMonitorEntry {
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
   playlist: { id: number; name: string } | null; todayPlays: number;
 }
-export interface StorageStats { totalBytes: number; totalMB: number; fileCount: number; adCount: number; }
+export interface StorageStats {
+  totalBytes: number; totalMB: number; fileCount: number; adCount: number;
+  quotaMB?: number; quotaBytes?: number; usedPct?: number;
+}
 export interface SystemStats {
   tablets: { total: number; online: number };
   clients: number; campaigns: number; ads: number; totalPlays: number;

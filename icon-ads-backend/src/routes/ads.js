@@ -101,12 +101,22 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// GET /api/ads/storage-stats — storage usage
+// GET /api/ads/storage-stats — storage usage + quota (#storage-bar)
+// SUPABASE_STORAGE_QUOTA_MB lets this track a plan upgrade; defaults to the
+// Supabase free-tier bucket limit (1 GB) since that's what's configured today.
+const DEFAULT_QUOTA_MB = 1024;
 router.get('/storage-stats', async (req, res, next) => {
   try {
     const adCount = await prisma.ad.count({ where: { deletedAt: null, active: true } });
     if (supabaseStorage.isConfigured) {
-      return res.json({ totalBytes: 0, totalMB: 0, fileCount: adCount, adCount, storage: 'supabase' });
+      const { totalBytes, fileCount } = await supabaseStorage.getUsageBytes();
+      const quotaMB = Number(process.env.SUPABASE_STORAGE_QUOTA_MB) || DEFAULT_QUOTA_MB;
+      const quotaBytes = quotaMB * 1024 * 1024;
+      return res.json({
+        totalBytes, totalMB: Math.round(totalBytes / 1024 / 1024),
+        quotaMB, quotaBytes, usedPct: quotaBytes > 0 ? Math.round((totalBytes / quotaBytes) * 1000) / 10 : 0,
+        fileCount, adCount, storage: 'supabase',
+      });
     }
     let totalBytes = 0;
     let fileCount = 0;
@@ -123,28 +133,41 @@ router.get('/storage-stats', async (req, res, next) => {
   }
 });
 
-// GET /api/ads/presign — returns a presigned R2 upload URL (requires R2 configured)
+// GET /api/ads/presign — returns a direct-upload URL (R2 if configured, else
+// Supabase Storage) so large files go straight from the browser to storage
+// instead of being buffered through the backend twice
 router.get('/presign', async (req, res, next) => {
   try {
-    if (!r2.isConfigured) return res.status(503).json({ error: 'R2 not configured' });
     const { filename, contentType } = req.query;
     if (!filename || !contentType) return res.status(400).json({ error: 'filename and contentType required' });
     if (!ALLOWED_EXT.test(filename)) return res.status(400).json({ error: 'Tipo de archivo no permitido' });
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(filename);
-    const key = `uploads/${unique}${ext}`;
-    const uploadUrl = await r2.getPresignedUploadUrl(key, contentType);
-    const publicUrl = r2.getPublicUrl(key);
-    res.json({ uploadUrl, key, publicUrl });
+
+    if (r2.isConfigured) {
+      const key = `uploads/${unique}${ext}`;
+      const uploadUrl = await r2.getPresignedUploadUrl(key, contentType);
+      const publicUrl = r2.getPublicUrl(key);
+      return res.json({ uploadUrl, key, publicUrl });
+    }
+    if (supabaseStorage.isConfigured) {
+      const storageFilename = `${unique}${ext}`;
+      const { uploadUrl, path: storedPath } = await supabaseStorage.getSignedUploadUrl(storageFilename);
+      const publicUrl = supabaseStorage.getPublicUrl(storedPath);
+      return res.json({ uploadUrl, key: storedPath, publicUrl });
+    }
+    return res.status(503).json({ error: 'Direct upload not configured' });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/ads/confirm — registers an ad after direct R2 upload
+// POST /api/ads/confirm — registers an ad after a direct upload (R2 or Supabase)
 router.post('/confirm', async (req, res, next) => {
   try {
-    if (!r2.isConfigured) return res.status(503).json({ error: 'R2 not configured' });
+    if (!r2.isConfigured && !supabaseStorage.isConfigured) {
+      return res.status(503).json({ error: 'Direct upload not configured' });
+    }
     const { key, publicUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.extend({
       key: z.string().min(1),
       publicUrl: z.string().url(),
@@ -157,7 +180,7 @@ router.post('/confirm', async (req, res, next) => {
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });
-    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" via R2 (${approvalStatus})`);
+    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" via direct upload (${approvalStatus})`);
     res.status(201).json(ad);
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
