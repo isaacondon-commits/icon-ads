@@ -11,7 +11,10 @@ const csp = [
   `img-src 'self' data: ${apiUrl} https://unpkg.com https://*.tile.openstreetmap.org https://*.supabase.co https://*.r2.dev`,
   `media-src 'self' ${apiUrl} https://*.supabase.co https://*.r2.dev`,
   "font-src 'self' data:",
-  `connect-src 'self' ${apiUrl} https://api.open-meteo.com https://www.google-analytics.com https://*.google-analytics.com`,
+  // *.supabase.co and *.r2.cloudflarestorage.com are the direct-upload targets
+  // (#network-error-large-videos) — the browser PUTs files straight to
+  // storage, bypassing the backend, so those origins need connect-src too.
+  `connect-src 'self' ${apiUrl} https://api.open-meteo.com https://www.google-analytics.com https://*.google-analytics.com https://*.supabase.co https://*.r2.cloudflarestorage.com`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
