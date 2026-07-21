@@ -21,14 +21,11 @@ const linkGroups = [
       { href: '/campaigns', label: 'Campañas', icon: '◈' },
       { href: '/ads', label: 'Anuncios', icon: '◉' },
       { href: '/playlists', label: 'Playlists', icon: '≡' },
-      { href: '/calculator', label: 'Calculadora', icon: '⊞' },
-      { href: '/archive', label: 'Archivo', icon: '⊗' },
     ],
   },
   {
     id: 'tablets', label: 'Tablets', links: [
       { href: '/tablets', label: 'Tablets', icon: '⊡' },
-      { href: '/groups', label: 'Grupos', icon: '⊞' },
       { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },
       { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },
       { href: '/geofencing', label: 'Geofencing', icon: '◎' },
@@ -37,8 +34,6 @@ const linkGroups = [
   {
     id: 'analitica', label: 'Analítica', links: [
       { href: '/stats', label: 'Estadísticas', icon: '◫' },
-      { href: '/executive', label: 'Ejecutivo', icon: '◈' },
-      { href: '/impact', label: 'Impacto', icon: '🌿' },
       { href: '/logs', label: 'Logs', icon: '☰' },
       { href: '/calendar', label: 'Calendario', icon: '▦' },
     ],
@@ -47,20 +42,29 @@ const linkGroups = [
     id: 'interaccion', label: 'Interacción', links: [
       { href: '/surveys', label: 'Encuestas', icon: '?' },
       { href: '/abtests', label: 'A/B Tests', icon: '⊟' },
-      { href: '/referrals', label: 'Referidos', icon: '◎' },
       { href: '/driver-points', label: 'Puntos taxistas', icon: '★' },
     ],
   },
   {
     id: 'sistema', label: 'Sistema', links: [
-      { href: '/api-control', label: 'Panel API', icon: '⊞' },
-      { href: '/public-api', label: 'API pública', icon: '⊞' },
       { href: '/inventory', label: 'Inventario', icon: '⊟' },
       { href: '/notes', label: 'Notas', icon: '✎' },
       { href: '/reminders', label: 'Recordatorios', icon: '⏰' },
       { href: '/settings', label: 'Configuración', icon: '⚙' },
       { href: '/profile', label: 'Perfil', icon: '◷' },
       { href: '/help', label: 'Ayuda', icon: '?' },
+    ],
+  },
+  {
+    id: 'a-desarrollo', label: 'A desarrollo', links: [
+      { href: '/api-control', label: 'Panel API', icon: '⊞' },
+      { href: '/public-api', label: 'API pública', icon: '⊞' },
+      { href: '/referrals', label: 'Referidos', icon: '◎' },
+      { href: '/executive', label: 'Ejecutivo', icon: '◈' },
+      { href: '/impact', label: 'Impacto', icon: '🌿' },
+      { href: '/groups', label: 'Grupos', icon: '⊞' },
+      { href: '/calculator', label: 'Calculadora', icon: '⊞' },
+      { href: '/archive', label: 'Archivo', icon: '⊗' },
     ],
   },
 ];
