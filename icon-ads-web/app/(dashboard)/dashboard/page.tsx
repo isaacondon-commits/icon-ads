@@ -59,7 +59,8 @@ export default function DashboardPage() {
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando estadísticas...</p>;
   if (!stats) return <p className="text-red-500">Error al cargar estadísticas.</p>;
-  const storagePct = storage ? Math.min(100, Math.round((storage.totalMB / STORAGE_LIMIT_MB) * 100)) : 0;
+  const storageLimitMB = storage?.quotaMB ?? STORAGE_LIMIT_MB;
+  const storagePct = storage ? Math.min(100, Math.round((storage.totalMB / storageLimitMB) * 100)) : 0;
 
   // Offline >2h tablets (#4)
   const offlineAlerts = monitor.filter((t) => t.status === 'offline' && t.offlineMinutes > 120);
@@ -140,7 +141,7 @@ export default function DashboardPage() {
       {storagePct >= 80 && storage && (
         <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800">
           <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-            Almacenamiento al {storagePct}% — {storage.totalMB} MB de {STORAGE_LIMIT_MB} MB usados
+            Almacenamiento al {storagePct}% — {storage.totalMB} MB de {storageLimitMB} MB usados
           </p>
         </div>
       )}
@@ -260,7 +261,7 @@ export default function DashboardPage() {
               <>
                 <div className="flex justify-between text-sm mb-2" style={{ color: 'var(--text-muted)' }}>
                   <span>{storage.totalMB} MB usados</span>
-                  <span>{STORAGE_LIMIT_MB} MB límite</span>
+                  <span>{storageLimitMB} MB límite</span>
                 </div>
                 <div className="w-full rounded-full h-3" style={{ background: 'var(--border-md)' }}>
                   <div
