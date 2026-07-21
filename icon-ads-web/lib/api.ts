@@ -476,6 +476,7 @@ export interface Tablet {
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
   manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
+  rotated180?: boolean;
   createdAt: string; updatedAt: string;
 }
 export interface TabletDetail extends Tablet {

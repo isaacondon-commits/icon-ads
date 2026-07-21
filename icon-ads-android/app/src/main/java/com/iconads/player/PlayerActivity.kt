@@ -69,6 +69,21 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private val rotationChangedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            Log.i(TAG, "rotated180 cambió — aplicando")
+            applyRotation()
+        }
+    }
+
+    // Manual 180° flip (#rotation) — set per-tablet from the admin panel, for
+    // mounts where the charger connector ends up on the side the OS doesn't
+    // treat as "up". Rotates the whole screen content, not just video/images,
+    // so it stays correct regardless of what's on screen.
+    private fun applyRotation() {
+        binding.root.rotation = if (prefs.getRotated180()) 180f else 0f
+    }
+
     // ────────────────────────────────────────────────────────────────────────
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +96,7 @@ class PlayerActivity : AppCompatActivity() {
         metricRepo = MetricRepository(this)
 
         setupWindow()
+        applyRotation()
         setupExoPlayer()
         showOnboardingStatus("Conectando con el servidor...")
         // Registro + sync + upload de métricas inmediatos, sin esperar WorkManager
@@ -127,11 +143,18 @@ class PlayerActivity : AppCompatActivity() {
             IntentFilter(SyncWorker.ACTION_PLAYLIST_UPDATED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        ContextCompat.registerReceiver(
+            this,
+            rotationChangedReceiver,
+            IntentFilter(SyncWorker.ACTION_ROTATION_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onStop() {
         super.onStop()
         unregisterReceiver(playlistUpdatedReceiver)
+        unregisterReceiver(rotationChangedReceiver)
     }
 
     override fun onResume() {

@@ -28,6 +28,7 @@ const tabletSchema = z.object({
   licensePlate: z.string().nullable().optional(),
   spotPrice: z.number().positive().nullable().optional(),
   manualStatus: z.enum(['activa', 'mantenimiento', 'bloqueada']).optional(),
+  rotated180: z.boolean().optional(),
 });
 
 router.get('/', async (req, res, next) => {

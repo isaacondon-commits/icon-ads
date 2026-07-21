@@ -89,6 +89,9 @@ const MIGRATIONS = [
   { name: 'tablets.fcm_token',         sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS fcm_token TEXT` },
   // v21 — poster thumbnail for video ads (client-generated, best-effort)
   { name: 'ads.thumbnail_url',         sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS thumbnail_url TEXT` },
+  // v22 — manual 180° screen flip per tablet (charger connector can end up on
+  // either side depending on how the mount was installed)
+  { name: 'tablets.rotated_180',       sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS rotated_180 BOOLEAN NOT NULL DEFAULT false` },
 ];
 
 async function runStartupMigrations() {

@@ -19,7 +19,7 @@ export default function TabletsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Tablet | null>(null);
-  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa' });
+  const [form, setForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa', rotated180: false });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
@@ -45,7 +45,7 @@ export default function TabletsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa' });
+    setForm({ deviceId: '', name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '', notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '', manualStatus: 'activa', rotated180: false });
     setError(''); setShowModal(true);
   };
 
@@ -87,6 +87,7 @@ export default function TabletsPage() {
       licensePlate: t.licensePlate ?? '',
       spotPrice: t.spotPrice != null ? String(t.spotPrice) : '',
       manualStatus: t.manualStatus ?? 'activa',
+      rotated180: t.rotated180 ?? false,
     });
     setError(''); setShowModal(true);
   };
@@ -105,6 +106,7 @@ export default function TabletsPage() {
         licensePlate: form.licensePlate || null,
         spotPrice: form.spotPrice ? Number(form.spotPrice) : null,
         manualStatus: form.manualStatus as 'activa' | 'mantenimiento' | 'bloqueada',
+        rotated180: form.rotated180,
       };
       if (editing) await api.updateTablet(editing.id, data);
       else await api.createTablet(data);
@@ -401,6 +403,12 @@ export default function TabletsPage() {
                   <option value="mantenimiento">En mantenimiento</option>
                   <option value="bloqueada">Bloqueada (kiosco)</option>
                 </select>
+              </Field>
+              <Field label="Pantalla">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.rotated180} onChange={(e) => setForm({ ...form, rotated180: e.target.checked })} />
+                  Voltear 180° (usar si el conector del cargador quedó montado del lado contrario)
+                </label>
               </Field>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">

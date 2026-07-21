@@ -25,12 +25,19 @@ class DevicePrefs(context: Context) {
     fun getFcmTokenSent(): String? = prefs.getString(KEY_FCM_TOKEN_SENT, null)
     fun setFcmTokenSent(token: String) = prefs.edit().putString(KEY_FCM_TOKEN_SENT, token).apply()
 
+    // Manual 180° screen flip, set per-tablet from the admin panel — fixes
+    // playback appearing upside down when the mount puts the charger
+    // connector on the opposite side from what the OS considers "landscape".
+    fun getRotated180(): Boolean = prefs.getBoolean(KEY_ROTATED_180, false)
+    fun setRotated180(value: Boolean) = prefs.edit().putBoolean(KEY_ROTATED_180, value).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
         private const val KEY_TABLET_ID = "tablet_id"
         private const val KEY_FCM_TOKEN = "fcm_token"
         private const val KEY_FCM_TOKEN_SENT = "fcm_token_sent"
+        private const val KEY_ROTATED_180 = "rotated_180"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

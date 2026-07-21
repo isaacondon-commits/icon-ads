@@ -112,6 +112,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             throw e
         }
 
+        if (syncResp.rotated180 != prefs.getRotated180()) {
+            prefs.setRotated180(syncResp.rotated180)
+            Log.i(TAG, "[${now()} $tz] rotated180 → ${syncResp.rotated180}")
+            applicationContext.sendBroadcast(
+                Intent(ACTION_ROTATION_CHANGED).apply { setPackage(applicationContext.packageName) }
+            )
+        }
+
         if (!syncResp.needsUpdate) {
             Log.d(TAG, "[${now()} $tz] Ya en versión ${syncResp.version}, sin cambios")
             return
@@ -146,6 +154,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     companion object {
         const val TAG = "SyncWorker"
         const val ACTION_PLAYLIST_UPDATED = "com.iconads.player.PLAYLIST_UPDATED"
+        const val ACTION_ROTATION_CHANGED = "com.iconads.player.ROTATION_CHANGED"
         const val WORK_NAME = "iconads_daily_sync"
 
         fun schedule(context: Context) {

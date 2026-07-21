@@ -126,13 +126,13 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned' });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180 });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0 });
+      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180 });
     }
 
     // #48 — if admin forced a sync, override version check
@@ -141,7 +141,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!forced && playlist.version <= currentVersion) {
       console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180 });
     }
 
     console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
@@ -149,6 +149,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       needsUpdate: true,
       version: playlist.version,
       packageUrl: `/api/device/package/${playlist.version}`,
+      rotated180: tablet.rotated180,
     });
   } catch (err) {
     next(err);

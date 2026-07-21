@@ -16,6 +16,7 @@ data class SyncResponse(
     val version: Int,
     val packageUrl: String? = null,
     val message: String? = null,
+    val rotated180: Boolean = false,
 )
 
 data class HeartbeatInfo(
