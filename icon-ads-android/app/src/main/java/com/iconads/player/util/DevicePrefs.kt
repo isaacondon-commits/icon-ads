@@ -31,6 +31,13 @@ class DevicePrefs(context: Context) {
     fun getRotated180(): Boolean = prefs.getBoolean(KEY_ROTATED_180, false)
     fun setRotated180(value: Boolean) = prefs.edit().putBoolean(KEY_ROTATED_180, value).apply()
 
+    // Last APK versionCode we already downloaded + prompted to install — avoids
+    // re-downloading and re-showing the install dialog every sync cycle for a
+    // version the tablet already offered (the person may just not have walked
+    // by yet to tap "Install").
+    fun getPromptedApkVersion(): Int = prefs.getInt(KEY_PROMPTED_APK_VERSION, 0)
+    fun setPromptedApkVersion(v: Int) = prefs.edit().putInt(KEY_PROMPTED_APK_VERSION, v).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -38,6 +45,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_FCM_TOKEN = "fcm_token"
         private const val KEY_FCM_TOKEN_SENT = "fcm_token_sent"
         private const val KEY_ROTATED_180 = "rotated_180"
+        private const val KEY_PROMPTED_APK_VERSION = "prompted_apk_version"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

@@ -67,3 +67,9 @@ data class LocationUpload(
 data class FcmTokenRequest(
     val token: String,
 )
+
+data class ApkVersionResponse(
+    val versionCode: Int?,
+    val versionName: String?,
+    val url: String?,
+)

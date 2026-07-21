@@ -264,6 +264,26 @@ export const api = {
   setSetting: (key: string, value: string) =>
     request<{ key: string; value: string }>(`/api/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) }),
 
+  // Android APK auto-update (#apk-autoupdate)
+  uploadApk: async (file: File, versionCode: number, versionName: string) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('versionCode', String(versionCode));
+    fd.append('versionName', versionName);
+    const token = getStoredToken();
+    const res = await fetch(`${BASE}/api/admin/apk`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ versionCode: number; versionName: string; url: string }>;
+  },
+
   // Occupancy stats (#8)
   getOccupancy: () => request<OccupancyEntry[]>('/api/stats/occupancy'),
 

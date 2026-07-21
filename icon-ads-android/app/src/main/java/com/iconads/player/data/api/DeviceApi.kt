@@ -44,4 +44,7 @@ interface DeviceApi {
 
     @POST("api/device/fcm-token")
     suspend fun updateFcmToken(@Body body: FcmTokenRequest)
+
+    @GET("api/device/apk-version")
+    suspend fun getApkVersion(): ApkVersionResponse
 }

@@ -26,6 +26,22 @@ export default function SettingsPage() {
     } finally { setSaving(null); }
   };
 
+  const handleUploadApk = async () => {
+    if (!apkFile) { show('Seleccioná el archivo .apk', 'error'); return; }
+    const versionCode = Number(apkVersionCode);
+    if (!versionCode || versionCode <= 0) { show('Versión (código) inválida', 'error'); return; }
+    if (!apkVersionName.trim()) { show('Falta el nombre de versión', 'error'); return; }
+    setUploadingApk(true);
+    try {
+      const res = await api.uploadApk(apkFile, versionCode, apkVersionName.trim());
+      setSettings((s) => ({ ...s, apk_version_code: String(res.versionCode), apk_version_name: res.versionName, apk_url: res.url }));
+      setApkFile(null);
+      show(`APK v${res.versionCode} publicada — las tablets la van a bajar solas`);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al subir el APK', 'error');
+    } finally { setUploadingApk(false); }
+  };
+
   const maintenanceOn = settings['maintenance_mode'] === 'true';
   const retentionDays = settings['metrics_retention_days'] ?? '90';
   const webhookUrl = settings['webhook_url'] ?? '';
@@ -39,6 +55,10 @@ export default function SettingsPage() {
   const [gaInput, setGaInput] = useState('');
   const [callmebotPhoneInput, setCallmebotPhoneInput] = useState('');
   const [callmebotApikeyInput, setCallmebotApikeyInput] = useState('');
+  const [apkFile, setApkFile] = useState<File | null>(null);
+  const [apkVersionCode, setApkVersionCode] = useState('');
+  const [apkVersionName, setApkVersionName] = useState('');
+  const [uploadingApk, setUploadingApk] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local form inputs from loaded settings, not a compiler target
@@ -219,6 +239,58 @@ export default function SettingsPage() {
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoArchive ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
+            </div>
+          </div>
+
+          {/* Auto-actualización de la APK Android */}
+          <div className="card p-6">
+            <h2 className="font-semibold mb-1">Actualización de la app Android</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+              Al subir un APK nuevo, todas las tablets lo detectan solas en su próximo sync, lo descargan por WiFi
+              y muestran el diálogo de instalación de Android — solo hace falta tocar &quot;Instalar&quot; una vez por tablet
+              (la primera vez, además, hay que habilitar &quot;Instalar apps desconocidas&quot; para esta app en cada tablet).
+            </p>
+            {settings['apk_version_code'] && (
+              <p className="text-sm mb-4">
+                Versión publicada actual: <span className="font-medium">v{settings['apk_version_name']}</span>
+                {' '}(código {settings['apk_version_code']})
+              </p>
+            )}
+            <div className="space-y-3">
+              <input
+                type="file"
+                accept=".apk"
+                className="input"
+                onChange={(e) => setApkFile(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex gap-3">
+                <input
+                  type="number"
+                  min="1"
+                  className="input w-40"
+                  placeholder="versionCode"
+                  value={apkVersionCode}
+                  onChange={(e) => setApkVersionCode(e.target.value)}
+                  onWheel={(e) => e.currentTarget.blur()}
+                />
+                <input
+                  type="text"
+                  className="input flex-1"
+                  placeholder="versionName (ej: 1.6)"
+                  value={apkVersionName}
+                  onChange={(e) => setApkVersionName(e.target.value)}
+                />
+                <button
+                  onClick={handleUploadApk}
+                  disabled={uploadingApk}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium whitespace-nowrap"
+                >
+                  {uploadingApk ? 'Subiendo...' : 'Publicar APK'}
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                versionCode y versionName tienen que coincidir con los que pusiste en app/build.gradle.kts al compilar.
+              </p>
             </div>
           </div>
 

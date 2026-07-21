@@ -94,6 +94,25 @@ router.post('/fcm-token', requireDevice, async (req, res, next) => {
   }
 });
 
+// GET /api/device/apk-version — latest published APK, for in-app auto-update
+// (#apk-autoupdate). Absent url/versionCode means no APK has been published
+// yet — the app just keeps running its current build.
+router.get('/apk-version', requireDevice, async (req, res, next) => {
+  try {
+    const configs = await prisma.systemConfig.findMany({
+      where: { key: { in: ['apk_version_code', 'apk_version_name', 'apk_url'] } },
+    });
+    const map = Object.fromEntries(configs.map((c) => [c.key, c.value]));
+    res.json({
+      versionCode: map.apk_version_code ? Number(map.apk_version_code) : null,
+      versionName: map.apk_version_name ?? null,
+      url: map.apk_url ?? null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/device/sync?version=N — check if the tablet needs a new package
 router.get('/sync', requireDevice, async (req, res, next) => {
   try {

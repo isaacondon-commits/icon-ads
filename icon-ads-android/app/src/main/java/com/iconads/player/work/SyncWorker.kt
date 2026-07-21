@@ -5,14 +5,17 @@ import android.content.Intent
 import android.os.Build
 import android.os.StatFs
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.work.*
 import com.google.firebase.messaging.FirebaseMessaging
+import com.iconads.player.BuildConfig
 import com.iconads.player.data.api.NetworkModule
 import com.iconads.player.data.model.FcmTokenRequest
 import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.util.DevicePrefs
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -39,6 +42,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             ensureRegistered()
             syncFcmTokenIfNeeded()
             sync()
+            checkApkUpdate()
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "[${now()}] Sync falló (intento ${runAttemptCount + 1})", e)
@@ -149,6 +153,47 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             }
         )
         Log.i(TAG, "[${now()} $tz] Sync completado → v${syncResp.version}")
+    }
+
+    // Auto-update (#apk-autoupdate) — descarga el APK publicado y dispara el
+    // instalador del sistema. No es silencioso: Android exige que alguien toque
+    // "Instalar" (y, la primera vez, habilite "instalar apps desconocidas" para
+    // esta app) — no hay forma de evitar esa confirmación sin inscribir el
+    // dispositivo como Device Owner. Se descarga/ofrece una sola vez por
+    // versión para no re-mostrar el diálogo en cada ciclo de sync.
+    private suspend fun checkApkUpdate() {
+        val token = prefs.getToken() ?: return
+        val api = NetworkModule.provideDeviceApi(token)
+        val apkInfo = try {
+            api.getApkVersion()
+        } catch (e: Exception) {
+            Log.w(TAG, "[${now()} $tz] No se pudo chequear versión de APK: ${e.message}")
+            return
+        }
+        val versionCode = apkInfo.versionCode ?: return
+        val url = apkInfo.url ?: return
+        if (versionCode <= BuildConfig.VERSION_CODE) return
+        if (versionCode <= prefs.getPromptedApkVersion()) return
+
+        Log.i(TAG, "[${now()} $tz] APK nueva disponible: ${apkInfo.versionName} (código $versionCode) — descargando")
+        try {
+            val downloadResp = api.downloadPackage(url)
+            val body = downloadResp.body() ?: error("Respuesta vacía al descargar APK")
+            val apkFile = File(applicationContext.getExternalFilesDir(null), "update.apk")
+            body.byteStream().use { input ->
+                apkFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            val uri = FileProvider.getUriForFile(applicationContext, "${applicationContext.packageName}.fileprovider", apkFile)
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            applicationContext.startActivity(installIntent)
+            prefs.setPromptedApkVersion(versionCode)
+            Log.i(TAG, "[${now()} $tz] Instalador de APK lanzado para v$versionCode")
+        } catch (e: Exception) {
+            Log.e(TAG, "[${now()} $tz] Falló la descarga/instalación del APK: ${e.message}", e)
+        }
     }
 
     companion object {

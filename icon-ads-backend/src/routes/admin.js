@@ -3,8 +3,17 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const XLSX = require('xlsx');
 const PptxGenJS = require('pptxgenjs');
+const multer = require('multer');
+const { z } = require('zod');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const { audit } = require('../lib/auditLog');
+const supabaseStorage = require('../lib/supabase-storage');
+
+const apkUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
 
 router.param('id', (req, res, next, id) => {
   if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -386,6 +395,40 @@ router.delete('/api-keys/:id', requireAuth, async (req, res, next) => {
     await prisma.apiKey.update({ where: { id: Number(req.params.id) }, data: { active: false } });
     res.json({ ok: true });
   } catch (err) { next(err); }
+});
+
+// POST /api/admin/apk — upload a new Android release APK for the fleet to
+// auto-download (#apk-autoupdate). versionCode/versionName come from
+// app/build.gradle.kts at the time of the build; not parsed from the APK
+// itself to avoid pulling in a manifest-binary-XML parser for something the
+// person uploading already knows.
+router.post('/apk', requireAuth, apkUpload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    if (!/\.apk$/i.test(req.file.originalname)) return res.status(400).json({ error: 'El archivo debe ser un .apk' });
+
+    const { versionCode, versionName } = z.object({
+      versionCode: z.coerce.number().int().positive(),
+      versionName: z.string().min(1),
+    }).parse(req.body);
+
+    if (!supabaseStorage.isConfigured) return res.status(503).json({ error: 'Storage not configured' });
+
+    const filename = `apk/iconads-v${versionCode}.apk`;
+    const url = await supabaseStorage.uploadFile(filename, req.file.buffer, 'application/vnd.android.package-archive');
+
+    await Promise.all([
+      prisma.systemConfig.upsert({ where: { key: 'apk_version_code' }, update: { value: String(versionCode) }, create: { key: 'apk_version_code', value: String(versionCode) } }),
+      prisma.systemConfig.upsert({ where: { key: 'apk_version_name' }, update: { value: versionName }, create: { key: 'apk_version_name', value: versionName } }),
+      prisma.systemConfig.upsert({ where: { key: 'apk_url' }, update: { value: url }, create: { key: 'apk_url', value: url } }),
+    ]);
+
+    await audit(req, 'UPLOAD_APK', 'system', null, `APK v${versionCode} (${versionName})`);
+    res.status(201).json({ versionCode, versionName, url });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
 });
 
 module.exports = router;
