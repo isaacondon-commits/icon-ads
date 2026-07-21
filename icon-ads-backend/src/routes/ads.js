@@ -148,13 +148,13 @@ router.get('/presign', async (req, res, next) => {
       const key = `uploads/${unique}${ext}`;
       const uploadUrl = await r2.getPresignedUploadUrl(key, contentType);
       const publicUrl = r2.getPublicUrl(key);
-      return res.json({ uploadUrl, key, publicUrl });
+      return res.json({ uploadUrl, key, publicUrl, provider: 'r2' });
     }
     if (supabaseStorage.isConfigured) {
       const storageFilename = `${unique}${ext}`;
       const { uploadUrl, path: storedPath } = await supabaseStorage.getSignedUploadUrl(storageFilename);
       const publicUrl = supabaseStorage.getPublicUrl(storedPath);
-      return res.json({ uploadUrl, key: storedPath, publicUrl });
+      return res.json({ uploadUrl, key: storedPath, publicUrl, provider: 'supabase' });
     }
     return res.status(503).json({ error: 'Direct upload not configured' });
   } catch (err) {

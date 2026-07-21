@@ -81,26 +81,36 @@ export const api = {
   uploadAdWithProgress: async (formData: FormData, onProgress: (pct: number) => void): Promise<Ad> => {
     const file = formData.get('file') as File | null;
 
-    // Try R2 presigned URL flow first
+    // Try direct-to-storage upload first (R2 or Supabase, whichever the backend has configured)
     if (file) {
       try {
-        const presign = await request<{ uploadUrl: string; key: string; publicUrl: string }>(
+        const presign = await request<{ uploadUrl: string; key: string; publicUrl: string; provider: 'r2' | 'supabase' }>(
           `/api/ads/presign?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
         );
-        // Upload directly to R2 with progress
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('PUT', presign.uploadUrl);
-          xhr.setRequestHeader('Content-Type', file.type);
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90));
           };
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else reject(new Error(`R2 upload failed: HTTP ${xhr.status}`));
+            else reject(new Error(`Upload failed: HTTP ${xhr.status}`));
           };
           xhr.onerror = () => reject(new Error('Error de red'));
-          xhr.send(file);
+          if (presign.provider === 'supabase') {
+            // Supabase's signed-upload endpoint expects multipart/form-data with
+            // a cacheControl field and the file under an empty field name — not
+            // a raw body, unlike R2's presigned PUT. Let the browser set the
+            // multipart Content-Type (with boundary) itself.
+            const body = new FormData();
+            body.append('cacheControl', '3600');
+            body.append('', file);
+            xhr.send(body);
+          } else {
+            xhr.setRequestHeader('Content-Type', file.type);
+            xhr.send(file);
+          }
         });
         onProgress(95);
         const ad = await request<Ad>('/api/ads/confirm', {
@@ -189,6 +199,8 @@ export const api = {
     request<CompletionRate[]>(`/api/stats/completion${from ? `?from=${from}&to=${to}` : ''}`),
   getPlaylistStats: (from?: string, to?: string) =>
     request<PlaylistStat[]>(`/api/stats/playlists${from ? `?from=${from}&to=${to}` : ''}`),
+  getPlaysByTabletAd: (from?: string, to?: string) =>
+    request<TabletAdPlay[]>(`/api/stats/by-tablet-ad${from ? `?from=${from}&to=${to}` : ''}`),
 
   // Notifications
   getNotifications: () => request<Notifications>('/api/notifications'),
@@ -491,6 +503,7 @@ export interface AuditPage {
 export interface HourlyCount { hour: number; count: number; }
 export interface CompletionRate { adId: number; adName: string; totalPlays: number; completedPlays: number; completionRate: number; }
 export interface PlaylistStat { playlistId: number; playlistName: string; tabletCount: number; totalPlays: number; }
+export interface TabletAdPlay { tabletId: number; tabletName: string; adId: number; adName: string; count: number; }
 export interface AdNoPlays {
   id: number; name: string; type: 'video' | 'image'; durationS: number; createdAt: string;
   campaign: { id: number; name: string; active: boolean };
