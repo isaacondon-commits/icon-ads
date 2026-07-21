@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry, TabletAdPlay } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -23,6 +23,8 @@ export default function StatsPage() {
   const [zoneHour, setZoneHour] = useState<ZoneHourEntry[]>([]);
   const [slaStats, setSlaStats] = useState<SlaStat[]>([]);
   const [monthly, setMonthly] = useState<MonthlyEntry[]>([]);
+  const [tabletAdPlays, setTabletAdPlays] = useState<TabletAdPlay[]>([]);
+  const [expandedTablet, setExpandedTablet] = useState<number | null>(null);
 
   // eslint-disable-next-line react-hooks/purity -- default date range reads wall-clock time; no React Compiler in use, no SSR of this data
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
@@ -38,11 +40,13 @@ export default function StatsPage() {
       api.getHeatmap(f, t),
       api.getCompletionRate(f, t),
       api.getPlaylistStats(f, t),
-    ]).then(([r, h, c, p]) => {
+      api.getPlaysByTabletAd(f, t),
+    ]).then(([r, h, c, p, ta]) => {
       if (r.status === 'fulfilled') setRange(r.value);
       if (h.status === 'fulfilled') setHeatmap(h.value);
       if (c.status === 'fulfilled') setCompletion(c.value);
       if (p.status === 'fulfilled') setPlaylists(p.value);
+      if (ta.status === 'fulfilled') setTabletAdPlays(ta.value);
     }).finally(() => { setLoadingRange(false); setLoadingExtra(false); });
   };
 
@@ -278,6 +282,57 @@ export default function StatsPage() {
                   </table>
                 )}
               </div>
+            </div>
+
+            {/* Qué anuncios reprodujo cada tablet y cuántas veces */}
+            <div className="mt-6">
+              <p className="text-sm font-medium mb-3">Reproducciones por tablet</p>
+              {tabletAdPlays.length === 0 ? (
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {Object.values(
+                    tabletAdPlays.reduce((acc, row) => {
+                      if (!acc[row.tabletId]) acc[row.tabletId] = { tabletId: row.tabletId, tabletName: row.tabletName, total: 0, ads: [] };
+                      acc[row.tabletId].total += row.count;
+                      acc[row.tabletId].ads.push({ adId: row.adId, adName: row.adName, count: row.count });
+                      return acc;
+                    }, {} as Record<number, { tabletId: number; tabletName: string; total: number; ads: { adId: number; adName: string; count: number }[] }>)
+                  )
+                    .sort((a, b) => b.total - a.total)
+                    .map((tg) => {
+                      const open = expandedTablet === tg.tabletId;
+                      return (
+                        <div key={tg.tabletId} className="rounded-lg border" style={{ borderColor: 'var(--border-md)' }}>
+                          <button
+                            onClick={() => setExpandedTablet(open ? null : tg.tabletId)}
+                            className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                          >
+                            <span className="text-sm font-medium flex items-center gap-2">
+                              <span className={`text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+                              {tg.tabletName}
+                            </span>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {tg.total.toLocaleString()} reproducciones · {tg.ads.length} anuncios distintos
+                            </span>
+                          </button>
+                          {open && (
+                            <table className="w-full text-sm border-t" style={{ borderColor: 'var(--border-md)' }}>
+                              <tbody>
+                                {tg.ads.sort((a, b) => b.count - a.count).map((a) => (
+                                  <tr key={a.adId} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                                    <td className="py-1.5 px-3 truncate max-w-[300px]">{a.adName}</td>
+                                    <td className="py-1.5 px-3 text-right font-medium tabular-nums" style={{ color: 'var(--text-muted)' }}>{a.count.toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
 
             {/* #11 — Hourly heatmap */}

@@ -183,6 +183,34 @@ router.get('/range', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/by-tablet-ad?from=&to= — which ads each tablet played, and
+// how many times (playsByTablet/playsByAd on /range only give totals per
+// side, not the cross breakdown)
+router.get('/by-tablet-ad', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+
+    const rows = await prisma.$queryRaw`
+      SELECT t.id AS "tabletId", t.name AS "tabletName", a.id AS "adId", a.name AS "adName", COUNT(m.id)::int AS count
+      FROM metrics m
+      JOIN tablets t ON m.tablet_id = t.id
+      JOIN ads a ON m.ad_id = a.id
+      WHERE m.played_at BETWEEN ${from} AND ${to}
+      GROUP BY t.id, t.name, a.id, a.name
+      ORDER BY t.name ASC, count DESC
+    `;
+
+    res.json(rows.map((r) => ({
+      tabletId: Number(r.tabletId), tabletName: r.tabletName,
+      adId: Number(r.adId), adName: r.adName, count: Number(r.count),
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/stats/heatmap?from=&to= — plays per hour of day (#11)
 router.get('/heatmap', async (req, res, next) => {
   try {
