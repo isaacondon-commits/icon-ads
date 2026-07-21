@@ -252,6 +252,7 @@ router.put('/:id', async (req, res, next) => {
     const data = adSchema.omit({ campaignId: true }).partial().parse(req.body);
     const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
     await audit(req, 'UPDATE', 'ad', ad.id, `Updated "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
     res.json(ad);
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
@@ -294,6 +295,32 @@ router.patch('/:id/reject', async (req, res, next) => {
   try {
     const ad = await prisma.ad.update({ where: { id: Number(req.params.id) }, data: { approvalStatus: 'rejected', active: false } });
     await audit(req, 'REJECT', 'ad', ad.id, `Rejected "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
+    res.json(ad);
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
+    next(err);
+  }
+});
+
+// PATCH /:id/pause — temporarily stop serving an approved ad without deleting it
+router.patch('/:id/pause', async (req, res, next) => {
+  try {
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data: { active: false } });
+    await audit(req, 'PAUSE', 'ad', ad.id, `Paused "${ad.name}"`);
+    await bumpPlaylistsForAdIds([ad.id]);
+    res.json(ad);
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
+    next(err);
+  }
+});
+
+// PATCH /:id/resume — resume a paused ad
+router.patch('/:id/resume', async (req, res, next) => {
+  try {
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data: { active: true } });
+    await audit(req, 'RESUME', 'ad', ad.id, `Resumed "${ad.name}"`);
     await bumpPlaylistsForAdIds([ad.id]);
     res.json(ad);
   } catch (err) {

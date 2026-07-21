@@ -17,6 +17,7 @@ export default function AdsPage() {
   const [tagFilter, setTagFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Ad | null>(null);
   const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
   const [playerUrl, setPlayerUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -30,6 +31,7 @@ export default function AdsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [pausingId, setPausingId] = useState<number | null>(null);
   const [hoveredAdId, setHoveredAdId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -53,10 +55,29 @@ export default function AdsPage() {
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const openCreate = () => {
+    setEditing(null);
     setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
     setFile(null);
     setPreview(null);
     setUploadPct(0);
+    setFileError('');
+    setError('');
+    setShowModal(true);
+  };
+
+  const openEdit = (ad: Ad) => {
+    setEditing(ad);
+    setForm({
+      campaignId: ad.campaignId.toString(),
+      name: ad.name,
+      type: ad.type,
+      durationS: ad.durationS.toString(),
+      priority: ad.priority.toString(),
+      targetUrl: ad.targetUrl ?? '',
+      tags: (ad.tags ?? []).join(', '),
+    });
+    setFile(null);
+    setPreview(null);
     setFileError('');
     setError('');
     setShowModal(true);
@@ -116,6 +137,28 @@ export default function AdsPage() {
     }
   };
 
+  const handleUpdate = async () => {
+    if (!editing) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.updateAd(editing.id, {
+        name: form.name,
+        type: form.type as 'video' | 'image',
+        durationS: Number(form.durationS),
+        priority: Number(form.priority || '0'),
+        targetUrl: form.targetUrl || null,
+        tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      });
+      setShowModal(false);
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const confirmDelete = (ad: Ad) => setDeleteTarget(ad);
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -135,6 +178,16 @@ export default function AdsPage() {
     setApprovingId(id);
     await api.rejectAd(id).catch(() => {});
     setApprovingId(null);
+    load();
+  };
+
+  const handleTogglePause = async (ad: Ad) => {
+    setPausingId(ad.id);
+    try {
+      if (ad.active) await api.pauseAd(ad.id);
+      else await api.resumeAd(ad.id);
+    } catch { /* ignore */ }
+    setPausingId(null);
     load();
   };
 
@@ -224,14 +277,22 @@ export default function AdsPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ad.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
                     {ad.type}
                   </span>
-                  {ad.approvalStatus === 'pending' && (
-                    <div className="flex gap-1 ml-auto">
-                      <button onClick={() => handleApprove(ad.id)} disabled={approvingId === ad.id} className="text-xs text-emerald-600 hover:underline disabled:opacity-40">Aprobar</button>
-                      <button onClick={() => handleReject(ad.id)} disabled={approvingId === ad.id} className="text-xs text-red-500 hover:underline disabled:opacity-40">Rechazar</button>
-                    </div>
-                  )}
-                  {ad.approvalStatus === 'rejected' && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded ml-auto">Rechazado</span>}
-                  <button onClick={() => confirmDelete(ad)} className="text-red-500 hover:underline text-xs">Desactivar</button>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {ad.approvalStatus === 'pending' && (
+                      <>
+                        <button onClick={() => handleApprove(ad.id)} disabled={approvingId === ad.id} className="text-xs text-emerald-600 hover:underline disabled:opacity-40">Aprobar</button>
+                        <button onClick={() => handleReject(ad.id)} disabled={approvingId === ad.id} className="text-xs text-red-500 hover:underline disabled:opacity-40">Rechazar</button>
+                      </>
+                    )}
+                    {ad.approvalStatus === 'rejected' && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Rechazado</span>}
+                    {ad.approvalStatus === 'approved' && (
+                      <button onClick={() => handleTogglePause(ad)} disabled={pausingId === ad.id} className={`text-xs hover:underline disabled:opacity-40 ${ad.active ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        {pausingId === ad.id ? '...' : ad.active ? 'Pausar' : 'Reanudar'}
+                      </button>
+                    )}
+                    <button onClick={() => openEdit(ad)} className="text-xs text-blue-600 hover:underline">Editar</button>
+                    <button onClick={() => confirmDelete(ad)} className="text-xs text-red-500 hover:underline">Eliminar</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -239,7 +300,7 @@ export default function AdsPage() {
         </div>
       ) : (
         /* LIST VIEW — #11 thumbnail column */
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
@@ -292,8 +353,23 @@ export default function AdsPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => confirmDelete(ad)} className="text-red-500 hover:underline text-xs">Desactivar</button>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <div className="flex items-center gap-2 justify-end">
+                      {ad.approvalStatus === 'pending' && (
+                        <>
+                          <button onClick={() => handleApprove(ad.id)} disabled={approvingId === ad.id} className="text-xs text-emerald-600 hover:underline disabled:opacity-40">Aprobar</button>
+                          <button onClick={() => handleReject(ad.id)} disabled={approvingId === ad.id} className="text-xs text-red-500 hover:underline disabled:opacity-40">Rechazar</button>
+                        </>
+                      )}
+                      {ad.approvalStatus === 'rejected' && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Rechazado</span>}
+                      {ad.approvalStatus === 'approved' && (
+                        <button onClick={() => handleTogglePause(ad)} disabled={pausingId === ad.id} className={`text-xs hover:underline disabled:opacity-40 ${ad.active ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          {pausingId === ad.id ? '...' : ad.active ? 'Pausar' : 'Reanudar'}
+                        </button>
+                      )}
+                      <button onClick={() => openEdit(ad)} className="text-xs text-blue-600 hover:underline">Editar</button>
+                      <button onClick={() => confirmDelete(ad)} className="text-xs text-red-500 hover:underline">Eliminar</button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -333,24 +409,25 @@ export default function AdsPage() {
       {/* #9 — delete confirmation modal */}
       {deleteTarget && (
         <ConfirmDialog
-          title="Desactivar anuncio"
-          message={`¿Desactivar "${deleteTarget.name}"? Dejará de aparecer en las playlists.`}
-          confirmLabel="Desactivar"
+          title="Eliminar anuncio"
+          message={`¿Eliminar "${deleteTarget.name}"? Dejará de aparecer en las playlists.`}
+          confirmLabel="Eliminar"
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
         />
       )}
 
-      {/* Upload modal */}
+      {/* Upload / edit modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-lg">Subir anuncio</h2>
+              <h2 className="font-semibold text-lg">{editing ? 'Editar anuncio' : 'Subir anuncio'}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
             <div className="space-y-4">
-              {/* File picker */}
+              {/* File picker — solo al subir; el archivo no se reemplaza al editar */}
+              {!editing && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Archivo <span className="text-gray-400 font-normal">(mp4, jpg, png, webp · máx {MAX_SIZE_MB}MB · recomendado 1280×720)</span>
@@ -374,9 +451,10 @@ export default function AdsPage() {
                 />
                 {fileError && <p className="text-red-500 text-xs mt-1">{fileError}</p>}
               </div>
+              )}
 
               {/* #1 — preview */}
-              {preview && (
+              {!editing && preview && (
                 <div className="rounded-lg overflow-hidden bg-gray-100 max-h-40">
                   {form.type === 'video' ? (
                     <video src={preview} controls className="w-full max-h-40 object-contain" />
@@ -387,7 +465,7 @@ export default function AdsPage() {
               )}
 
               {/* #3 — progress bar */}
-              {saving && (
+              {!editing && saving && (
                 <div>
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
                     <span>Subiendo...</span>
@@ -404,12 +482,16 @@ export default function AdsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Campaña</label>
-                <select className="input" value={form.campaignId} onChange={(e) => setForm({ ...form, campaignId: e.target.value })}>
-                  <option value="">Seleccionar campaña</option>
-                  {campaigns.filter(c => c.active).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                {editing ? (
+                  <p className="text-sm text-gray-500 py-2">{editing.campaign?.name ?? '—'} <span className="text-xs text-gray-400">(no se puede cambiar acá)</span></p>
+                ) : (
+                  <select className="input" value={form.campaignId} onChange={(e) => setForm({ ...form, campaignId: e.target.value })}>
+                    <option value="">Seleccionar campaña</option>
+                    {campaigns.filter(c => c.active).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
@@ -445,8 +527,8 @@ export default function AdsPage() {
               </div>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">
-                <button onClick={handleUpload} disabled={saving || !!fileError} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
-                  {saving ? `Subiendo ${uploadPct}%` : 'Subir'}
+                <button onClick={editing ? handleUpdate : handleUpload} disabled={saving || !!fileError} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
+                  {editing ? (saving ? 'Guardando...' : 'Guardar') : (saving ? `Subiendo ${uploadPct}%` : 'Subir')}
                 </button>
                 <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 hover:bg-gray-50 py-2 rounded-lg text-sm">
                   Cancelar

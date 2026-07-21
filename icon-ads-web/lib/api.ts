@@ -142,8 +142,12 @@ export const api = {
     });
   },
   deleteAd: (id: number) => request<void>(`/api/ads/${id}`, { method: 'DELETE' }),
+  updateAd: (id: number, data: Partial<Pick<Ad, 'name' | 'type' | 'durationS' | 'priority' | 'targetUrl' | 'tags'>>) =>
+    request<Ad>(`/api/ads/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   approveAd: (id: number) => request<Ad>(`/api/ads/${id}/approve`, { method: 'PATCH' }),
   rejectAd: (id: number) => request<Ad>(`/api/ads/${id}/reject`, { method: 'PATCH' }),
+  pauseAd: (id: number) => request<Ad>(`/api/ads/${id}/pause`, { method: 'PATCH' }),
+  resumeAd: (id: number) => request<Ad>(`/api/ads/${id}/resume`, { method: 'PATCH' }),
   getStorageStats: () => request<StorageStats>('/api/ads/storage-stats'),
 
   // Playlists
