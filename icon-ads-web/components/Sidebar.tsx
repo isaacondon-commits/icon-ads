@@ -7,39 +7,65 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { api, Notifications } from '@/lib/api';
 
-const links = [
-  { href: '/dashboard', label: 'Dashboard', icon: '⊞' },
-  { href: '/monitor', label: 'Monitor', icon: '◎' },
-  { href: '/map', label: 'Mapa GPS', icon: '◉' },
-  { href: '/tablets', label: 'Tablets', icon: '⊡' },
-  { href: '/clients', label: 'Clientes', icon: '⊛' },
-  { href: '/campaigns', label: 'Campañas', icon: '◈' },
-  { href: '/ads', label: 'Anuncios', icon: '◉' },
-  { href: '/playlists', label: 'Playlists', icon: '≡' },
-  { href: '/calendar', label: 'Calendario', icon: '▦' },
-  { href: '/stats', label: 'Estadísticas', icon: '◫' },
-  { href: '/executive', label: 'Ejecutivo', icon: '◈' },
-  { href: '/inventory', label: 'Inventario', icon: '⊟' },
-  { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },
-  { href: '/api-control', label: 'Panel API', icon: '⊞' },
-  { href: '/archive', label: 'Archivo', icon: '⊗' },
-  { href: '/notes', label: 'Notas', icon: '✎' },
-  { href: '/reminders', label: 'Recordatorios', icon: '⏰' },
-  { href: '/impact', label: 'Impacto', icon: '🌿' },
-  { href: '/abtests', label: 'A/B Tests', icon: '⊟' },
-  { href: '/referrals', label: 'Referidos', icon: '◎' },
-  { href: '/driver-points', label: 'Puntos taxistas', icon: '★' },
-  { href: '/surveys', label: 'Encuestas', icon: '?' },
-  { href: '/geofencing', label: 'Geofencing', icon: '◎' },
-  { href: '/public-api', label: 'API pública', icon: '⊞' },
-  { href: '/calculator', label: 'Calculadora', icon: '⊞' },
-  { href: '/logs', label: 'Logs', icon: '☰' },
-  { href: '/groups', label: 'Grupos', icon: '⊞' },
-  { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },
-  { href: '/settings', label: 'Configuración', icon: '⚙' },
-  { href: '/profile', label: 'Perfil', icon: '◷' },
-  { href: '/help', label: 'Ayuda', icon: '?' },
+const linkGroups = [
+  {
+    id: 'principal', label: 'Principal', links: [
+      { href: '/dashboard', label: 'Dashboard', icon: '⊞' },
+      { href: '/monitor', label: 'Monitor', icon: '◎' },
+      { href: '/map', label: 'Mapa GPS', icon: '◉' },
+    ],
+  },
+  {
+    id: 'publicidad', label: 'Publicidad', links: [
+      { href: '/clients', label: 'Clientes', icon: '⊛' },
+      { href: '/campaigns', label: 'Campañas', icon: '◈' },
+      { href: '/ads', label: 'Anuncios', icon: '◉' },
+      { href: '/playlists', label: 'Playlists', icon: '≡' },
+      { href: '/calculator', label: 'Calculadora', icon: '⊞' },
+      { href: '/archive', label: 'Archivo', icon: '⊗' },
+    ],
+  },
+  {
+    id: 'tablets', label: 'Tablets', links: [
+      { href: '/tablets', label: 'Tablets', icon: '⊡' },
+      { href: '/groups', label: 'Grupos', icon: '⊞' },
+      { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },
+      { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },
+      { href: '/geofencing', label: 'Geofencing', icon: '◎' },
+    ],
+  },
+  {
+    id: 'analitica', label: 'Analítica', links: [
+      { href: '/stats', label: 'Estadísticas', icon: '◫' },
+      { href: '/executive', label: 'Ejecutivo', icon: '◈' },
+      { href: '/impact', label: 'Impacto', icon: '🌿' },
+      { href: '/logs', label: 'Logs', icon: '☰' },
+      { href: '/calendar', label: 'Calendario', icon: '▦' },
+    ],
+  },
+  {
+    id: 'interaccion', label: 'Interacción', links: [
+      { href: '/surveys', label: 'Encuestas', icon: '?' },
+      { href: '/abtests', label: 'A/B Tests', icon: '⊟' },
+      { href: '/referrals', label: 'Referidos', icon: '◎' },
+      { href: '/driver-points', label: 'Puntos taxistas', icon: '★' },
+    ],
+  },
+  {
+    id: 'sistema', label: 'Sistema', links: [
+      { href: '/api-control', label: 'Panel API', icon: '⊞' },
+      { href: '/public-api', label: 'API pública', icon: '⊞' },
+      { href: '/inventory', label: 'Inventario', icon: '⊟' },
+      { href: '/notes', label: 'Notas', icon: '✎' },
+      { href: '/reminders', label: 'Recordatorios', icon: '⏰' },
+      { href: '/settings', label: 'Configuración', icon: '⚙' },
+      { href: '/profile', label: 'Perfil', icon: '◷' },
+      { href: '/help', label: 'Ayuda', icon: '?' },
+    ],
+  },
 ];
+
+const COLLAPSE_STORAGE_KEY = 'iconads-sidebar-collapsed';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -48,6 +74,7 @@ export default function Sidebar() {
   const [pendingAds, setPendingAds] = useState(0);
   const [notifications, setNotifications] = useState<Notifications | null>(null);
   const [showNotif, setShowNotif] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchNotifs = () => {
@@ -58,6 +85,24 @@ export default function Sidebar() {
     const id = setInterval(fetchNotifs, 5 * 60_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSE_STORAGE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reads persisted collapse state from localStorage on mount, not a compiler target
+      if (saved) setCollapsedGroups(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleGroup = (id: string) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const isLinkActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
   return (
     <aside
@@ -76,29 +121,48 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {links.map((link) => {
-          const active = pathname === link.href || pathname.startsWith(link.href + '/');
-          const badge = link.href === '/ads' && pendingAds > 0 ? pendingAds : null;
+      <nav className="flex-1 px-3 py-4 space-y-3 overflow-y-auto">
+        {linkGroups.map((group) => {
+          const groupHasActive = group.links.some((l) => isLinkActive(l.href));
+          const open = groupHasActive || !collapsedGroups[group.id];
           return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-              style={!active ? { ['--hover-bg' as string]: 'var(--sidebar-hover)' } : undefined}
-              onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--sidebar-hover)'; }}
-              onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = ''; }}
-            >
-              <span className="text-base">{link.icon}</span>
-              <span className="flex-1">{link.label}</span>
-              {badge && (
-                <span className="text-xs font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                  {badge > 99 ? '99+' : badge}
-                </span>
+            <div key={group.id}>
+              <button
+                onClick={() => toggleGroup(group.id)}
+                className="w-full flex items-center gap-2 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                <span className={`text-[10px] transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+                <span className="flex-1 text-left">{group.label}</span>
+              </button>
+              {open && (
+                <div className="space-y-0.5 mt-0.5">
+                  {group.links.map((link) => {
+                    const active = isLinkActive(link.href);
+                    const badge = link.href === '/ads' && pendingAds > 0 ? pendingAds : null;
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                          active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                        style={!active ? { ['--hover-bg' as string]: 'var(--sidebar-hover)' } : undefined}
+                        onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--sidebar-hover)'; }}
+                        onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = ''; }}
+                      >
+                        <span className="text-base">{link.icon}</span>
+                        <span className="flex-1">{link.label}</span>
+                        {badge && (
+                          <span className="text-xs font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-            </Link>
+            </div>
           );
         })}
       </nav>
