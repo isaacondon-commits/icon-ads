@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry, TabletAdPlay } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, DayHourCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry, TabletAdPlay } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -11,6 +11,7 @@ export default function StatsPage() {
   const [weekly, setWeekly] = useState<WeeklyEntry[]>([]);
   const [range, setRange] = useState<RangeStats | null>(null);
   const [heatmap, setHeatmap] = useState<HourlyCount[]>([]);
+  const [heatmapByDay, setHeatmapByDay] = useState<DayHourCount[]>([]);
   const [completion, setCompletion] = useState<CompletionRate[]>([]);
   const [playlists, setPlaylists] = useState<PlaylistStat[]>([]);
   const [loadingWeekly, setLoadingWeekly] = useState(true);
@@ -38,12 +39,14 @@ export default function StatsPage() {
     Promise.allSettled([
       api.getRangeStats(f, t),
       api.getHeatmap(f, t),
+      api.getHeatmapByDay(f, t),
       api.getCompletionRate(f, t),
       api.getPlaylistStats(f, t),
       api.getPlaysByTabletAd(f, t),
-    ]).then(([r, h, c, p, ta]) => {
+    ]).then(([r, h, hd, c, p, ta]) => {
       if (r.status === 'fulfilled') setRange(r.value);
       if (h.status === 'fulfilled') setHeatmap(h.value);
+      if (hd.status === 'fulfilled') setHeatmapByDay(hd.value);
       if (c.status === 'fulfilled') setCompletion(c.value);
       if (p.status === 'fulfilled') setPlaylists(p.value);
       if (ta.status === 'fulfilled') setTabletAdPlays(ta.value);
@@ -335,10 +338,62 @@ export default function StatsPage() {
               )}
             </div>
 
-            {/* #11 — Hourly heatmap */}
+            {/* Reproducciones por hora, desglosado por día */}
+            {heatmapByDay.length > 0 && (() => {
+              const days = [...new Set(heatmapByDay.map((r) => r.date))].sort();
+              const hours = Array.from({ length: 24 }, (_, i) => i);
+              const maxCount = Math.max(...heatmapByDay.map((r) => r.count), 1);
+              const lookup = new Map(heatmapByDay.map((r) => [`${r.date}:${r.hour}`, r.count]));
+              return (
+                <div className="mt-6">
+                  <p className="text-sm font-medium mb-3">Reproducciones por hora del día, día a día</p>
+                  {loadingExtra ? (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="text-xs w-full">
+                        <thead>
+                          <tr>
+                            <th className="text-left pb-2 pr-3 font-medium" style={{ color: 'var(--text-muted)', minWidth: '80px' }}>Día</th>
+                            {hours.map((h) => (
+                              <th key={h} className="text-center pb-2 px-0.5 font-medium tabular-nums" style={{ color: 'var(--text-muted)', minWidth: '22px' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {days.map((date) => (
+                            <tr key={date}>
+                              <td className="pr-3 py-1 font-medium tabular-nums">{new Date(date + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</td>
+                              {hours.map((h) => {
+                                const count = lookup.get(`${date}:${h}`) ?? 0;
+                                const intensity = count / maxCount;
+                                return (
+                                  <td key={h} className="px-0.5 py-1 text-center" title={`${date} ${h}:00 — ${count} reproducciones`}>
+                                    <div
+                                      className="mx-auto rounded"
+                                      style={{
+                                        width: '18px', height: '18px',
+                                        background: count === 0 ? 'var(--border)' : `rgba(59,130,246,${0.15 + intensity * 0.85})`,
+                                      }}
+                                    />
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>Cada celda = reproducciones en esa hora ese día. Azul más oscuro = más reproducciones.</p>
+                </div>
+              );
+            })()}
+
+            {/* #11 — Hourly heatmap (todos los días combinados) */}
             {heatmap.length > 0 && (
               <div className="mt-6">
-                <p className="text-sm font-medium mb-3">Reproducciones por hora del día</p>
+                <p className="text-sm font-medium mb-3">Reproducciones por hora del día (total del período)</p>
                 {loadingExtra ? (
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
                 ) : (

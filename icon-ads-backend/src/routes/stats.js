@@ -230,6 +230,27 @@ router.get('/heatmap', async (req, res, next) => {
   }
 });
 
+// GET /api/stats/heatmap-by-day?from=&to= — plays per hour, broken down by
+// calendar day, for the day × hour grid version of /heatmap
+router.get('/heatmap-by-day', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+    const rows = await prisma.$queryRaw`
+      SELECT DATE(played_at AT TIME ZONE 'UTC') AS date,
+             EXTRACT(HOUR FROM played_at AT TIME ZONE 'UTC')::int AS hour,
+             COUNT(*)::int AS count
+      FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
+      GROUP BY DATE(played_at AT TIME ZONE 'UTC'), hour
+      ORDER BY date ASC, hour ASC
+    `;
+    res.json(rows.map((r) => ({ date: String(r.date).slice(0, 10), hour: Number(r.hour), count: Number(r.count) })));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/stats/completion?from=&to= — completion rate per ad (#12)
 router.get('/completion', async (req, res, next) => {
   try {

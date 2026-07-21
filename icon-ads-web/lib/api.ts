@@ -225,6 +225,8 @@ export const api = {
   // Stats extras
   getHeatmap: (from?: string, to?: string) =>
     request<HourlyCount[]>(`/api/stats/heatmap${from ? `?from=${from}&to=${to}` : ''}`),
+  getHeatmapByDay: (from?: string, to?: string) =>
+    request<DayHourCount[]>(`/api/stats/heatmap-by-day${from ? `?from=${from}&to=${to}` : ''}`),
   getCompletionRate: (from?: string, to?: string) =>
     request<CompletionRate[]>(`/api/stats/completion${from ? `?from=${from}&to=${to}` : ''}`),
   getPlaylistStats: (from?: string, to?: string) =>
@@ -531,6 +533,7 @@ export interface AuditPage {
 }
 
 export interface HourlyCount { hour: number; count: number; }
+export interface DayHourCount { date: string; hour: number; count: number; }
 export interface CompletionRate { adId: number; adName: string; totalPlays: number; completedPlays: number; completionRate: number; }
 export interface PlaylistStat { playlistId: number; playlistName: string; tabletCount: number; totalPlays: number; }
 export interface TabletAdPlay { tabletId: number; tabletName: string; adId: number; adName: string; count: number; }
