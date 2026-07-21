@@ -41,4 +41,7 @@ interface DeviceApi {
 
     @POST("api/device/survey-answer")
     suspend fun submitSurveyAnswer(@Body body: SurveyAnswerRequest)
+
+    @POST("api/device/fcm-token")
+    suspend fun updateFcmToken(@Body body: FcmTokenRequest)
 }

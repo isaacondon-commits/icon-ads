@@ -6,13 +6,17 @@ import android.os.Build
 import android.os.StatFs
 import android.util.Log
 import androidx.work.*
+import com.google.firebase.messaging.FirebaseMessaging
 import com.iconads.player.data.api.NetworkModule
+import com.iconads.player.data.model.FcmTokenRequest
 import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.util.DevicePrefs
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -33,6 +37,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         return try {
             ensureRegistered()
+            syncFcmTokenIfNeeded()
             sync()
             Result.success()
         } catch (e: Exception) {
@@ -55,6 +60,34 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         prefs.setToken(response.token)
         prefs.setTabletId(response.tabletId)
         Log.i(TAG, "[${now()} $tz] Dispositivo registrado — tabletId=${response.tabletId}")
+    }
+
+    // Fetches the current FCM token and uploads it if it differs from the last one
+    // confirmed sent — covers both first install and token-refresh events, without
+    // relying on onNewToken firing again while the app happens to be running.
+    private suspend fun syncFcmTokenIfNeeded() {
+        val deviceToken = prefs.getToken() ?: return
+        val fcmToken = try {
+            suspendCancellableCoroutine<String?> { cont ->
+                FirebaseMessaging.getInstance().token
+                    .addOnSuccessListener { cont.resume(it) }
+                    .addOnFailureListener { cont.resume(null) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "[${now()} $tz] No se pudo obtener FCM token: ${e.message}")
+            null
+        } ?: return
+
+        if (fcmToken == prefs.getFcmTokenSent()) return
+
+        try {
+            NetworkModule.provideDeviceApi(deviceToken).updateFcmToken(FcmTokenRequest(fcmToken))
+            prefs.setFcmToken(fcmToken)
+            prefs.setFcmTokenSent(fcmToken)
+            Log.i(TAG, "[${now()} $tz] FCM token actualizado en el backend")
+        } catch (e: Exception) {
+            Log.w(TAG, "[${now()} $tz] No se pudo enviar FCM token: ${e.message}")
+        }
     }
 
     private suspend fun sync() {

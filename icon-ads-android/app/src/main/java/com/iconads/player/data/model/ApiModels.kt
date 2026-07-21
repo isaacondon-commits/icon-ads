@@ -62,3 +62,7 @@ data class LocationUpload(
     val accuracy: Float?,
     val timestamp: String,
 )
+
+data class FcmTokenRequest(
+    val token: String,
+)

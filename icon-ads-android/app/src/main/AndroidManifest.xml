@@ -44,6 +44,15 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
+        <!-- Push instantáneo para force-sync (#fcm) -->
+        <service
+            android:name=".fcm.FcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- Arranca la app al encender la tablet -->
         <receiver
             android:name=".receiver.BootReceiver"

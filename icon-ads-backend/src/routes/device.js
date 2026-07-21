@@ -82,6 +82,18 @@ router.post('/register', registerLimiter, async (req, res, next) => {
   }
 });
 
+// POST /api/device/fcm-token — register/refresh the push token used for instant force-sync
+router.post('/fcm-token', requireDevice, async (req, res, next) => {
+  try {
+    const { token } = z.object({ token: z.string().min(1) }).parse(req.body);
+    await prisma.tablet.update({ where: { id: req.tablet.id }, data: { fcmToken: token } });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
 // GET /api/device/sync?version=N — check if the tablet needs a new package
 router.get('/sync', requireDevice, async (req, res, next) => {
   try {

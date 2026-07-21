@@ -84,6 +84,9 @@ const MIGRATIONS = [
   { name: 'metrics.tablet_cascade.add', sql: `ALTER TABLE metrics ADD CONSTRAINT metrics_tablet_id_fkey FOREIGN KEY (tablet_id) REFERENCES tablets(id) ON DELETE CASCADE` },
   { name: 'error_logs.tablet_cascade', sql: `ALTER TABLE error_logs DROP CONSTRAINT IF EXISTS error_logs_tablet_id_fkey` },
   { name: 'error_logs.tablet_cascade.add', sql: `ALTER TABLE error_logs ADD CONSTRAINT error_logs_tablet_id_fkey FOREIGN KEY (tablet_id) REFERENCES tablets(id) ON DELETE CASCADE` },
+  // v20 — FCM push token, for instant force-sync instead of waiting for the
+  // periodic WorkManager poll
+  { name: 'tablets.fcm_token',         sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS fcm_token TEXT` },
 ];
 
 async function runStartupMigrations() {

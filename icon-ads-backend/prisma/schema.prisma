@@ -184,6 +184,7 @@ model Tablet {
   lastLat           Float?       @map("last_lat")
   lastLng           Float?       @map("last_lng")
   manualStatus      String       @default("activa") @map("manual_status")
+  fcmToken          String?      @map("fcm_token")
   createdAt  DateTime     @default(now()) @map("created_at")
   updatedAt  DateTime     @updatedAt @map("updated_at")
   metrics    Metric[]

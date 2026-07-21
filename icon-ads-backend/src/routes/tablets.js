@@ -6,6 +6,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const { audit } = require('../lib/auditLog');
+const firebaseAdmin = require('../lib/firebase-admin');
 
 router.use(requireAuth);
 
@@ -377,13 +378,20 @@ router.delete('/:id', requireAdmin, async (req, res, next) => {
   }
 });
 
-// POST /force-sync-all — flag every tablet for re-sync on next connection
+// POST /force-sync-all — flag every tablet for re-sync, pushing instantly via FCM
+// to whichever ones have already registered a push token (older APKs without FCM
+// fall back to the flag, applied on their next periodic connection)
 router.post('/force-sync-all', requireAdmin, async (req, res, next) => {
   try {
-    const tablets = await prisma.tablet.findMany({ select: { id: true } });
+    const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
     tablets.forEach((t) => forceSyncFlags.add(t.id));
-    await audit(req, 'FORCE_SYNC_ALL', 'tablet', null, `Forced sync on ${tablets.length} tablets`);
-    res.json({ ok: true, count: tablets.length, message: `${tablets.length} tablets re-sincronizarán en su próxima conexión.` });
+    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
+    const pushResult = await firebaseAdmin.sendSyncPush(tokens);
+    await audit(req, 'FORCE_SYNC_ALL', 'tablet', null, `Forced sync on ${tablets.length} tablets (${pushResult.successCount} pushed instantly)`);
+    const message = tokens.length > 0
+      ? `${tablets.length} tablets marcadas — ${pushResult.successCount} sincronizando ahora mismo, el resto en su próxima conexión.`
+      : `${tablets.length} tablets re-sincronizarán en su próxima conexión.`;
+    res.json({ ok: true, count: tablets.length, pushed: pushResult.successCount, message });
   } catch (err) {
     next(err);
   }
@@ -396,8 +404,12 @@ router.post('/:id/force-sync', requireAdmin, async (req, res, next) => {
     const tablet = await prisma.tablet.findUnique({ where: { id } });
     if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
     forceSyncFlags.add(id);
-    await audit(req, 'FORCE_SYNC', 'tablet', id, `Forced sync on "${tablet.name}"`);
-    res.json({ ok: true, message: 'La tablet re-sincronizará en la próxima conexión.' });
+    const pushResult = tablet.fcmToken ? await firebaseAdmin.sendSyncPush([tablet.fcmToken]) : { successCount: 0 };
+    await audit(req, 'FORCE_SYNC', 'tablet', id, `Forced sync on "${tablet.name}"${pushResult.successCount > 0 ? ' (pushed instantly)' : ''}`);
+    const message = pushResult.successCount > 0
+      ? 'Sincronizando ahora mismo.'
+      : 'La tablet re-sincronizará en la próxima conexión.';
+    res.json({ ok: true, message });
   } catch (err) {
     next(err);
   }

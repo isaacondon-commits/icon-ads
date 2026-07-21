@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "883897833302",
+    "project_id": "icon-ads",
+    "storage_bucket": "icon-ads.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:883897833302:android:d29a66846acc2c108268f7",
+        "android_client_info": {
+          "package_name": "com.iconads.player"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_X4-16ZqAhRP9ZB8TFKa8cwTTdouC7Vs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
