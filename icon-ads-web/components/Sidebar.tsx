@@ -28,7 +28,6 @@ const linkGroups = [
       { href: '/tablets', label: 'Tablets', icon: '⊡' },
       { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },
       { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },
-      { href: '/geofencing', label: 'Geofencing', icon: '◎' },
     ],
   },
   {
@@ -65,6 +64,7 @@ const linkGroups = [
       { href: '/groups', label: 'Grupos', icon: '⊞' },
       { href: '/calculator', label: 'Calculadora', icon: '⊞' },
       { href: '/archive', label: 'Archivo', icon: '⊗' },
+      { href: '/geofencing', label: 'Geofencing', icon: '◎' },
     ],
   },
 ];
