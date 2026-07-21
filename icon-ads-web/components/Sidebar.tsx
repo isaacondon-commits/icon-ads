@@ -123,8 +123,7 @@ export default function Sidebar() {
 
       <nav className="flex-1 px-3 py-4 space-y-3 overflow-y-auto">
         {linkGroups.map((group) => {
-          const groupHasActive = group.links.some((l) => isLinkActive(l.href));
-          const open = groupHasActive || !collapsedGroups[group.id];
+          const open = !collapsedGroups[group.id];
           return (
             <div key={group.id}>
               <button
