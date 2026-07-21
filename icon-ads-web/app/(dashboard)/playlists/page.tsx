@@ -15,6 +15,7 @@ export default function PlaylistsPage() {
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedAds, setSelectedAds] = useState<number[]>([]);
+  const [adSearch, setAdSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteError, setDeleteError] = useState('');
@@ -67,12 +68,17 @@ export default function PlaylistsPage() {
   const openEditAds = (playlist: Playlist) => {
     setEditingId(playlist.id);
     setSelectedAds(playlist.playlistAds?.map((pa) => pa.adId) ?? []);
+    setAdSearch('');
     setError('');
   };
 
-  const toggleAd = (adId: number) => {
-    setSelectedAds((prev) => prev.includes(adId) ? prev.filter((id) => id !== adId) : [...prev, adId]);
-  };
+  // An ad can be added more than once (e.g. to repeat it in the rotation) —
+  // adding always appends a new instance; removal happens per-instance from
+  // the ordered list below, by index, since adId alone no longer identifies
+  // a single entry.
+  const addAd = (adId: number) => setSelectedAds((prev) => [...prev, adId]);
+  const removeAdAt = (idx: number) => setSelectedAds((prev) => prev.filter((_, i) => i !== idx));
+  const countInSelection = (adId: number) => selectedAds.filter((id) => id === adId).length;
 
   const handleDragStart = (idx: number) => { dragIdx.current = idx; };
   const handleDragOver = (e: React.DragEvent, idx: number) => {
@@ -211,48 +217,71 @@ export default function PlaylistsPage() {
       {/* Edit ads modal */}
       {editingId !== null && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="rounded-xl shadow-xl w-full max-w-lg p-6" style={{ background: 'var(--card)' }}>
-            <div className="flex items-center justify-between mb-2">
+          <div className="rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] p-6 flex flex-col" style={{ background: 'var(--card)' }}>
+            <div className="flex items-center justify-between mb-2 shrink-0">
               <h2 className="font-semibold text-lg">Asignar anuncios</h2>
               <button onClick={() => setEditingId(null)} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
             </div>
-            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Seleccioná los anuncios y arrastrá para reordenar.</p>
-            {selectedAds.length > 0 && (
-              <div className="mb-3">
-                <p className="text-xs font-medium mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Orden de reproducción</p>
-                <div className="space-y-1">
-                  {selectedAds.map((adId, idx) => {
-                    const ad = ads.find(a => a.id === adId);
-                    if (!ad) return null;
+            <p className="text-sm mb-3 shrink-0" style={{ color: 'var(--text-muted)' }}>
+              Seleccioná los anuncios y arrastrá para reordenar. Un anuncio se puede agregar más de una vez para que se repita en la rotación.
+            </p>
+
+            {/* Scrollable middle section — header y botones de Guardar/Cancelar quedan siempre visibles */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {selectedAds.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-medium mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Orden de reproducción</p>
+                  <div className="space-y-1">
+                    {selectedAds.map((adId, idx) => {
+                      const ad = ads.find(a => a.id === adId);
+                      if (!ad) return null;
+                      return (
+                        <div key={`${adId}-${idx}`} draggable onDragStart={() => handleDragStart(idx)} onDragOver={(e) => handleDragOver(e, idx)}
+                          className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 cursor-grab active:cursor-grabbing select-none">
+                          <span style={{ color: 'var(--text-muted)' }} className="text-sm">⠿</span>
+                          <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0">{idx + 1}</span>
+                          <span className="text-sm font-medium truncate">{ad.name}</span>
+                          <span className="text-xs ml-auto" style={{ color: 'var(--text-xs)' }}>{ad.durationS}s</span>
+                          <button onClick={() => removeAdAt(idx)} className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1 border-t pt-3" style={{ borderColor: 'var(--border-md)' }}>
+                <p className="text-xs font-medium mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Anuncios disponibles</p>
+                <input
+                  className="input mb-2"
+                  placeholder="Buscar anuncio o campaña..."
+                  value={adSearch}
+                  onChange={(e) => setAdSearch(e.target.value)}
+                />
+                {ads
+                  .filter((ad) => {
+                    const q = adSearch.toLowerCase();
+                    return ad.name.toLowerCase().includes(q) || (ad.campaign?.name ?? '').toLowerCase().includes(q);
+                  })
+                  .map((ad) => {
+                    const count = countInSelection(ad.id);
                     return (
-                      <div key={adId} draggable onDragStart={() => handleDragStart(idx)} onDragOver={(e) => handleDragOver(e, idx)}
-                        className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 cursor-grab active:cursor-grabbing select-none">
-                        <span style={{ color: 'var(--text-muted)' }} className="text-sm">⠿</span>
-                        <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold shrink-0">{idx + 1}</span>
-                        <span className="text-sm font-medium truncate">{ad.name}</span>
-                        <span className="text-xs ml-auto" style={{ color: 'var(--text-xs)' }}>{ad.durationS}s</span>
-                        <button onClick={() => toggleAd(adId)} className="text-xs ml-1" style={{ color: 'var(--text-muted)' }}>✕</button>
-                      </div>
+                      <button key={ad.id} onClick={() => addAd(ad.id)} className="w-full flex items-center gap-3 p-2 rounded-lg border text-left hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{ad.name}</p>
+                          <p className="text-xs" style={{ color: 'var(--text-xs)' }}>{ad.campaign?.name} · {ad.durationS}s</p>
+                        </div>
+                        {count > 0 && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-medium shrink-0">×{count}</span>
+                        )}
+                        <span className="text-xs text-blue-600 shrink-0">+ Agregar</span>
+                      </button>
                     );
                   })}
-                </div>
               </div>
-            )}
-            <div className="max-h-52 overflow-y-auto space-y-1 mb-4 border-t pt-3" style={{ borderColor: 'var(--border-md)' }}>
-              <p className="text-xs font-medium mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Anuncios disponibles</p>
-              {ads.filter(ad => !selectedAds.includes(ad.id)).map((ad) => (
-                <button key={ad.id} onClick={() => toggleAd(ad.id)} className="w-full flex items-center gap-3 p-2 rounded-lg border text-left hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>
-                  <span className="w-4 h-4 rounded border-2 flex-shrink-0" style={{ borderColor: 'var(--border-md)' }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{ad.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--text-xs)' }}>{ad.campaign?.name} · {ad.durationS}s</p>
-                  </div>
-                  <span className="text-xs text-blue-600">+ Agregar</span>
-                </button>
-              ))}
             </div>
-            {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-            <div className="flex gap-2">
+
+            {error && <p className="text-red-600 text-sm mt-3 shrink-0">{error}</p>}
+            <div className="flex gap-2 pt-4 shrink-0">
               <button onClick={handleSaveAds} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
                 {saving ? 'Guardando...' : `Guardar (${selectedAds.length} anuncios)`}
               </button>
