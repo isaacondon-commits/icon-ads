@@ -9,6 +9,7 @@ const csp = [
   "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com",
   "style-src 'self' 'unsafe-inline' https://unpkg.com",
   `img-src 'self' data: ${apiUrl} https://unpkg.com https://*.tile.openstreetmap.org https://*.supabase.co https://*.r2.dev`,
+  `media-src 'self' ${apiUrl} https://*.supabase.co https://*.r2.dev`,
   "font-src 'self' data:",
   `connect-src 'self' ${apiUrl} https://api.open-meteo.com https://www.google-analytics.com https://*.google-analytics.com`,
   "frame-ancestors 'none'",
