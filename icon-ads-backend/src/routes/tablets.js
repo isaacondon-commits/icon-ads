@@ -377,6 +377,18 @@ router.delete('/:id', requireAdmin, async (req, res, next) => {
   }
 });
 
+// POST /force-sync-all — flag every tablet for re-sync on next connection
+router.post('/force-sync-all', requireAdmin, async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({ select: { id: true } });
+    tablets.forEach((t) => forceSyncFlags.add(t.id));
+    await audit(req, 'FORCE_SYNC_ALL', 'tablet', null, `Forced sync on ${tablets.length} tablets`);
+    res.json({ ok: true, count: tablets.length, message: `${tablets.length} tablets re-sincronizarán en su próxima conexión.` });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /:id/force-sync (#48)
 router.post('/:id/force-sync', requireAdmin, async (req, res, next) => {
   try {

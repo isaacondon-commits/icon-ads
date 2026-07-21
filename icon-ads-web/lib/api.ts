@@ -40,6 +40,8 @@ export const api = {
   getTablet: (id: number) => request<TabletDetail>(`/api/tablets/${id}`),
   forceSync: (id: number) =>
     request<{ ok: boolean; message: string }>(`/api/tablets/${id}/force-sync`, { method: 'POST' }),
+  forceSyncAll: () =>
+    request<{ ok: boolean; count: number; message: string }>('/api/tablets/force-sync-all', { method: 'POST' }),
   regenerateTabletToken: (id: number) =>
     request<{ ok: boolean; message: string }>(`/api/tablets/${id}/regenerate-token`, { method: 'POST' }),
   deleteTablet: (id: number) => request<void>(`/api/tablets/${id}`, { method: 'DELETE' }),

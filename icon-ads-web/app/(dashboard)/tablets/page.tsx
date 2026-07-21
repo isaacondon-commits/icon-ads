@@ -30,6 +30,7 @@ export default function TabletsPage() {
   });
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
+  const [forcingSyncAll, setForcingSyncAll] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>(() =>
     typeof window !== 'undefined' ? ((localStorage.getItem('tablets_view') as 'table' | 'cards') ?? 'table') : 'table'
@@ -135,6 +136,16 @@ export default function TabletsPage() {
     } finally { setForcingSync(null); }
   };
 
+  const handleForceSyncAll = async () => {
+    setForcingSyncAll(true);
+    try {
+      const res = await api.forceSyncAll();
+      show(res.message);
+    } catch {
+      show('Error al forzar sync general', 'error');
+    } finally { setForcingSyncAll(false); }
+  };
+
   const copyDeviceId = async (t: Tablet) => {
     await navigator.clipboard.writeText(t.deviceId);
     setCopiedId(t.id);
@@ -170,6 +181,10 @@ export default function TabletsPage() {
           <button onClick={exportCSV} className="border px-3 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}
             title="Exportar a CSV">
             ↓ CSV
+          </button>
+          <button onClick={handleForceSyncAll} disabled={forcingSyncAll} className="border px-3 py-2 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}
+            title="Forzar re-sync en todas las tablets">
+            {forcingSyncAll ? 'Sincronizando...' : '⟳ Sincronizar todas'}
           </button>
           <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium" title="Nueva tablet (N)">
             + Nueva tablet
