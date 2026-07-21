@@ -78,6 +78,12 @@ const MIGRATIONS = [
   { name: 'tablets.last_lng',          sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_lng FLOAT` },
   { name: 'tablet_locations',          sql: `CREATE TABLE IF NOT EXISTS tablet_locations (id BIGSERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, lat FLOAT NOT NULL, lng FLOAT NOT NULL, accuracy FLOAT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'tablet_locations.idx',      sql: `CREATE INDEX IF NOT EXISTS tablet_locations_tablet_time ON tablet_locations(tablet_id, created_at DESC)` },
+  // v19 — cascade-delete metrics/error_logs when a tablet is deleted (was RESTRICT,
+  // blocked DELETE /api/tablets/:id with a 500 for any tablet that had reported data)
+  { name: 'metrics.tablet_cascade',    sql: `ALTER TABLE metrics DROP CONSTRAINT IF EXISTS metrics_tablet_id_fkey` },
+  { name: 'metrics.tablet_cascade.add', sql: `ALTER TABLE metrics ADD CONSTRAINT metrics_tablet_id_fkey FOREIGN KEY (tablet_id) REFERENCES tablets(id) ON DELETE CASCADE` },
+  { name: 'error_logs.tablet_cascade', sql: `ALTER TABLE error_logs DROP CONSTRAINT IF EXISTS error_logs_tablet_id_fkey` },
+  { name: 'error_logs.tablet_cascade.add', sql: `ALTER TABLE error_logs ADD CONSTRAINT error_logs_tablet_id_fkey FOREIGN KEY (tablet_id) REFERENCES tablets(id) ON DELETE CASCADE` },
 ];
 
 async function runStartupMigrations() {

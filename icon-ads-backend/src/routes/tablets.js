@@ -372,6 +372,7 @@ router.delete('/:id', requireAdmin, async (req, res, next) => {
     await audit(req, 'DELETE', 'tablet', id, `Deleted "${tablet.name}"`);
     res.status(204).end();
   } catch (err) {
+    if (err.code === 'P2003') return res.status(409).json({ error: 'No se pudo eliminar: tiene datos relacionados que lo impiden' });
     next(err);
   }
 });

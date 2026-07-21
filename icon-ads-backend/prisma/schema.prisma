@@ -231,7 +231,7 @@ model SystemConfig {
 model Metric {
   id              Int      @id @default(autoincrement())
   tabletId        Int      @map("tablet_id")
-  tablet          Tablet   @relation(fields: [tabletId], references: [id])
+  tablet          Tablet   @relation(fields: [tabletId], references: [id], onDelete: Cascade)
   adId            Int      @map("ad_id")
   ad              Ad       @relation(fields: [adId], references: [id])
   campaignId      Int      @map("campaign_id")
@@ -251,7 +251,7 @@ model Metric {
 model ErrorLog {
   id         Int      @id @default(autoincrement())
   tabletId   Int      @map("tablet_id")
-  tablet     Tablet   @relation(fields: [tabletId], references: [id])
+  tablet     Tablet   @relation(fields: [tabletId], references: [id], onDelete: Cascade)
   errorType  String   @map("error_type")
   message    String
   occurredAt DateTime @map("occurred_at")
