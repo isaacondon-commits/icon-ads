@@ -87,6 +87,8 @@ const MIGRATIONS = [
   // v20 — FCM push token, for instant force-sync instead of waiting for the
   // periodic WorkManager poll
   { name: 'tablets.fcm_token',         sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS fcm_token TEXT` },
+  // v21 — poster thumbnail for video ads (client-generated, best-effort)
+  { name: 'ads.thumbnail_url',         sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS thumbnail_url TEXT` },
 ];
 
 async function runStartupMigrations() {

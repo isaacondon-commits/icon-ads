@@ -24,6 +24,49 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+// Presigns + PUTs a file straight to whichever direct-upload storage the
+// backend has configured (R2 or Supabase), bypassing the backend for the
+// binary transfer. Shared by the main ad file and its poster thumbnail.
+async function directUploadFile(file: Blob, filename: string, contentType: string, onProgress?: (pct: number) => void) {
+  const presign = await request<{ uploadUrl: string; key: string; publicUrl: string; provider: 'r2' | 'supabase' }>(
+    `/api/ads/presign?filename=${encodeURIComponent(filename)}&contentType=${encodeURIComponent(contentType)}`
+  );
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', presign.uploadUrl);
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90)); };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error('Error de red'));
+    if (presign.provider === 'supabase') {
+      // Supabase's signed-upload endpoint expects multipart/form-data with a
+      // cacheControl field and the file under an empty field name — not a raw
+      // body, unlike R2's presigned PUT. Let the browser set the multipart
+      // Content-Type (with boundary) itself. It also sits behind Supabase's
+      // API gateway, which requires the project's public anon key on every
+      // request — the upload token in the URL alone isn't enough.
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (anonKey) {
+        xhr.setRequestHeader('apikey', anonKey);
+        xhr.setRequestHeader('Authorization', `Bearer ${anonKey}`);
+      }
+      xhr.setRequestHeader('x-upsert', 'false');
+      const body = new FormData();
+      body.append('cacheControl', '3600');
+      body.append('', file, filename);
+      xhr.send(body);
+    } else {
+      xhr.setRequestHeader('Content-Type', contentType);
+      xhr.send(file);
+    }
+  });
+  return presign;
+}
+
 export const api = {
   // Auth
   login: (email: string, password: string) =>
@@ -84,49 +127,27 @@ export const api = {
     // Try direct-to-storage upload first (R2 or Supabase, whichever the backend has configured)
     if (file) {
       try {
-        const presign = await request<{ uploadUrl: string; key: string; publicUrl: string; provider: 'r2' | 'supabase' }>(
-          `/api/ads/presign?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
-        );
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', presign.uploadUrl);
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 90));
-          };
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else reject(new Error(`Upload failed: HTTP ${xhr.status}`));
-          };
-          xhr.onerror = () => reject(new Error('Error de red'));
-          if (presign.provider === 'supabase') {
-            // Supabase's signed-upload endpoint expects multipart/form-data with
-            // a cacheControl field and the file under an empty field name — not
-            // a raw body, unlike R2's presigned PUT. Let the browser set the
-            // multipart Content-Type (with boundary) itself.
-            // It also sits behind Supabase's API gateway, which requires the
-            // project's public anon key on every request — the upload token in
-            // the URL alone isn't enough to get past the gateway.
-            const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-            if (anonKey) {
-              xhr.setRequestHeader('apikey', anonKey);
-              xhr.setRequestHeader('Authorization', `Bearer ${anonKey}`);
-            }
-            xhr.setRequestHeader('x-upsert', 'false');
-            const body = new FormData();
-            body.append('cacheControl', '3600');
-            body.append('', file);
-            xhr.send(body);
-          } else {
-            xhr.setRequestHeader('Content-Type', file.type);
-            xhr.send(file);
-          }
-        });
+        const presign = await directUploadFile(file, file.name, file.type, onProgress);
+        onProgress(90);
+
+        // Best-effort poster thumbnail for video ads — a failure here never
+        // blocks the ad upload, it just falls back to the placeholder icon.
+        let thumbnailUrl: string | null = null;
+        const thumbnail = formData.get('thumbnail') as Blob | null;
+        if (thumbnail) {
+          try {
+            const thumbPresign = await directUploadFile(thumbnail, `thumb-${Date.now()}.jpg`, 'image/jpeg');
+            thumbnailUrl = thumbPresign.publicUrl;
+          } catch { /* ignore */ }
+        }
         onProgress(95);
+
         const ad = await request<Ad>('/api/ads/confirm', {
           method: 'POST',
           body: JSON.stringify({
             key: presign.key,
             publicUrl: presign.publicUrl,
+            thumbnailUrl,
             campaignId: formData.get('campaignId'),
             name: formData.get('name'),
             type: formData.get('type'),
@@ -424,7 +445,7 @@ export interface CampaignDetail extends Campaign {
 export interface Comment { id: number; campaignId: number; authorName: string; body: string; createdAt: string; }
 export interface Ad {
   id: number; campaignId: number; campaign?: { id: number; name: string };
-  name: string; type: 'video' | 'image'; fileUrl: string; filename: string;
+  name: string; type: 'video' | 'image'; fileUrl: string; thumbnailUrl?: string | null; filename: string;
   durationS: number; active: boolean; approvalStatus: string;
   priority: number; targetUrl?: string | null; startsAt?: string | null; endsAt?: string | null;
   tags: string[];

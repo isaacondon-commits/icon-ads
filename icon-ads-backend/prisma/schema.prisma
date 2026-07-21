@@ -80,6 +80,7 @@ model Ad {
   name           String
   type           AdType
   fileUrl        String       @map("file_url")
+  thumbnailUrl   String?      @map("thumbnail_url")
   filename       String
   durationS      Int          @map("duration_s")
   active         Boolean      @default(true)

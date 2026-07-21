@@ -10,6 +10,47 @@ const ALLOWED_TYPES = ['video/mp4', 'image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const PAGE_SIZE = 10;
 
+// Captures a frame from a video file as a JPEG blob, entirely client-side —
+// avoids needing ffmpeg on the backend just to generate a poster thumbnail.
+// Resolves null (never rejects) if anything goes wrong, since a missing
+// thumbnail should never block the ad upload — it just falls back to the
+// placeholder icon.
+function generateVideoThumbnail(file: File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    const url = URL.createObjectURL(file);
+    video.src = url;
+    let settled = false;
+    const finish = (result: Blob | null) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(result);
+    };
+    video.onloadedmetadata = () => {
+      video.currentTime = Math.min(1, (video.duration || 2) / 2);
+    };
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx || canvas.width === 0) return finish(null);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => finish(blob), 'image/jpeg', 0.75);
+      } catch {
+        finish(null);
+      }
+    };
+    video.onerror = () => finish(null);
+    setTimeout(() => finish(null), 8000);
+  });
+}
+
 export default function AdsPage() {
   const [ads, setAds] = useState<Ad[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -22,6 +63,7 @@ export default function AdsPage() {
   const [playerUrl, setPlayerUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);  // #1
+  const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const [uploadPct, setUploadPct] = useState(0);                 // #3
   const [saving, setSaving] = useState(false);
   const [fileError, setFileError] = useState('');
@@ -61,6 +103,7 @@ export default function AdsPage() {
     setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
     setFile(null);
     setPreview(null);
+    setThumbnailBlob(null);
     setUploadPct(0);
     setFileError('');
     setError('');
@@ -80,6 +123,7 @@ export default function AdsPage() {
     });
     setFile(null);
     setPreview(null);
+    setThumbnailBlob(null);
     setFileError('');
     setError('');
     setShowModal(true);
@@ -88,6 +132,7 @@ export default function AdsPage() {
   // #4/#5 — validate before setting file
   const handleFileChange = (f: File | null) => {
     setFileError('');
+    setThumbnailBlob(null);
     if (!f) { setFile(null); setPreview(null); return; }
 
     if (!ALLOWED_EXT.test(f.name) && !ALLOWED_TYPES.includes(f.type)) {
@@ -108,7 +153,9 @@ export default function AdsPage() {
     const url = URL.createObjectURL(f);
     setPreview(url);
     if (!form.name) setForm((prev) => ({ ...prev, name: f.name.replace(/\.[^.]+$/, '') }));
-    setForm((prev) => ({ ...prev, type: /\.mp4$/i.test(f.name) ? 'video' : 'image' }));
+    const isVideo = /\.mp4$/i.test(f.name);
+    setForm((prev) => ({ ...prev, type: isVideo ? 'video' : 'image' }));
+    if (isVideo) generateVideoThumbnail(f).then(setThumbnailBlob);
   };
 
   // #3 — upload with progress via XHR
@@ -128,6 +175,7 @@ export default function AdsPage() {
       fd.append('priority', form.priority || '0');
       if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
       if (form.tags) fd.append('tags', form.tags);
+      if (thumbnailBlob) fd.append('thumbnail', thumbnailBlob, 'thumb.jpg');
       await api.uploadAdWithProgress(fd, setUploadPct);
       setShowModal(false);
       load();
@@ -277,6 +325,11 @@ export default function AdsPage() {
                     className="h-full w-full object-cover"
                     muted autoPlay loop playsInline
                   />
+                ) : ad.thumbnailUrl ? (
+                  <div className="relative w-full h-full">
+                    <img src={mediaUrl(ad.thumbnailUrl)} alt={ad.name} className="h-full w-full object-cover" />
+                    <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">▶</span>
+                  </div>
                 ) : (
                   <div className="w-full h-full bg-gray-800 flex flex-col items-center justify-center gap-1 group-hover:bg-gray-700 transition-colors">
                     <span className="text-white text-3xl">▶</span>
@@ -352,6 +405,8 @@ export default function AdsPage() {
                           className="w-full h-full object-cover"
                           muted autoPlay loop playsInline
                         />
+                      ) : ad.thumbnailUrl ? (
+                        <img src={mediaUrl(ad.thumbnailUrl)} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full bg-gray-800 flex items-center justify-center group-hover:bg-gray-700 transition-colors">
                           <span className="text-white text-xs">▶</span>

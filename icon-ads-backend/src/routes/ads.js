@@ -68,6 +68,7 @@ const adSchema = z.object({
   durationS: z.coerce.number().int().positive(),
   priority: z.coerce.number().int().min(0).optional(),
   targetUrl: z.preprocess((v) => (!v || v === '' ? null : v), z.string().url().nullable().optional()),
+  thumbnailUrl: z.preprocess((v) => (!v || v === '' ? null : v), z.string().url().nullable().optional()),
   startsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
   endsAt: z.preprocess((v) => (!v || v === '' ? null : v), z.string().datetime().nullable().optional()),
   tags: z.preprocess(parseTags, z.array(z.string()).optional()),
@@ -168,14 +169,14 @@ router.post('/confirm', async (req, res, next) => {
     if (!r2.isConfigured && !supabaseStorage.isConfigured) {
       return res.status(503).json({ error: 'Direct upload not configured' });
     }
-    const { key, publicUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.extend({
+    const { key, publicUrl, thumbnailUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.extend({
       key: z.string().min(1),
       publicUrl: z.string().url(),
     }).parse(req.body);
     const filename = path.basename(key);
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl: publicUrl, filename, durationS, approvalStatus,
+      data: { campaignId, name, type, fileUrl: publicUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
@@ -204,7 +205,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       return res.status(400).json({ error: 'El archivo no es una imagen o video válido (firma inválida)' });
     }
 
-    const { campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
+    const { campaignId, name, type, durationS, priority, targetUrl, thumbnailUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
 
     let fileBuffer = req.file.buffer;
     if (!isVideo) fileBuffer = await compressImage(fileBuffer, req.file.mimetype);
@@ -225,7 +226,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl, filename, durationS, approvalStatus,
+      data: { campaignId, name, type, fileUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
