@@ -393,7 +393,7 @@ export default function TabletsPage() {
                 </Field>
               </div>
               <Field label="Precio por spot (USD, opcional)">
-                <input type="number" min="0" step="0.01" className="input" value={form.spotPrice} onChange={(e) => setForm({ ...form, spotPrice: e.target.value })} placeholder="0.00" />
+                <input type="number" min="0" step="0.01" className="input" value={form.spotPrice} onChange={(e) => setForm({ ...form, spotPrice: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="0.00" />
               </Field>
               <Field label="Estado operativo">
                 <select className="input" value={form.manualStatus} onChange={(e) => setForm({ ...form, manualStatus: e.target.value })}>

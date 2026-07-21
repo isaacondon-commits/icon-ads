@@ -528,13 +528,13 @@ export default function AdsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Duración (s)</label>
-                  <input type="number" min="1" className="input" value={form.durationS} onChange={(e) => setForm({ ...form, durationS: e.target.value })} />
+                  <input type="number" min="1" className="input" value={form.durationS} onChange={(e) => setForm({ ...form, durationS: e.target.value })} onWheel={(e) => e.currentTarget.blur()} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Prioridad <span className="text-gray-400 font-normal">(0 = normal)</span></label>
-                  <input type="number" min="0" max="100" className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} />
+                  <input type="number" min="0" max="100" className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} onWheel={(e) => e.currentTarget.blur()} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">URL destino <span className="text-gray-400 font-normal">(opcional)</span></label>

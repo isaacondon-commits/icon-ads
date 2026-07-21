@@ -517,18 +517,18 @@ export default function CampaignsPage() {
             <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Fecha inicio"><input type="date" className="input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
             <Field label="Fecha fin"><input type="date" className="input" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></Field>
-            <Field label="CPM (USD, opcional)"><input type="number" step="0.01" min="0" className="input" value={form.cpm} onChange={(e) => setForm({ ...form, cpm: e.target.value })} placeholder={`${DEFAULT_CPM} (default)`} /></Field>
+            <Field label="CPM (USD, opcional)"><input type="number" step="0.01" min="0" className="input" value={form.cpm} onChange={(e) => setForm({ ...form, cpm: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder={`${DEFAULT_CPM} (default)`} /></Field>
             <Field label="Límite de impresiones (opcional)">
-              <input type="number" step="1" min="1" className="input" value={form.maxImpressions} onChange={(e) => setForm({ ...form, maxImpressions: e.target.value })} placeholder="Sin límite" />
+              <input type="number" step="1" min="1" className="input" value={form.maxImpressions} onChange={(e) => setForm({ ...form, maxImpressions: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="Sin límite" />
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>La campaña se pausa automáticamente al alcanzar este número.</p>
             </Field>
             {/* #7 — budget */}
             <Field label="Presupuesto total (USD, opcional)">
-              <input type="number" step="1" min="0" className="input" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} placeholder="Sin límite de presupuesto" />
+              <input type="number" step="1" min="0" className="input" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="Sin límite de presupuesto" />
             </Field>
             {/* #33 — target impressions goal */}
             <Field label="Meta de impresiones (opcional)">
-              <input type="number" step="1" min="1" className="input" value={form.targetImpressions} onChange={(e) => setForm({ ...form, targetImpressions: e.target.value })} placeholder="Ej: 10000" />
+              <input type="number" step="1" min="1" className="input" value={form.targetImpressions} onChange={(e) => setForm({ ...form, targetImpressions: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="Ej: 10000" />
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Objetivo informativo de reproducciones. No pausa la campaña.</p>
             </Field>
             {/* #3 — observations */}

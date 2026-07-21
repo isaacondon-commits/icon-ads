@@ -96,6 +96,7 @@ export default function SettingsPage() {
                 className="input w-28"
                 value={retentionInput}
                 onChange={(e) => setRetentionInput(e.target.value)}
+                onWheel={(e) => e.currentTarget.blur()}
               />
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>días</span>
               <button
