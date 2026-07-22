@@ -10,7 +10,7 @@ import { api, Notifications } from '@/lib/api';
 const linkGroups = [
   {
     id: 'principal', label: 'Principal', links: [
-      { href: '/dashboard', label: 'Dashboard', icon: '⊞' },
+      { href: '/dashboard', label: 'Atajos', icon: '⊞' },
       { href: '/monitor', label: 'Monitor', icon: '◎' },
       { href: '/map', label: 'Mapa GPS', icon: '◉' },
     ],
