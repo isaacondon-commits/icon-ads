@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const LABELS: Record<string, string> = {
-  dashboard: 'Dashboard', tablets: 'Tablets', campaigns: 'Campañas', clients: 'Clientes',
+  dashboard: 'Atajos', tablets: 'Tablets', campaigns: 'Campañas', clients: 'Clientes',
   ads: 'Anuncios', playlists: 'Playlists', stats: 'Estadísticas', monitor: 'Monitor',
   logs: 'Logs', calendar: 'Calendario',
 };
