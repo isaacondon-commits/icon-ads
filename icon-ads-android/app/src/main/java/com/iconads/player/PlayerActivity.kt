@@ -4,6 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.net.Uri
 import android.os.Build
@@ -47,6 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.sqrt
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -55,12 +60,20 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var prefs: DevicePrefs
     private lateinit var playlistRepo: PlaylistRepository
     private lateinit var metricRepo: MetricRepository
+    private lateinit var sensorManager: SensorManager
+    private var gravitySensor: Sensor? = null
 
     private val imageHandler = Handler(Looper.getMainLooper())
     private var ads: List<Ad> = emptyList()
     private var currentIndex = 0
     private var adStartTime = 0L
     private var failCount = 0
+
+    // Auto-detected via gravitySensorListener below — true once the tablet's
+    // live orientation has settled ~180° away from its first-boot reference.
+    private var sensorFlipped180 = false
+    private var candidateFlipped: Boolean? = null
+    private var candidateStreak = 0
 
     private val playlistUpdatedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -76,12 +89,66 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // Manual 180° flip (#rotation) — set per-tablet from the admin panel, for
-    // mounts where the charger connector ends up on the side the OS doesn't
-    // treat as "up". Rotates the whole screen content, not just video/images,
-    // so it stays correct regardless of what's on screen.
+    // Auto 180° flip (#rotation-auto) — compares live gravity readings
+    // against the reference captured on first boot (see DevicePrefs). If the
+    // tablet is now settled ~180° away from how it was originally mounted,
+    // it flips on its own without needing the admin panel toggle.
+    //
+    // Uses TYPE_GRAVITY (not raw accelerometer) since it's already low-pass
+    // filtered by the OS to strip out linear acceleration — important here
+    // because several tablets are mounted in moving vehicles. A streak of
+    // consistent readings is still required before acting, as extra
+    // debounce against bumps/turns.
+    private val gravityListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            val x = event.values[0]
+            val y = event.values[1]
+            val z = event.values[2]
+
+            if (!prefs.hasGravityReference()) {
+                prefs.setGravityReference(x, y, z)
+                Log.i(TAG, "Referencia de gravedad calibrada (primer arranque)")
+                return
+            }
+
+            val ref = prefs.getGravityReference()
+            val magNow = sqrt(x * x + y * y + z * z)
+            val magRef = sqrt(ref[0] * ref[0] + ref[1] * ref[1] + ref[2] * ref[2])
+            if (magNow < 0.1f || magRef < 0.1f) return
+            val dot = x * ref[0] + y * ref[1] + z * ref[2]
+            val cos = (dot / (magNow * magRef)).coerceIn(-1f, 1f)
+
+            val candidate = when {
+                cos > FLIP_COS_THRESHOLD -> false  // orientación ~igual a la referencia
+                cos < -FLIP_COS_THRESHOLD -> true  // orientación ~opuesta (180°)
+                else -> return                     // ángulo intermedio (manipulación/curva) — ignorar
+            }
+
+            if (candidate == candidateFlipped) {
+                candidateStreak++
+            } else {
+                candidateFlipped = candidate
+                candidateStreak = 1
+            }
+
+            if (candidateStreak >= STABLE_READINGS_REQUIRED && candidate != sensorFlipped180) {
+                sensorFlipped180 = candidate
+                Log.i(TAG, "Sensor detectó tablet física ${if (candidate) "boca abajo" else "en posición normal"} — aplicando")
+                applyRotation()
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+    }
+
+    // Rotación efectiva = toggle manual del panel admin XOR estado detectado
+    // por el sensor. El sensor cubre el caso común (alguien voltea la
+    // tablet); el manual queda como override para montajes donde el sensor
+    // no aplica. Rota todo el contenido de pantalla, no solo video/imagen,
+    // así queda correcto sin importar qué se esté mostrando.
     private fun applyRotation() {
-        binding.root.rotation = if (prefs.getRotated180()) 180f else 0f
+        val flipped = prefs.getRotated180() xor sensorFlipped180
+        binding.root.rotation = if (flipped) 180f else 0f
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -94,6 +161,9 @@ class PlayerActivity : AppCompatActivity() {
         prefs = DevicePrefs(this)
         playlistRepo = PlaylistRepository(this)
         metricRepo = MetricRepository(this)
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        gravitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
+            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         setupWindow()
         applyRotation()
@@ -149,12 +219,14 @@ class PlayerActivity : AppCompatActivity() {
             IntentFilter(SyncWorker.ACTION_ROTATION_CHANGED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        gravitySensor?.let { sensorManager.registerListener(gravityListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
     }
 
     override fun onStop() {
         super.onStop()
         unregisterReceiver(playlistUpdatedReceiver)
         unregisterReceiver(rotationChangedReceiver)
+        sensorManager.unregisterListener(gravityListener)
     }
 
     override fun onResume() {
@@ -556,5 +628,13 @@ class PlayerActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PlayerActivity"
         private const val LOCATION_PERM_REQ = 101
+        // Coseno del ángulo entre la gravedad actual y la de referencia.
+        // 0.85 ≈ tolera hasta ~32° de inclinación antes de considerar la
+        // lectura ambigua.
+        private const val FLIP_COS_THRESHOLD = 0.85f
+        // Lecturas consecutivas consistentes requeridas antes de aplicar un
+        // cambio de estado — evita que baches/curvas del vehículo disparen
+        // el giro por una lectura puntual.
+        private const val STABLE_READINGS_REQUIRED = 8
     }
 }
