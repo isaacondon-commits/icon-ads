@@ -60,7 +60,7 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
-  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '' });
+  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '', additionalClientIds: [] as number[] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
@@ -104,21 +104,28 @@ export default function CampaignsPage() {
 
   const filtered = campaigns.filter((c) => {
     const q = search.toLowerCase();
-    return c.name.toLowerCase().includes(q) || (c.client?.name ?? '').toLowerCase().includes(q);
+    return c.name.toLowerCase().includes(q)
+      || (c.client?.name ?? '').toLowerCase().includes(q)
+      || (c.additionalClients ?? []).some((ac) => ac.client.name.toLowerCase().includes(q));
   });
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '' });
+    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '', additionalClientIds: [] });
     setError('');
     setShowTemplateSave(false);
     setShowModal(true);
   };
   const openEdit = (c: Campaign) => {
     setEditing(c);
-    setForm({ clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate), cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '', budget: c.budget?.toString() ?? '', observations: c.observations ?? '', targetImpressions: c.targetImpressions?.toString() ?? '' });
+    setForm({
+      clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate),
+      cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '', budget: c.budget?.toString() ?? '',
+      observations: c.observations ?? '', targetImpressions: c.targetImpressions?.toString() ?? '',
+      additionalClientIds: (c.additionalClients ?? []).map((ac) => ac.clientId),
+    });
     setError('');
     setShowModal(true);
   };
@@ -137,6 +144,7 @@ export default function CampaignsPage() {
         budget: form.budget ? Number(form.budget) : null,
         observations: form.observations || null,
         targetImpressions: form.targetImpressions ? Number(form.targetImpressions) : null,
+        additionalClientIds: form.additionalClientIds,
       };
       if (editing) await api.updateCampaign(editing.id, data);
       else await api.createCampaign(data);
@@ -309,7 +317,14 @@ export default function CampaignsPage() {
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0 mr-2">
                     <p className="font-semibold text-sm leading-tight truncate">{c.name}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{c.client?.name ?? '—'}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                      {c.client?.name ?? '—'}
+                      {c.additionalClients && c.additionalClients.length > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'var(--border)' }} title={c.additionalClients.map((ac) => ac.client.name).join(', ')}>
+                          +{c.additionalClients.length}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button onClick={() => handleToggleFavorite(c)} className={`text-base leading-none ${isFav ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'}`}>{isFav ? '★' : '☆'}</button>
@@ -357,7 +372,14 @@ export default function CampaignsPage() {
                 return (
                   <tr key={c.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
                     <td className="px-5 py-3 font-medium">{c.name}</td>
-                    <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{c.client?.name ?? '—'}</td>
+                    <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>
+                      {c.client?.name ?? '—'}
+                      {c.additionalClients && c.additionalClients.length > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'var(--border)' }} title={c.additionalClients.map((ac) => ac.client.name).join(', ')}>
+                          +{c.additionalClients.length}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 w-44">
                       <Timeline start={c.startDate} end={c.endDate} />
                     </td>
@@ -507,12 +529,40 @@ export default function CampaignsPage() {
               </Field>
             )}
             <Field label="Cliente">
-              <select className="input" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+              <select className="input" value={form.clientId} onChange={(e) => {
+                const clientId = e.target.value;
+                setForm((prev) => ({ ...prev, clientId, additionalClientIds: prev.additionalClientIds.filter((id) => id !== Number(clientId)) }));
+              }}>
                 <option value="">Seleccionar cliente</option>
                 {clients.filter(c => c.active).map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+            </Field>
+            {/* #multi-client — additional clients beyond the billing one above */}
+            <Field label="Clientes adicionales (opcional)">
+              <div className="border rounded-lg p-2 max-h-40 overflow-y-auto space-y-1" style={{ borderColor: 'var(--border-md)' }}>
+                {clients.filter((c) => c.active && c.id !== Number(form.clientId)).length === 0 ? (
+                  <p className="text-xs px-1 py-1" style={{ color: 'var(--text-muted)' }}>No hay otros clientes disponibles.</p>
+                ) : clients.filter((c) => c.active && c.id !== Number(form.clientId)).map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer px-1 py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={form.additionalClientIds.includes(c.id)}
+                      onChange={(e) => setForm((prev) => ({
+                        ...prev,
+                        additionalClientIds: e.target.checked
+                          ? [...prev.additionalClientIds, c.id]
+                          : prev.additionalClientIds.filter((id) => id !== c.id),
+                      }))}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                El cliente de arriba es el que figura en contrato, certificado y link de pago. Estos son clientes adicionales asociados a la campaña.
+              </p>
             </Field>
             <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Fecha inicio"><input type="date" className="input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
