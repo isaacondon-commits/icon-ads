@@ -12,6 +12,14 @@ router.param('id', (req, res, next, id) => {
   next();
 });
 
+// A client's campaigns = ones they bill (clientId) OR are tagged on as an
+// additional client (#multi-client) — used everywhere a client's own page
+// lists "their" campaigns.
+const campaignsForClientWhere = (id) => ({
+  deletedAt: null,
+  OR: [{ clientId: id }, { additionalClients: { some: { clientId: id } } }],
+});
+
 const clientSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -54,8 +62,8 @@ router.get('/:id/proposal', async (req, res, next) => {
     const id = Number(req.params.id);
     const [client, campaigns, metricsAgg] = await Promise.all([
       prisma.client.findUnique({ where: { id, deletedAt: null } }),
-      prisma.campaign.findMany({ where: { clientId: id, deletedAt: null }, orderBy: { startDate: 'desc' } }),
-      prisma.metric.groupBy({ by: ['campaignId'], where: { campaign: { clientId: id } }, _count: { id: true } }),
+      prisma.campaign.findMany({ where: campaignsForClientWhere(id), orderBy: { startDate: 'desc' } }),
+      prisma.metric.groupBy({ by: ['campaignId'], where: { campaign: campaignsForClientWhere(id) }, _count: { id: true } }),
     ]);
     if (!client) return res.status(404).json({ error: 'Client not found' });
     const playMap = Object.fromEntries(metricsAgg.map((r) => [r.campaignId, r._count.id]));
@@ -112,13 +120,18 @@ router.get('/:id', async (req, res, next) => {
     const [client, campaigns, metricsAgg] = await Promise.all([
       prisma.client.findUnique({ where: { id, deletedAt: null } }),
       prisma.campaign.findMany({
-        where: { clientId: id, deletedAt: null },
-        include: { ads: { where: { deletedAt: null } }, _count: { select: { metrics: true } } },
+        where: campaignsForClientWhere(id),
+        include: {
+          client: { select: { id: true, name: true } },
+          additionalClients: { include: { client: { select: { id: true, name: true } } } },
+          ads: { where: { deletedAt: null } },
+          _count: { select: { metrics: true } },
+        },
         orderBy: { startDate: 'desc' },
       }),
       prisma.metric.groupBy({
         by: ['campaignId'],
-        where: { campaign: { clientId: id } },
+        where: { campaign: campaignsForClientWhere(id) },
         _count: { id: true },
         _sum: { durationPlayedS: true },
       }),
