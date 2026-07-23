@@ -10,6 +10,17 @@ const ALLOWED_TYPES = ['video/mp4', 'image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const PAGE_SIZE = 10;
 
+// Estados como pestañas — un anuncio vive en una sola a la vez, así pausar/
+// aprobar/rechazar lo "mueve" de pestaña sin mezclarlo con el resto.
+const AD_TABS = [
+  { id: 'all', label: 'Todos', match: () => true },
+  { id: 'active', label: 'Activos', match: (a: Ad) => a.approvalStatus === 'approved' && a.active },
+  { id: 'paused', label: 'Pausados', match: (a: Ad) => a.approvalStatus === 'approved' && !a.active },
+  { id: 'pending', label: 'Pendientes', match: (a: Ad) => a.approvalStatus === 'pending' },
+  { id: 'rejected', label: 'Rechazados', match: (a: Ad) => a.approvalStatus === 'rejected' },
+] as const;
+type AdTabId = typeof AD_TABS[number]['id'];
+
 // Captures a frame from a video file as a JPEG blob, entirely client-side —
 // avoids needing ffmpeg on the backend just to generate a poster thumbnail.
 // Resolves null (never rejects) if anything goes wrong, since a missing
@@ -70,6 +81,7 @@ export default function AdsPage() {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [activeTab, setActiveTab] = useState<AdTabId>('active');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [approvingId, setApprovingId] = useState<number | null>(null);
@@ -86,12 +98,13 @@ export default function AdsPage() {
   useEffect(() => { load(); }, []);
   useEffect(() => { api.getStorageStats().then(setStorage).catch(() => {}); }, [ads.length]);
 
-  // #6 — search + tag filter
+  // #6 — search + tag filter + status tab
+  const activeTabDef = AD_TABS.find((t) => t.id === activeTab)!;
   const filtered = ads.filter((a) => {
     const q = search.toLowerCase();
     const matchSearch = a.name.toLowerCase().includes(q) || (a.campaign?.name ?? '').toLowerCase().includes(q);
     const matchTag = !tagFilter || (a.tags ?? []).includes(tagFilter);
-    return matchSearch && matchTag;
+    return matchSearch && matchTag && activeTabDef.match(a);
   });
 
   // #8 — pagination
@@ -251,6 +264,25 @@ export default function AdsPage() {
         </button>
       </div>
 
+      {/* Estados como pestañas */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {AD_TABS.map((t) => {
+          const count = ads.filter(t.match).length;
+          const isActive = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => { setActiveTab(t.id); setPage(1); }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                isActive ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {t.label} <span className={isActive ? 'text-blue-100' : 'text-gray-400'}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Storage usage bar */}
       {storage && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
@@ -304,7 +336,7 @@ export default function AdsPage() {
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
       ) : filtered.length === 0 ? (
-        <p className="text-gray-500">{search ? 'Sin resultados.' : 'No hay anuncios.'}</p>
+        <p className="text-gray-500">{search ? 'Sin resultados.' : `No hay anuncios en "${activeTabDef.label}".`}</p>
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
