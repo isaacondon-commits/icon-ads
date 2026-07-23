@@ -39,6 +39,7 @@ model Client {
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
   campaigns        Campaign[]
+  campaignLinks    CampaignClient[]
   referralsGiven   Referral[]  @relation("ReferralReferrer")
   referralsReceived Referral[] @relation("ReferralReferred")
 
@@ -64,8 +65,26 @@ model Campaign {
   ads       Ad[]
   metrics   Metric[]
   comments  Comment[]
+  additionalClients CampaignClient[]
 
   @@map("campaigns")
+}
+
+// Extra clients tied to a campaign beyond the billing client (Campaign.clientId).
+// The billing client is what contract/certificate/payment-link PDFs use — this
+// table is purely "who else is this campaign associated with", for filtering
+// campaigns from those clients' own pages.
+model CampaignClient {
+  id         Int      @id @default(autoincrement())
+  campaignId Int      @map("campaign_id")
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  clientId   Int      @map("client_id")
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([campaignId, clientId])
+  @@index([clientId])
+  @@map("campaign_clients")
 }
 
 enum AdType {
