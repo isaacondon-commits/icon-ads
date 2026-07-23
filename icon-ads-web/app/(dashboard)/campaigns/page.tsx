@@ -60,7 +60,8 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
-  const [form, setForm] = useState({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '', additionalClientIds: [] as number[] });
+  const [form, setForm] = useState({ clientIds: [] as number[], name: '', startDate: '', endDate: '', maxImpressions: '', observations: '' });
+  const [clientSearch, setClientSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
@@ -113,7 +114,8 @@ export default function CampaignsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ clientId: '', name: '', startDate: '', endDate: '', cpm: '', maxImpressions: '', budget: '', observations: '', targetImpressions: '', additionalClientIds: [] });
+    setForm({ clientIds: [], name: '', startDate: '', endDate: '', maxImpressions: '', observations: '' });
+    setClientSearch('');
     setError('');
     setShowTemplateSave(false);
     setShowModal(true);
@@ -121,30 +123,32 @@ export default function CampaignsPage() {
   const openEdit = (c: Campaign) => {
     setEditing(c);
     setForm({
-      clientId: c.clientId.toString(), name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate),
-      cpm: c.cpm?.toString() ?? '', maxImpressions: c.maxImpressions?.toString() ?? '', budget: c.budget?.toString() ?? '',
-      observations: c.observations ?? '', targetImpressions: c.targetImpressions?.toString() ?? '',
-      additionalClientIds: (c.additionalClients ?? []).map((ac) => ac.clientId),
+      clientIds: [c.clientId, ...(c.additionalClients ?? []).map((ac) => ac.clientId)],
+      name: c.name, startDate: toDateInput(c.startDate), endDate: toDateInput(c.endDate),
+      maxImpressions: c.maxImpressions?.toString() ?? '', observations: c.observations ?? '',
     });
+    setClientSearch('');
     setError('');
     setShowModal(true);
   };
 
   const handleSave = async () => {
+    if (form.clientIds.length === 0) {
+      setError('Seleccioná al menos un cliente.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
+      const [clientId, ...additionalClientIds] = form.clientIds;
       const data = {
-        clientId: Number(form.clientId),
+        clientId,
+        additionalClientIds,
         name: form.name,
         startDate: parseLocalDate(form.startDate),
         endDate: parseLocalDate(form.endDate),
-        cpm: form.cpm ? Number(form.cpm) : null,
         maxImpressions: form.maxImpressions ? Number(form.maxImpressions) : null,
-        budget: form.budget ? Number(form.budget) : null,
         observations: form.observations || null,
-        targetImpressions: form.targetImpressions ? Number(form.targetImpressions) : null,
-        additionalClientIds: form.additionalClientIds,
       };
       if (editing) await api.updateCampaign(editing.id, data);
       else await api.createCampaign(data);
@@ -200,10 +204,7 @@ export default function CampaignsPage() {
     try {
       await api.createTemplate({
         name: templateSaveName.trim(),
-        cpm: form.cpm ? Number(form.cpm) : null,
         maxImpressions: form.maxImpressions ? Number(form.maxImpressions) : null,
-        budget: form.budget ? Number(form.budget) : null,
-        targetImpressions: form.targetImpressions ? Number(form.targetImpressions) : null,
         observations: form.observations || null,
       });
       setTemplates(await api.getTemplates());
@@ -516,10 +517,7 @@ export default function CampaignsPage() {
                   const tpl = templates.find((t) => t.id === Number(e.target.value));
                   if (tpl) setForm((prev) => ({
                     ...prev,
-                    cpm: tpl.cpm?.toString() ?? '',
                     maxImpressions: tpl.maxImpressions?.toString() ?? '',
-                    budget: tpl.budget?.toString() ?? '',
-                    targetImpressions: tpl.targetImpressions?.toString() ?? '',
                     observations: tpl.observations ?? '',
                   }));
                 }}>
@@ -528,58 +526,60 @@ export default function CampaignsPage() {
                 </select>
               </Field>
             )}
-            <Field label="Cliente">
-              <select className="input" value={form.clientId} onChange={(e) => {
-                const clientId = e.target.value;
-                setForm((prev) => ({ ...prev, clientId, additionalClientIds: prev.additionalClientIds.filter((id) => id !== Number(clientId)) }));
-              }}>
-                <option value="">Seleccionar cliente</option>
-                {clients.filter(c => c.active).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </Field>
-            {/* #multi-client — additional clients beyond the billing one above */}
-            <Field label="Clientes adicionales (opcional)">
-              <div className="border rounded-lg p-2 max-h-40 overflow-y-auto space-y-1" style={{ borderColor: 'var(--border-md)' }}>
-                {clients.filter((c) => c.active && c.id !== Number(form.clientId)).length === 0 ? (
-                  <p className="text-xs px-1 py-1" style={{ color: 'var(--text-muted)' }}>No hay otros clientes disponibles.</p>
-                ) : clients.filter((c) => c.active && c.id !== Number(form.clientId)).map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer px-1 py-0.5">
-                    <input
-                      type="checkbox"
-                      checked={form.additionalClientIds.includes(c.id)}
-                      onChange={(e) => setForm((prev) => ({
-                        ...prev,
-                        additionalClientIds: e.target.checked
-                          ? [...prev.additionalClientIds, c.id]
-                          : prev.additionalClientIds.filter((id) => id !== c.id),
-                      }))}
-                    />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                El cliente de arriba es el que figura en contrato, certificado y link de pago. Estos son clientes adicionales asociados a la campaña.
-              </p>
+            {/* #multi-client — search + pick as many clients as needed, no forced "primary" step */}
+            <Field label="Clientes">
+              {form.clientIds.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {form.clientIds.map((id) => {
+                    const c = clients.find((cl) => cl.id === id);
+                    if (!c) return null;
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1 text-xs pl-2 pr-1 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                        {c.name}
+                        <button
+                          type="button"
+                          onClick={() => setForm((prev) => ({ ...prev, clientIds: prev.clientIds.filter((x) => x !== id) }))}
+                          className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 leading-none"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <input
+                className="input"
+                placeholder="Buscar cliente por nombre..."
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+              />
+              {clientSearch.trim() && (() => {
+                const results = clients.filter((c) => c.active && !form.clientIds.includes(c.id) && c.name.toLowerCase().includes(clientSearch.toLowerCase())).slice(0, 20);
+                return (
+                  <div className="border rounded-lg mt-1 max-h-40 overflow-y-auto" style={{ borderColor: 'var(--border-md)' }}>
+                    {results.length === 0 ? (
+                      <p className="px-3 py-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>Sin resultados.</p>
+                    ) : results.map((c) => (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => { setForm((prev) => ({ ...prev, clientIds: [...prev.clientIds, c.id] })); setClientSearch(''); }}
+                        className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </Field>
             <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Fecha inicio"><input type="date" className="input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
             <Field label="Fecha fin"><input type="date" className="input" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></Field>
-            <Field label="CPM (USD, opcional)"><input type="number" step="0.01" min="0" className="input" value={form.cpm} onChange={(e) => setForm({ ...form, cpm: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder={`${DEFAULT_CPM} (default)`} /></Field>
             <Field label="Límite de impresiones (opcional)">
               <input type="number" step="1" min="1" className="input" value={form.maxImpressions} onChange={(e) => setForm({ ...form, maxImpressions: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="Sin límite" />
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>La campaña se pausa automáticamente al alcanzar este número.</p>
-            </Field>
-            {/* #7 — budget */}
-            <Field label="Presupuesto total (USD, opcional)">
-              <input type="number" step="1" min="0" className="input" value={form.budget} onChange={(e) => setForm({ ...form, budget: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="Sin límite de presupuesto" />
-            </Field>
-            {/* #33 — target impressions goal */}
-            <Field label="Meta de impresiones (opcional)">
-              <input type="number" step="1" min="1" className="input" value={form.targetImpressions} onChange={(e) => setForm({ ...form, targetImpressions: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="Ej: 10000" />
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Objetivo informativo de reproducciones. No pausa la campaña.</p>
             </Field>
             {/* #3 — observations */}
             <Field label="Observaciones internas (opcional)">
