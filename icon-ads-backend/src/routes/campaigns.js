@@ -23,7 +23,21 @@ const campaignSchema = z.object({
   budget: z.number().positive().nullable().optional(),
   observations: z.string().nullable().optional(),
   targetImpressions: z.number().int().positive().nullable().optional(),
+  // Extra clients tied to the campaign besides the billing client (#multi-client).
+  // Contract/certificate/payment-link PDFs keep using clientId only.
+  additionalClientIds: z.array(z.number().int().positive()).optional(),
 });
+
+const CAMPAIGN_CLIENT_INCLUDE = {
+  client: { select: { id: true, name: true } },
+  additionalClients: { include: { client: { select: { id: true, name: true } } } },
+};
+
+// additionalClientIds always excludes the billing clientId itself and any
+// duplicates, since that relationship is already expressed by clientId.
+function dedupeAdditionalClientIds(additionalClientIds, clientId) {
+  return [...new Set(additionalClientIds ?? [])].filter((id) => id !== clientId);
+}
 
 // POST /archive-expired — manually archive all campaigns past their end date (#4)
 router.post('/archive-expired', async (req, res, next) => {
@@ -43,7 +57,7 @@ router.get('/archived', async (req, res, next) => {
     const campaigns = await prisma.campaign.findMany({
       where: { NOT: { deletedAt: null } },
       include: {
-        client: { select: { id: true, name: true } },
+        ...CAMPAIGN_CLIENT_INCLUDE,
         _count: { select: { ads: true } },
       },
       orderBy: { deletedAt: 'desc' },
@@ -59,7 +73,7 @@ router.get('/', async (req, res, next) => {
     const campaigns = await prisma.campaign.findMany({
       where: { deletedAt: null },
       include: {
-        client: { select: { id: true, name: true } },
+        ...CAMPAIGN_CLIENT_INCLUDE,
         _count: { select: { metrics: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -72,10 +86,16 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { clientId, name, startDate, endDate, cpm, maxImpressions, budget, observations, targetImpressions } = campaignSchema.parse(req.body);
+    const { clientId, name, startDate, endDate, cpm, maxImpressions, budget, observations, targetImpressions, additionalClientIds } = campaignSchema.parse(req.body);
+    const extraClientIds = dedupeAdditionalClientIds(additionalClientIds, clientId);
     const campaign = await prisma.campaign.create({
-      data: { clientId, name, startDate: new Date(startDate), endDate: new Date(endDate), cpm: cpm ?? null, maxImpressions: maxImpressions ?? null, budget: budget ?? null, observations: observations ?? null, targetImpressions: targetImpressions ?? null },
-      include: { client: { select: { id: true, name: true } } },
+      data: {
+        clientId, name, startDate: new Date(startDate), endDate: new Date(endDate),
+        cpm: cpm ?? null, maxImpressions: maxImpressions ?? null, budget: budget ?? null,
+        observations: observations ?? null, targetImpressions: targetImpressions ?? null,
+        additionalClients: { create: extraClientIds.map((id) => ({ clientId: id })) },
+      },
+      include: CAMPAIGN_CLIENT_INCLUDE,
     });
     await audit(req, 'CREATE', 'campaign', campaign.id, `Created "${campaign.name}"`);
     res.status(201).json(campaign);
@@ -206,7 +226,7 @@ router.get('/:id', async (req, res, next) => {
       prisma.campaign.findUnique({
         where: { id, deletedAt: null },
         include: {
-          client: { select: { id: true, name: true } },
+          ...CAMPAIGN_CLIENT_INCLUDE,
           ads: { where: { deletedAt: null } },
           _count: { select: { metrics: true } },
         },
@@ -232,13 +252,41 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const body = campaignSchema.partial().parse(req.body);
-    const data = { ...body };
+    const { additionalClientIds, ...rest } = body;
+    const data = { ...rest };
     if (body.startDate) data.startDate = new Date(body.startDate);
     if (body.endDate) data.endDate = new Date(body.endDate);
     if ('budget' in body) data.budget = body.budget ?? null;
     if ('observations' in body) data.observations = body.observations ?? null;
     if ('targetImpressions' in body) data.targetImpressions = body.targetImpressions ?? null;
-    const campaign = await prisma.campaign.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
+
+    const id = Number(req.params.id);
+    let campaign;
+    if (additionalClientIds !== undefined) {
+      const existing = await prisma.campaign.findUnique({ where: { id, deletedAt: null }, select: { clientId: true } });
+      if (!existing) return res.status(404).json({ error: 'Campaign not found' });
+      const billingClientId = body.clientId ?? existing.clientId;
+      const extraClientIds = dedupeAdditionalClientIds(additionalClientIds, billingClientId);
+      [, campaign] = await prisma.$transaction([
+        prisma.campaignClient.deleteMany({ where: { campaignId: id, clientId: { notIn: extraClientIds } } }),
+        prisma.campaign.update({
+          where: { id, deletedAt: null },
+          data: {
+            ...data,
+            additionalClients: {
+              upsert: extraClientIds.map((clientId) => ({
+                where: { campaignId_clientId: { campaignId: id, clientId } },
+                create: { clientId },
+                update: {},
+              })),
+            },
+          },
+          include: CAMPAIGN_CLIENT_INCLUDE,
+        }),
+      ]);
+    } else {
+      campaign = await prisma.campaign.update({ where: { id, deletedAt: null }, data, include: CAMPAIGN_CLIENT_INCLUDE });
+    }
     await audit(req, 'UPDATE', 'campaign', campaign.id, `Updated "${campaign.name}"`);
     res.json(campaign);
   } catch (err) {
@@ -314,7 +362,10 @@ router.post('/:id/clone', async (req, res, next) => {
     const id = Number(req.params.id);
     const original = await prisma.campaign.findUnique({
       where: { id, deletedAt: null },
-      include: { ads: { where: { deletedAt: null, active: true } } },
+      include: {
+        ads: { where: { deletedAt: null, active: true } },
+        additionalClients: true,
+      },
     });
     if (!original) return res.status(404).json({ error: 'Campaign not found' });
     const clone = await prisma.campaign.create({
@@ -326,6 +377,7 @@ router.post('/:id/clone', async (req, res, next) => {
         cpm: original.cpm,
         maxImpressions: original.maxImpressions,
         active: false,
+        additionalClients: { create: original.additionalClients.map((ac) => ({ clientId: ac.clientId })) },
         ads: {
           create: original.ads.map((ad) => ({
             name: ad.name,
@@ -342,7 +394,7 @@ router.post('/:id/clone', async (req, res, next) => {
           })),
         },
       },
-      include: { client: { select: { id: true, name: true } }, _count: { select: { metrics: true } } },
+      include: { ...CAMPAIGN_CLIENT_INCLUDE, _count: { select: { metrics: true } } },
     });
     await audit(req, 'CLONE', 'campaign', clone.id, `Clonada de campaña #${id} "${original.name}"`);
     res.status(201).json(clone);
@@ -356,10 +408,13 @@ router.patch('/:id/transfer', async (req, res, next) => {
   try {
     const { clientId } = z.object({ clientId: z.number().int().positive() }).parse(req.body);
     const id = Number(req.params.id);
+    // The new billing client can't also sit in additionalClients — drop it
+    // there if present, since clientId already expresses that relationship.
+    await prisma.campaignClient.deleteMany({ where: { campaignId: id, clientId } });
     const campaign = await prisma.campaign.update({
       where: { id, deletedAt: null },
       data: { clientId },
-      include: { client: { select: { id: true, name: true } } },
+      include: CAMPAIGN_CLIENT_INCLUDE,
     });
     await audit(req, 'TRANSFER', 'campaign', campaign.id, `Transferida al cliente #${clientId} "${campaign.client.name}"`);
     res.json(campaign);
