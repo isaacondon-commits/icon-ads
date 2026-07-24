@@ -115,6 +115,7 @@ export default function GroupsPage() {
           <div className="px-5 py-4 border-b font-semibold text-sm" style={{ borderColor: 'var(--border-md)' }}>
             Tablets sin grupo ({tablets.filter((t) => !t.groupId).length})
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody>
               {tablets.filter((t) => !t.groupId).map((t) => (
@@ -135,6 +136,7 @@ export default function GroupsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

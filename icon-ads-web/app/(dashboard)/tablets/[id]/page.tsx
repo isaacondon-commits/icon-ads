@@ -226,6 +226,7 @@ export default function TabletDetailPage() {
           ) : syncs.length === 0 ? (
             <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin registros de sincronización aún.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -250,6 +251,7 @@ export default function TabletDetailPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )
         )}
 
@@ -257,6 +259,7 @@ export default function TabletDetailPage() {
           tablet.errorLogs.length === 0 ? (
             <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin errores registrados.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -279,6 +282,7 @@ export default function TabletDetailPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )
         )}
 
@@ -290,6 +294,7 @@ export default function TabletDetailPage() {
           ) : playlistVersions.length === 0 ? (
             <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin historial de versiones.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -319,6 +324,7 @@ export default function TabletDetailPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )
         )}
       </div>

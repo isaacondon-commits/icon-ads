@@ -121,6 +121,7 @@ export default function ApiControlPage() {
           {latency.slow.length > 0 && (
             <>
               <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>REQUESTS LENTOS (&gt;1s)</p>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs mb-4">
                 <thead>
                   <tr style={{ color: 'var(--text-muted)' }}>
@@ -141,10 +142,12 @@ export default function ApiControlPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </>
           )}
 
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>REQUESTS RECIENTES</p>
+          <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr style={{ color: 'var(--text-muted)' }}>
@@ -165,6 +168,7 @@ export default function ApiControlPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

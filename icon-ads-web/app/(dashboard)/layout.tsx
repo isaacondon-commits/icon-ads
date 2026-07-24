@@ -41,7 +41,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
       <GoogleAnalytics />
       <Sidebar />
-      <main className="flex-1 p-8 overflow-auto" style={{ color: 'var(--text)' }}>
+      <main className="flex-1 pt-16 px-4 pb-4 lg:p-8 overflow-auto min-w-0" style={{ color: 'var(--text)' }}>
         <Breadcrumbs />
         {children}
       </main>

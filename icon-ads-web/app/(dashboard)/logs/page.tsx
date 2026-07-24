@@ -81,6 +81,7 @@ export default function LogsPage() {
         <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : tab === 'live' ? (
         <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -109,11 +110,13 @@ export default function LogsPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       ) : tab === 'audit' ? (
         audit && (
           <>
             <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -144,6 +147,7 @@ export default function LogsPage() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {audit.pages > 1 && (
@@ -161,6 +165,7 @@ export default function LogsPage() {
         metricsData && (
           <>
             <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -201,6 +206,7 @@ export default function LogsPage() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {metricsData.pages > 1 && (
@@ -235,6 +241,7 @@ export default function LogsPage() {
                 <div className="px-5 py-3 border-b text-xs font-semibold" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
                   PETICIONES LENTAS (&gt;1s)
                 </div>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody>
                     {latency.slow.map((r, i) => (
@@ -251,6 +258,7 @@ export default function LogsPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 
@@ -258,6 +266,7 @@ export default function LogsPage() {
               <div className="px-5 py-3 border-b text-xs font-semibold" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
                 ÚLTIMAS 20 PETICIONES
               </div>
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <tbody>
                   {latency.recent.map((r, i) => (
@@ -276,6 +285,7 @@ export default function LogsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </>
         )

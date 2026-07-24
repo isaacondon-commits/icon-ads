@@ -257,6 +257,7 @@ export default function TabletsPage() {
         </div>
       ) : (
         <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
@@ -337,6 +338,7 @@ export default function TabletsPage() {
               })}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 

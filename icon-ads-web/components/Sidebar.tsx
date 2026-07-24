@@ -79,6 +79,7 @@ export default function Sidebar() {
   const [notifications, setNotifications] = useState<Notifications | null>(null);
   const [showNotif, setShowNotif] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     const fetchNotifs = () => {
@@ -108,20 +109,60 @@ export default function Sidebar() {
 
   const isLinkActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
+  // Close the mobile drawer on navigation
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing drawer open state to route changes, not a compiler target
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
   return (
-    <aside
-      className="w-60 min-h-screen flex flex-col transition-colors duration-200"
-      style={{ background: 'var(--sidebar)' }}
-    >
+    <>
+      {/* Mobile top bar — hidden at lg and up, where the sidebar is always visible */}
+      <div
+        className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center gap-3 px-4 py-3 border-b border-gray-800"
+        style={{ background: 'var(--sidebar)' }}
+      >
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Abrir menú"
+          className="text-white text-xl leading-none p-1 -ml-1"
+        >
+          ☰
+        </button>
+        <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-xs text-white">
+          IA
+        </div>
+        <span className="font-semibold text-sm text-white">Icon Ads</span>
+      </div>
+
+      {/* Backdrop, mobile only, while the drawer is open */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`w-60 min-h-screen flex flex-col transition-colors duration-200 fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 lg:static lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        style={{ background: 'var(--sidebar)' }}
+      >
       <div className="px-6 py-5 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white">
             IA
           </div>
-          <div>
+          <div className="flex-1">
             <p className="font-semibold text-sm text-white">Icon Ads</p>
             <p className="text-xs text-gray-400">Panel admin</p>
           </div>
+          <button
+            onClick={() => setMobileOpen(false)}
+            aria-label="Cerrar menú"
+            className="lg:hidden text-gray-400 hover:text-white text-xl leading-none"
+          >
+            ×
+          </button>
         </div>
       </div>
 
@@ -254,6 +295,7 @@ export default function Sidebar() {
           Cerrar sesión
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

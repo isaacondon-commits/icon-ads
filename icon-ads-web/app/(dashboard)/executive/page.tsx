@@ -86,6 +86,7 @@ export default function ExecutivePage() {
             {roi.length > 0 && (
               <div className="card p-6">
                 <h2 className="font-semibold mb-4">Top campañas por ingreso estimado</h2>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -107,6 +108,7 @@ export default function ExecutivePage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
 

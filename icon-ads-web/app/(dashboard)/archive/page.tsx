@@ -88,6 +88,7 @@ export default function ArchivePage() {
           ) : campaigns.length === 0 ? (
             <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>No hay campañas eliminadas.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs uppercase tracking-wide" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
@@ -122,6 +123,7 @@ export default function ArchivePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )
         )}
 
@@ -132,6 +134,7 @@ export default function ArchivePage() {
           ) : ads.length === 0 ? (
             <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>No hay anuncios eliminados.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-xs uppercase tracking-wide" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
@@ -170,6 +173,7 @@ export default function ArchivePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )
         )}
       </div>
