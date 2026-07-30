@@ -22,8 +22,8 @@ const MIGRATIONS = [
   { name: 'clients.rut',                sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS rut TEXT` },
   { name: 'clients.address',            sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT` },
   // v2 — account lockout
-  { name: 'users.failed_logins',        sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins INT NOT NULL DEFAULT 0` },
-  { name: 'users.locked_until',         sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ` },
+  { name: 'users.failed_logins',        sql: `ALTER TABLE private.users ADD COLUMN IF NOT EXISTS failed_logins INT NOT NULL DEFAULT 0` },
+  { name: 'users.locked_until',         sql: `ALTER TABLE private.users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ` },
   // v3 — client color, tablet extended fields
   { name: 'clients.color',              sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS color TEXT` },
   { name: 'tablets.spot_price',         sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS spot_price FLOAT` },
@@ -67,7 +67,7 @@ const MIGRATIONS = [
   // v14 — zones / geofencing (#67)
   { name: 'zones',                     sql: `CREATE TABLE IF NOT EXISTS zones (id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, polygon JSONB NOT NULL DEFAULT '[]', color TEXT NOT NULL DEFAULT '#3b82f6', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   // v15 — public API keys (#70)
-  { name: 'api_keys',                  sql: `CREATE TABLE IF NOT EXISTS api_keys (id SERIAL PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, active BOOLEAN NOT NULL DEFAULT true, last_used TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'api_keys',                  sql: `CREATE TABLE IF NOT EXISTS private.api_keys (id SERIAL PRIMARY KEY, name TEXT NOT NULL, key TEXT NOT NULL UNIQUE, active BOOLEAN NOT NULL DEFAULT true, last_used TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   // v16 — driver surveys (#47)
   { name: 'surveys',                   sql: `CREATE TABLE IF NOT EXISTS surveys (id SERIAL PRIMARY KEY, question TEXT NOT NULL, options JSONB NOT NULL DEFAULT '[]', active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'survey_answers',            sql: `CREATE TABLE IF NOT EXISTS survey_answers (id SERIAL PRIMARY KEY, survey_id INT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, option_index INT NOT NULL, answered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(survey_id, tablet_id))` },
@@ -96,6 +96,14 @@ const MIGRATIONS = [
   // this table holds additional clients associated with the campaign)
   { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },
   { name: 'campaign_clients.idx',      sql: `CREATE INDEX IF NOT EXISTS campaign_clients_client_idx ON campaign_clients(client_id)` },
+  // v24 — Supabase RLS lockdown (see prisma/migrations/20260730053503_supabase_rls_lockdown).
+  // surveys/survey_answers/tablet_locations aren't Prisma models, so that
+  // migration can't reference them directly — enabling their RLS here
+  // keeps it in the same place/order that already creates them, on every
+  // boot, so it's covered even on a brand-new database.
+  { name: 'surveys.rls',               sql: `ALTER TABLE surveys ENABLE ROW LEVEL SECURITY` },
+  { name: 'survey_answers.rls',        sql: `ALTER TABLE survey_answers ENABLE ROW LEVEL SECURITY` },
+  { name: 'tablet_locations.rls',      sql: `ALTER TABLE tablet_locations ENABLE ROW LEVEL SECURITY` },
 ];
 
 async function runStartupMigrations() {
