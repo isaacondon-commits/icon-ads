@@ -92,7 +92,11 @@ const MIGRATIONS = [
   // v22 — manual 180° screen flip per tablet (charger connector can end up on
   // either side depending on how the mount was installed)
   { name: 'tablets.rotated_180',       sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS rotated_180 BOOLEAN NOT NULL DEFAULT false` },
-  // v23 — Supabase Advisor: rls_disabled_in_public / sensitive_columns_exposed.
+  // v23 — multiple clients per campaign (billing client stays campaigns.client_id;
+  // this table holds additional clients associated with the campaign)
+  { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },
+  { name: 'campaign_clients.idx',      sql: `CREATE INDEX IF NOT EXISTS campaign_clients_client_idx ON campaign_clients(client_id)` },
+  // v24 — Supabase Advisor: rls_disabled_in_public / sensitive_columns_exposed.
   // These tables had RLS off with default grants to `anon`/`authenticated`,
   // so Supabase's auto-generated PostgREST API (reachable with the public
   // anon key shipped in icon-ads-web) could read/write them directly,

@@ -457,6 +457,11 @@ export interface Campaign {
   budget?: number | null; observations?: string | null; targetImpressions?: number | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
   _count?: { metrics: number };
+  // Clients tied to the campaign besides the billing client (clientId/client) —
+  // contract/certificate/payment-link PDFs keep using clientId only (#multi-client).
+  additionalClients?: { clientId: number; client: { id: number; name: string } }[];
+  // Write-only: full replacement set sent on create/update.
+  additionalClientIds?: number[];
 }
 export interface CampaignDetail extends Campaign {
   ads: Ad[];
