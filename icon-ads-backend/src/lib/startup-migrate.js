@@ -92,6 +92,38 @@ const MIGRATIONS = [
   // v22 — manual 180° screen flip per tablet (charger connector can end up on
   // either side depending on how the mount was installed)
   { name: 'tablets.rotated_180',       sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS rotated_180 BOOLEAN NOT NULL DEFAULT false` },
+  // v23 — Supabase Advisor: rls_disabled_in_public / sensitive_columns_exposed.
+  // These tables had RLS off with default grants to `anon`/`authenticated`,
+  // so Supabase's auto-generated PostgREST API (reachable with the public
+  // anon key shipped in icon-ads-web) could read/write them directly,
+  // bypassing this backend's auth entirely — worst case was `tablets.token`,
+  // the exact bearer credential requireDevice checks. Enabling RLS with no
+  // policies is a deny-all for `anon`/`authenticated` via PostgREST; it does
+  // NOT affect this app, which connects as the `postgres` role (BYPASSRLS)
+  // via DATABASE_URL. Safe to re-run — ENABLE ROW LEVEL SECURITY is idempotent.
+  { name: 'ab_tests.rls',              sql: `ALTER TABLE ab_tests ENABLE ROW LEVEL SECURITY` },
+  { name: 'ads.rls',                   sql: `ALTER TABLE ads ENABLE ROW LEVEL SECURITY` },
+  { name: 'campaign_clients.rls',      sql: `ALTER TABLE campaign_clients ENABLE ROW LEVEL SECURITY` },
+  { name: 'campaign_templates.rls',    sql: `ALTER TABLE campaign_templates ENABLE ROW LEVEL SECURITY` },
+  { name: 'campaigns.rls',             sql: `ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY` },
+  { name: 'comments.rls',              sql: `ALTER TABLE comments ENABLE ROW LEVEL SECURITY` },
+  { name: 'driver_points.rls',         sql: `ALTER TABLE driver_points ENABLE ROW LEVEL SECURITY` },
+  { name: 'error_logs.rls',            sql: `ALTER TABLE error_logs ENABLE ROW LEVEL SECURITY` },
+  { name: 'favorites.rls',             sql: `ALTER TABLE favorites ENABLE ROW LEVEL SECURITY` },
+  { name: 'metrics.rls',               sql: `ALTER TABLE metrics ENABLE ROW LEVEL SECURITY` },
+  { name: 'playlist_ads.rls',          sql: `ALTER TABLE playlist_ads ENABLE ROW LEVEL SECURITY` },
+  { name: 'playlist_versions.rls',     sql: `ALTER TABLE playlist_versions ENABLE ROW LEVEL SECURITY` },
+  { name: 'playlists.rls',             sql: `ALTER TABLE playlists ENABLE ROW LEVEL SECURITY` },
+  { name: 'referrals.rls',             sql: `ALTER TABLE referrals ENABLE ROW LEVEL SECURITY` },
+  { name: 'reminders.rls',             sql: `ALTER TABLE reminders ENABLE ROW LEVEL SECURITY` },
+  { name: 'survey_answers.rls',        sql: `ALTER TABLE survey_answers ENABLE ROW LEVEL SECURITY` },
+  { name: 'surveys.rls',               sql: `ALTER TABLE surveys ENABLE ROW LEVEL SECURITY` },
+  { name: 'sync_logs.rls',             sql: `ALTER TABLE sync_logs ENABLE ROW LEVEL SECURITY` },
+  { name: 'tablet_groups.rls',         sql: `ALTER TABLE tablet_groups ENABLE ROW LEVEL SECURITY` },
+  { name: 'tablet_locations.rls',      sql: `ALTER TABLE tablet_locations ENABLE ROW LEVEL SECURITY` },
+  { name: 'tablet_messages.rls',       sql: `ALTER TABLE tablet_messages ENABLE ROW LEVEL SECURITY` },
+  { name: 'tablets.rls',               sql: `ALTER TABLE tablets ENABLE ROW LEVEL SECURITY` },
+  { name: 'zones.rls',                 sql: `ALTER TABLE zones ENABLE ROW LEVEL SECURITY` },
 ];
 
 async function runStartupMigrations() {
