@@ -438,7 +438,28 @@ export const api = {
   getTabletLocationsLive: () => request<TabletLiveLocation[]>('/api/tablets/locations/live'),
   getTabletLocationHistory: (id: number) =>
     request<{ tablet: { id: number; name: string }; locations: LocationPoint[] }>(`/api/tablets/${id}/location/history`),
+
+  // Tiempo de standby (taxi parado), estimado del rastro GPS
+  getTabletStandby: (id: number, date?: string) =>
+    request<TabletStandby>(`/api/tablets/${id}/standby${date ? `?date=${date}` : ''}`),
 };
+
+export interface StandbySegment {
+  start: string; end: string; minutes: number; lat: number; lng: number;
+}
+export interface StandbyResult {
+  standbyMinutes: number;
+  movingMinutes: number;
+  unknownMinutes: number;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  segments: StandbySegment[];
+}
+export interface TabletStandby extends StandbyResult {
+  tablet: { id: number; name: string };
+  date: string;
+  points: number;
+}
 
 export interface User { id: number; email: string; name: string; role: string; }
 export interface Client {
@@ -508,6 +529,7 @@ export interface TabletDetail extends Tablet {
   errorLogs: { id: number; errorType: string; message: string; occurredAt: string }[];
   playsToday: number;
   playsAllTime: number;
+  standbyToday: StandbyResult;
 }
 
 export interface SyncLog {

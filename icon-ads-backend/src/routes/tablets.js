@@ -7,6 +7,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const { audit } = require('../lib/auditLog');
 const firebaseAdmin = require('../lib/firebase-admin');
+const { computeStandby } = require('../lib/standby');
 
 router.use(requireAuth);
 
@@ -248,13 +249,47 @@ router.get('/:id/location/history', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /:id/standby — tiempo que el taxi estuvo parado, estimado del rastro GPS.
+// ?date=YYYY-MM-DD (default: hoy). Rango consultable: últimos 7 días (retención GPS).
+router.get('/:id/standby', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!tablet) return res.status(404).json({ error: 'Not found' });
+
+    let dayStart;
+    if (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)) {
+      dayStart = new Date(`${req.query.date}T00:00:00`);
+      if (Number.isNaN(dayStart.getTime())) return res.status(400).json({ error: 'Fecha inválida' });
+    } else {
+      dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+    }
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const points = await prisma.$queryRaw`
+      SELECT lat, lng, created_at
+      FROM tablet_locations
+      WHERE tablet_id = ${id} AND created_at >= ${dayStart} AND created_at < ${dayEnd}
+      ORDER BY created_at ASC
+    `;
+    const result = computeStandby(points);
+    res.json({
+      tablet,
+      date: dayStart.toISOString().slice(0, 10),
+      points: points.length,
+      ...result,
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /:id — full detail with sync history / error logs (#29)
 router.get('/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const [tablet, errorLogs, playsToday, playsAllTime] = await Promise.all([
+    const [tablet, errorLogs, playsToday, playsAllTime, todayLocations] = await Promise.all([
       prisma.tablet.findUnique({
         where: { id },
         include: { playlist: { select: { id: true, name: true, version: true } } },
@@ -266,9 +301,15 @@ router.get('/:id', async (req, res, next) => {
       }),
       prisma.metric.count({ where: { tabletId: id, playedAt: { gte: today } } }),
       prisma.metric.count({ where: { tabletId: id } }),
+      prisma.$queryRaw`
+        SELECT lat, lng, created_at FROM tablet_locations
+        WHERE tablet_id = ${id} AND created_at >= ${today}
+        ORDER BY created_at ASC
+      `,
     ]);
     if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
-    res.json({ ...tablet, errorLogs, playsToday, playsAllTime });
+    const standbyToday = computeStandby(todayLocations);
+    res.json({ ...tablet, errorLogs, playsToday, playsAllTime, standbyToday });
   } catch (err) {
     next(err);
   }

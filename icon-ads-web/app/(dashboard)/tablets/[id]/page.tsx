@@ -8,6 +8,13 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 
 type Tab = 'errors' | 'sync' | 'playlist';
 
+function fmtDur(min: number): string {
+  if (!min || min < 1) return '0m';
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
 export default function TabletDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -141,7 +148,7 @@ export default function TabletDetailPage() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-md)' }}>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-md)' }}>
           <div>
             <p className="text-2xl font-bold">{tablet.playsToday}</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Reproducciones hoy</p>
@@ -159,6 +166,13 @@ export default function TabletDetailPage() {
               {uptimePct7d !== null ? `${uptimePct7d}%` : '—'}
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Uptime 7 días</p>
+          </div>
+          <div title="Tiempo que el taxi estuvo parado hoy, estimado del rastro GPS">
+            <p className="text-2xl font-bold">{fmtDur(tablet.standbyToday?.standbyMinutes ?? 0)}</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Standby hoy
+              {tablet.standbyToday?.segments?.length ? ` · ${tablet.standbyToday.segments.length} paradas` : ''}
+            </p>
           </div>
         </div>
 
