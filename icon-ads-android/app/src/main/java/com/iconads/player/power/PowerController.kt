@@ -174,6 +174,7 @@ class PowerController : Service() {
         accel?.let {
             sensorManager.registerListener(accelListener, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
+        forceScreenOn()
         startActivity(
             Intent(this, PlayerActivity::class.java).addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -181,6 +182,27 @@ class PowerController : Service() {
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             )
         )
+    }
+
+    // Con el equipo en Doze y pantalla apagada (tras lockNow), startActivity +
+    // setTurnScreenOn no encienden la pantalla: la ventana nunca llega a
+    // "visible" y FLAG_KEEP_SCREEN_ON queda inerte, así que se vuelve a dormir
+    // a los ~10 s. Un wake lock con ACQUIRE_CAUSES_WAKEUP fuerza el encendido;
+    // se suelta solo a los 5 s, para entonces la Activity ya está al frente y
+    // sostiene la pantalla con su propio FLAG_KEEP_SCREEN_ON.
+    private fun forceScreenOn() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            @Suppress("DEPRECATION")
+            pm.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    android.os.PowerManager.ON_AFTER_RELEASE,
+                "iconads:poweron",
+            ).apply { acquire(10_000L) }
+        } catch (e: Exception) {
+            Log.w(TAG, "forceScreenOn: ${e.message}")
+        }
     }
 
     private fun closeApp(byStillness: Boolean) {
