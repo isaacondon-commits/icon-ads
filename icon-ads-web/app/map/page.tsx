@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import type * as Leaflet from 'leaflet';
 import { api, TabletLiveLocation, LocationPoint } from '@/lib/api';
@@ -35,12 +35,12 @@ export default function MapPage() {
   const onlineCount = tablets.filter((t) => t.status === 'online').length;
   const withGps = tablets.filter((t) => t.lat !== null).length;
 
-  const filtered = tablets.filter((t) => {
+  const filtered = useMemo(() => tablets.filter((t) => {
     if (filter === 'online') return t.status === 'online';
     if (filter === 'offline') return t.status === 'offline';
     if (filter === 'no-playlist') return !t.playlist;
     return true;
-  });
+  }), [tablets, filter]);
 
   // Load Leaflet and init map
   useEffect(() => {
@@ -211,14 +211,8 @@ export default function MapPage() {
       const data = await api.getTabletLocationsLive();
       setTablets(data);
       setLastRefresh(new Date());
-      const L = lRef.current;
-      const map = leafletMap.current;
-      if (L && map) {
-        updateMarkers(data, L, map);
-        updateHeatmap(data, L);
-      }
     } catch { /* silent */ }
-  }, [updateMarkers, updateHeatmap]);
+  }, []);
 
   // Initial load + auto-refresh
   useEffect(() => {
@@ -229,11 +223,16 @@ export default function MapPage() {
     return () => clearInterval(id);
   }, [mapReady, refresh]);
 
-  // Re-render heatmap on toggle
+  // Redibuja marcadores + heatmap cuando cambian los datos, el filtro o el toggle.
+  // Antes updateMarkers usaba `data` sin filtrar, así que el filtro Online/Offline
+  // sólo afectaba la lista lateral y no los pines del mapa.
   useEffect(() => {
     const L = lRef.current;
-    if (L && tablets.length) updateHeatmap(tablets, L);
-  }, [showHeatmap, tablets, updateHeatmap]);
+    const map = leafletMap.current;
+    if (!L || !map || !mapReady) return;
+    updateMarkers(filtered, L, map);
+    updateHeatmap(filtered, L);
+  }, [filtered, mapReady, updateMarkers, updateHeatmap]);
 
   const centerMvd = () => leafletMap.current?.setView(MVD, 13);
 

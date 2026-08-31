@@ -222,7 +222,9 @@ router.get('/locations/live', async (req, res, next) => {
         id: t.id, name: t.name, zone: t.zone, lastSync: t.lastSync,
         batteryLevel: t.batteryLevel,
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
-        status: diffMin < 70 ? 'online' : 'offline',
+        // Mismo criterio que GET /monitor: la tablet sincroniza cada ~30 s
+        // mientras el player corre, así que 10 min sin sync = offline.
+        status: diffMin < 10 ? 'online' : 'offline',
         lat: t.lastLat ?? null,
         lng: t.lastLng ?? null,
         todayPlays: countMap[t.id] ?? 0,
