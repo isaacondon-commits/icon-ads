@@ -65,6 +65,10 @@ class DevicePrefs(context: Context) {
     fun getPhonePermsAsked(): Boolean = prefs.getBoolean(KEY_PHONE_PERMS_ASKED, false)
     fun setPhonePermsAsked(value: Boolean) = prefs.edit().putBoolean(KEY_PHONE_PERMS_ASKED, value).apply()
 
+    // Ya se ofreció activar el Device Admin (para apagar pantalla sin cargador).
+    fun getDeviceAdminAsked(): Boolean = prefs.getBoolean(KEY_DEVICE_ADMIN_ASKED, false)
+    fun setDeviceAdminAsked(value: Boolean) = prefs.edit().putBoolean(KEY_DEVICE_ADMIN_ASKED, value).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -77,6 +81,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_GRAVITY_REF_Z = "gravity_ref_z"
         private const val KEY_PROMPTED_APK_VERSION = "prompted_apk_version"
         private const val KEY_PHONE_PERMS_ASKED = "phone_perms_asked"
+        private const val KEY_DEVICE_ADMIN_ASKED = "device_admin_asked"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

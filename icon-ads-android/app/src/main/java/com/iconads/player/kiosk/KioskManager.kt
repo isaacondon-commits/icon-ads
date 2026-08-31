@@ -1,8 +1,10 @@
 package com.iconads.player.kiosk
 
 import android.Manifest
+import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.UserManager
@@ -35,6 +37,30 @@ object KioskManager {
 
     fun isDeviceOwner(context: Context): Boolean =
         try { dpm(context).isDeviceOwnerApp(context.packageName) } catch (_: Exception) { false }
+
+    /** Device Admin "común" — se activa desde Ajustes o con [ensureDeviceAdmin],
+     *  sin factory reset. Alcanza para `lockNow()` (apagar+bloquear pantalla). */
+    fun isAdminActive(context: Context): Boolean =
+        try { dpm(context).isAdminActive(AdminReceiver.component(context)) } catch (_: Exception) { false }
+
+    /**
+     * Pide activar el Device Admin (diálogo del sistema, un toque). Es lo
+     * mínimo para que [lockDown] pueda apagar la pantalla al sacar el cargador
+     * cuando la tablet NO es Device Owner. Si ya está activo, no hace nada.
+     */
+    fun ensureDeviceAdmin(activity: Activity) {
+        if (isAdminActive(activity)) return
+        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, AdminReceiver.component(activity))
+            putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "ICON ADS lo usa para apagar la pantalla y ahorrar batería cuando el taxi está apagado.",
+            )
+        }
+        try { activity.startActivity(intent) } catch (e: Exception) {
+            Log.w(TAG, "ensureDeviceAdmin: ${e.message}")
+        }
+    }
 
     /**
      * Políticas permanentes de kiosco. Idempotente — se llama en cada arranque
@@ -116,17 +142,25 @@ object KioskManager {
     }
 
     /**
-     * Auto apagado (sin corriente) o tablet quieta 10 min: re-activa el
-     * bloqueo y apaga la pantalla de inmediato. Nadie puede tocar la tablet.
+     * Auto apagado (sin corriente) o tablet quieta 10 min: apaga la pantalla y
+     * bloquea de inmediato.
+     *
+     *  - `lockNow()` funciona con Device Admin común (sin factory reset).
+     *  - `setKeyguardDisabled(false)` sólo aplica en Device Owner (reactiva el
+     *    keyguard que enterPlaying había desactivado).
      */
     fun lockDown(context: Context) {
-        if (!isDeviceOwner(context)) return
         val admin = AdminReceiver.component(context)
-        try {
-            dpm(context).setKeyguardDisabled(admin, false)
-            dpm(context).lockNow()
-        } catch (e: Exception) {
-            Log.w(TAG, "lockDown: ${e.message}")
+        val dpm = dpm(context)
+        if (isDeviceOwner(context)) {
+            try { dpm.setKeyguardDisabled(admin, false) } catch (e: Exception) {
+                Log.w(TAG, "lockDown keyguard: ${e.message}")
+            }
+        }
+        if (dpm.isAdminActive(admin)) {
+            try { dpm.lockNow() } catch (e: Exception) { Log.w(TAG, "lockNow: ${e.message}") }
+        } else {
+            Log.w(TAG, "lockDown: sin Device Admin activo — la pantalla no se puede apagar")
         }
     }
 }

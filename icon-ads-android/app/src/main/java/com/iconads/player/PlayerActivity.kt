@@ -214,6 +214,7 @@ class PlayerActivity : AppCompatActivity() {
         KioskManager.applyPolicies(this)
         KioskManager.enterPlaying(this)
         PowerController.start(this)
+        maybePromptDeviceAdmin()
         setupWindow()
         setupShowWhenLocked()
         applyRotation()
@@ -366,11 +367,21 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // Se ofrece activar el Device Admin una sola vez. Sin él (y sin Device
+    // Owner) no se puede apagar la pantalla al sacar el cargador y la tablet
+    // consume batería mostrando el player oscuro.
+    private fun maybePromptDeviceAdmin() {
+        if (KioskManager.isDeviceOwner(this) || KioskManager.isAdminActive(this)) return
+        if (prefs.getDeviceAdminAsked()) return
+        prefs.setDeviceAdminAsked(true)
+        KioskManager.ensureDeviceAdmin(this)
+    }
+
     private fun enterDormant() {
         if (dormant) return
         dormant = true
-        Log.i(TAG, "Modo dormido: pausando reproducción y oscureciendo pantalla")
-        exoPlayer.pause()
+        Log.i(TAG, "Modo dormido: frenando reproducción y apagando pantalla")
+        exoPlayer.stop()
         imageHandler.removeCallbacksAndMessages(null)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes = window.attributes.apply { screenBrightness = 0.004f }
@@ -406,7 +417,7 @@ class PlayerActivity : AppCompatActivity() {
         setupShowWhenLocked()
         KioskManager.enterPlaying(this)
         try { startLockTask() } catch (_: Exception) {}
-        if (ads.isEmpty()) loadAndPlay() else exoPlayer.play()
+        loadAndPlay()  // exoPlayer.stop() en enterDormant liberó el media item
     }
 
     @SuppressLint("MissingPermission")
