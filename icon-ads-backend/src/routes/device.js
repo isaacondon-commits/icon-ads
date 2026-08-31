@@ -9,6 +9,7 @@ const prisma = require('../lib/prisma');
 const { requireDevice } = require('../middleware/deviceAuth');
 const { audit } = require('../lib/auditLog');
 const forceSyncFlags = require('../lib/forceSyncFlags');
+const forceApkFlags = require('../lib/forceApkFlags');
 
 // Registration re-issues the existing token for a known deviceId with no further
 // proof of possession (deviceId — Android's ANDROID_ID — isn't a secret). Keying
@@ -103,10 +104,15 @@ router.get('/apk-version', requireDevice, async (req, res, next) => {
       where: { key: { in: ['apk_version_code', 'apk_version_name', 'apk_url'] } },
     });
     const map = Object.fromEntries(configs.map((c) => [c.key, c.value]));
+    // Señal one-shot de "re-chequeá aunque ya hayas intentado esta versión"
+    // (seteada por POST /api/admin/force-update-apk).
+    const force = forceApkFlags.has(req.tablet.id);
+    if (force) forceApkFlags.delete(req.tablet.id);
     res.json({
       versionCode: map.apk_version_code ? Number(map.apk_version_code) : null,
       versionName: map.apk_version_name ?? null,
       url: map.apk_url ?? null,
+      force,
     });
   } catch (err) {
     next(err);

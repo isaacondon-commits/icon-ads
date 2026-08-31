@@ -24,6 +24,7 @@ export default function ApkPage() {
   const [versionCode, setVersionCode] = useState('');
   const [versionName, setVersionName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [forcing, setForcing] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -49,6 +50,17 @@ export default function ApkPage() {
     } catch (e) {
       show(e instanceof Error ? e.message : 'Error al subir el APK', 'error');
     } finally { setUploading(false); }
+  };
+
+  const handleForce = async () => {
+    setForcing(true);
+    try {
+      const res = await api.forceUpdateApkAll();
+      show(res.message);
+      setTimeout(load, 3000);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al forzar', 'error');
+    } finally { setForcing(false); }
   };
 
   const pub = status?.published;
@@ -113,7 +125,13 @@ export default function ApkPage() {
       <div className="card p-6">
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="font-semibold">Despliegue en la flota</h2>
-          <button onClick={load} className="text-xs text-blue-600 hover:underline">actualizar</button>
+          <div className="flex items-center gap-3">
+            <button onClick={handleForce} disabled={forcing || !pub?.versionName}
+              className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-medium">
+              {forcing ? 'Empujando...' : 'Forzar actualización en toda la flota'}
+            </button>
+            <button onClick={load} className="text-xs text-blue-600 hover:underline">actualizar</button>
+          </div>
         </div>
         {status && (
           <>

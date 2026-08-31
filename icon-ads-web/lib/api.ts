@@ -285,6 +285,10 @@ export const api = {
   },
 
   getApkStatus: () => request<ApkStatus>('/api/admin/apk'),
+  forceUpdateApkAll: () =>
+    request<{ ok: boolean; count: number; pushed: number; message: string }>(
+      '/api/admin/force-update-apk', { method: 'POST' },
+    ),
 
   // Occupancy stats (#8)
   getOccupancy: () => request<OccupancyEntry[]>('/api/stats/occupancy'),

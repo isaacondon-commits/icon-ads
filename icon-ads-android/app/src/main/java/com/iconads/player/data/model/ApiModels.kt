@@ -72,4 +72,7 @@ data class ApkVersionResponse(
     val versionCode: Int?,
     val versionName: String?,
     val url: String?,
+    // El admin forzó re-chequeo desde el panel: ignorar el guard local de
+    // "esta versión ya la intenté" (promptedApkVersion).
+    val force: Boolean = false,
 )

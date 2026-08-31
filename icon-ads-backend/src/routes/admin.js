@@ -7,8 +7,11 @@ const multer = require('multer');
 const { z } = require('zod');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const apiKeyOrAuth = require('../middleware/apiKeyOrAuth');
 const { audit } = require('../lib/auditLog');
 const supabaseStorage = require('../lib/supabase-storage');
+const firebaseAdmin = require('../lib/firebase-admin');
+const forceApkFlags = require('../lib/forceApkFlags');
 
 const apkUpload = multer({
   storage: multer.memoryStorage(),
@@ -402,7 +405,7 @@ router.delete('/api-keys/:id', requireAuth, async (req, res, next) => {
 // app/build.gradle.kts at the time of the build; not parsed from the APK
 // itself to avoid pulling in a manifest-binary-XML parser for something the
 // person uploading already knows.
-router.post('/apk', requireAuth, apkUpload.single('file'), async (req, res, next) => {
+router.post('/apk', apiKeyOrAuth, apkUpload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     if (!/\.apk$/i.test(req.file.originalname)) return res.status(400).json({ error: 'El archivo debe ser un .apk' });
@@ -435,7 +438,7 @@ router.post('/apk', requireAuth, apkUpload.single('file'), async (req, res, next
 
 // GET /api/admin/apk — versión publicada + estado de despliegue en la flota.
 // El breakdown por appVersion sale de lo que cada tablet reporta en /sync.
-router.get('/apk', requireAuth, async (req, res, next) => {
+router.get('/apk', apiKeyOrAuth, async (req, res, next) => {
   try {
     const [configs, tablets] = await Promise.all([
       prisma.systemConfig.findMany({
@@ -470,6 +473,29 @@ router.get('/apk', requireAuth, async (req, res, next) => {
       totalTablets: tablets.length,
       upToDate: versions.filter((v) => v.upToDate).reduce((n, v) => n + v.count, 0),
       versions,
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/force-update-apk — como force-sync-all pero para la APK:
+// marca toda la flota para re-chequear la versión publicada YA (ignorando el
+// guard local promptedApkVersion) y las empuja por FCM. Las que ya están en la
+// última no hacen nada (checkApkUpdate corta si versionCode <= el instalado).
+router.post('/force-update-apk', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
+    tablets.forEach((t) => forceApkFlags.add(t.id));
+    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
+    const pushResult = await firebaseAdmin.sendSyncPush(tokens);
+    await audit(req, 'FORCE_APK_UPDATE', 'tablet', null,
+      `APK forzada en ${tablets.length} tablets (${pushResult.successCount} push instantáneo)`);
+    res.json({
+      ok: true,
+      count: tablets.length,
+      pushed: pushResult.successCount,
+      message: tokens.length > 0
+        ? `${tablets.length} tablets marcadas — ${pushResult.successCount} chequeando la APK ahora mismo, el resto en su próxima conexión.`
+        : `${tablets.length} tablets van a chequear la APK en su próxima conexión.`,
     });
   } catch (err) { next(err); }
 });

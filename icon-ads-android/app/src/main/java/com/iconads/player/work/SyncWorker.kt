@@ -175,7 +175,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val versionCode = apkInfo.versionCode ?: return
         val url = apkInfo.url ?: return
         if (versionCode <= BuildConfig.VERSION_CODE) return
-        if (versionCode <= prefs.getPromptedApkVersion()) return
+        // El guard de "ya intenté esta versión" se saltea si el admin forzó la
+        // actualización desde el panel (force-update-apk).
+        if (!apkInfo.force && versionCode <= prefs.getPromptedApkVersion()) return
+        if (apkInfo.force) Log.i(TAG, "[${now()} $tz] APK forzada desde el panel — re-intentando v$versionCode")
 
         Log.i(TAG, "[${now()} $tz] APK nueva disponible: ${apkInfo.versionName} (código $versionCode) — descargando")
         try {
