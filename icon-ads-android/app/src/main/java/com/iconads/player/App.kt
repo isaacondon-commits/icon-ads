@@ -1,6 +1,7 @@
 package com.iconads.player
 
 import android.app.Application
+import com.iconads.player.power.PowerController
 import com.iconads.player.work.MetricUploadWorker
 import com.iconads.player.work.SyncWorker
 
@@ -9,5 +10,6 @@ class App : Application() {
         super.onCreate()
         SyncWorker.schedule(this)
         MetricUploadWorker.schedule(this)
+        PowerController.start(this)
     }
 }

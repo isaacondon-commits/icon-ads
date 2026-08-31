@@ -7,9 +7,15 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <application
         android:name=".App"
@@ -44,6 +50,38 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
+        <!-- Control de encendido por alimentación del taxi + inactividad (#power) -->
+        <service
+            android:name=".power.PowerController"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Enciende/apaga el player de carteleria segun la alimentacion del taxi en una tablet sin operador" />
+        </service>
+
+        <!-- Resultado de la auto-actualización silenciosa (#apk-autoupdate) -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.iconads.player.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Device Owner / kiosco (#power) -->
+        <receiver
+            android:name=".receiver.AdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Push instantáneo para force-sync (#fcm) -->
         <service
             android:name=".fcm.FcmService"
@@ -61,6 +99,7 @@
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

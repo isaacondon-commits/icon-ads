@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.StatFs
 import android.util.Log
-import androidx.core.content.FileProvider
 import androidx.work.*
 import com.google.firebase.messaging.FirebaseMessaging
 import com.iconads.player.BuildConfig
@@ -13,6 +12,7 @@ import com.iconads.player.data.api.NetworkModule
 import com.iconads.player.data.model.FcmTokenRequest
 import com.iconads.player.data.model.RegisterRequest
 import com.iconads.player.data.repository.PlaylistRepository
+import com.iconads.player.update.SelfUpdateInstaller
 import com.iconads.player.util.DevicePrefs
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
@@ -155,12 +155,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         Log.i(TAG, "[${now()} $tz] Sync completado → v${syncResp.version}")
     }
 
-    // Auto-update (#apk-autoupdate) — descarga el APK publicado y dispara el
-    // instalador del sistema. No es silencioso: Android exige que alguien toque
-    // "Instalar" (y, la primera vez, habilite "instalar apps desconocidas" para
-    // esta app) — no hay forma de evitar esa confirmación sin inscribir el
-    // dispositivo como Device Owner. Se descarga/ofrece una sola vez por
-    // versión para no re-mostrar el diálogo en cada ciclo de sync.
+    // Auto-update (#apk-autoupdate) — descarga el APK publicado y lo instala
+    // vía PackageInstaller (ver SelfUpdateInstaller):
+    //   - Device Owner        -> 100% silenciosa, se aplica y reinicia sola.
+    //   - Sin Device Owner    -> puede pedir UNA confirmación la primera vez,
+    //                            después silenciosa.
+    // Se descarga/intenta una sola vez por versión para no bajar 11 MB en cada
+    // ciclo de sync; si la instalación fallara, se reintenta al publicarse una
+    // versión mayor.
     private suspend fun checkApkUpdate() {
         val token = prefs.getToken() ?: return
         val api = NetworkModule.provideDeviceApi(token)
@@ -183,14 +185,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             body.byteStream().use { input ->
                 apkFile.outputStream().use { output -> input.copyTo(output) }
             }
-            val uri = FileProvider.getUriForFile(applicationContext, "${applicationContext.packageName}.fileprovider", apkFile)
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            val launched = SelfUpdateInstaller.install(applicationContext, apkFile)
+            if (launched) {
+                prefs.setPromptedApkVersion(versionCode)
+                Log.i(TAG, "[${now()} $tz] Instalación de APK v$versionCode lanzada (silenciosa con Device Owner)")
+            } else {
+                Log.w(TAG, "[${now()} $tz] No se pudo lanzar la instalación de v$versionCode — se reintenta el próximo ciclo")
             }
-            applicationContext.startActivity(installIntent)
-            prefs.setPromptedApkVersion(versionCode)
-            Log.i(TAG, "[${now()} $tz] Instalador de APK lanzado para v$versionCode")
         } catch (e: Exception) {
             Log.e(TAG, "[${now()} $tz] Falló la descarga/instalación del APK: ${e.message}", e)
         }

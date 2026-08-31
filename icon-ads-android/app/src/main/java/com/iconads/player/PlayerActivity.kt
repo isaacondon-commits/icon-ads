@@ -1,9 +1,15 @@
 package com.iconads.player
 
+import android.annotation.SuppressLint
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioManager
+import android.telecom.TelecomManager
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -44,6 +50,8 @@ import com.iconads.player.data.model.SurveyQuestion
 import com.iconads.player.data.repository.MetricRepository
 import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.databinding.ActivityPlayerBinding
+import com.iconads.player.kiosk.KioskManager
+import com.iconads.player.power.PowerController
 import com.iconads.player.util.DevicePrefs
 import com.iconads.player.work.SyncWorker
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +77,11 @@ class PlayerActivity : AppCompatActivity() {
     private var adStartTime = 0L
     private var failCount = 0
 
+    // "Dormido": el PowerController pidió cerrar la app (auto apagado o tablet
+    // quieta 10 min). Se pausa la reproducción y se oscurece la pantalla; el
+    // bloqueo/apagado real lo hace KioskManager si la app es Device Owner.
+    private var dormant = false
+
     // Auto-detected via gravitySensorListener below — true once the tablet's
     // live orientation has settled ~180° away from its first-boot reference.
     private var sensorFlipped180 = false
@@ -86,6 +99,39 @@ class PlayerActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.i(TAG, "rotated180 cambió — aplicando")
             applyRotation()
+        }
+    }
+
+    // PowerController pide cerrar el player (sin corriente / 10 min quieta).
+    private val closeAppReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            Log.i(TAG, "CLOSE_APP recibido — entrando en modo dormido")
+            enterDormant()
+        }
+    }
+
+    // Una llamada entrante saca el player de foco. Lo recuperamos al instante,
+    // silenciamos el tono e intentamos colgar (requiere Device Owner o el
+    // permiso ANSWER_PHONE_CALLS). En modo kiosco de Device Owner la UI de
+    // llamada ni siquiera aparece porque el dialer está oculto.
+    private val phoneStateListener = object : PhoneStateListener() {
+        @Deprecated("Deprecated in Java")
+        override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+            if (state == TelephonyManager.CALL_STATE_RINGING ||
+                state == TelephonyManager.CALL_STATE_OFFHOOK
+            ) {
+                Log.i(TAG, "Llamada (state=$state) — recuperando foco del player")
+                try {
+                    (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                        .adjustStreamVolume(AudioManager.STREAM_RING, AudioManager.ADJUST_MUTE, 0)
+                } catch (_: Exception) {}
+                endCallIfPossible()
+                startActivity(
+                    Intent(this@PlayerActivity, PlayerActivity::class.java).addFlags(
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+                )
+            }
         }
     }
 
@@ -165,7 +211,11 @@ class PlayerActivity : AppCompatActivity() {
         gravitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
             ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
+        KioskManager.applyPolicies(this)
+        KioskManager.enterPlaying(this)
+        PowerController.start(this)
         setupWindow()
+        setupShowWhenLocked()
         applyRotation()
         setupExoPlayer()
         showOnboardingStatus("Conectando con el servidor...")
@@ -187,6 +237,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         SyncWorker.schedule(this)
         startLocationService()
+        requestPhonePermissionsIfNeeded()
         loadAndPlay()
         // Poll for admin messages every 5 min (#4)
         lifecycleScope.launch {
@@ -219,20 +270,45 @@ class PlayerActivity : AppCompatActivity() {
             IntentFilter(SyncWorker.ACTION_ROTATION_CHANGED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        ContextCompat.registerReceiver(
+            this,
+            closeAppReceiver,
+            IntentFilter(PowerController.ACTION_CLOSE_APP),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         gravitySensor?.let { sensorManager.registerListener(gravityListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        try {
+            (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
+                .listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo escuchar el estado de llamada: ${e.message}")
+        }
     }
 
     override fun onStop() {
         super.onStop()
         unregisterReceiver(playlistUpdatedReceiver)
         unregisterReceiver(rotationChangedReceiver)
+        unregisterReceiver(closeAppReceiver)
         sensorManager.unregisterListener(gravityListener)
+        try {
+            (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
+                .listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+        } catch (_: Exception) {}
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // El PowerController nos trajo al frente (llegó corriente / hubo
+        // movimiento). Salir del modo dormido y reanudar la reproducción.
+        exitDormant()
     }
 
     override fun onResume() {
         super.onResume()
         hideSystemUI()
-        if (ads.isNotEmpty()) exoPlayer.play()
+        if (!dormant && ads.isNotEmpty()) exoPlayer.play()
     }
 
     override fun onPause() {
@@ -270,6 +346,66 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         try { startLockTask() } catch (e: Exception) { Log.w(TAG, "Lock task no disponible") }
+    }
+
+    // Mostrar el player por encima del bloqueo y encender la pantalla cuando
+    // el PowerController lo trae al frente (llega la corriente del taxi).
+    private fun setupShowWhenLocked() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+            (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager)
+                .requestDismissKeyguard(this, null)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
+    }
+
+    private fun enterDormant() {
+        if (dormant) return
+        dormant = true
+        Log.i(TAG, "Modo dormido: pausando reproducción y oscureciendo pantalla")
+        exoPlayer.pause()
+        imageHandler.removeCallbacksAndMessages(null)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.attributes = window.attributes.apply { screenBrightness = 0.004f }
+        try { stopLockTask() } catch (_: Exception) {}
+    }
+
+    private fun exitDormant() {
+        if (!dormant) {
+            // Igual reafirmamos foco/pantalla por si venimos de una llamada.
+            setupShowWhenLocked()
+            return
+        }
+        dormant = false
+        Log.i(TAG, "Saliendo de modo dormido: reanudando reproducción")
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.attributes = window.attributes.apply {
+            screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
+        setupShowWhenLocked()
+        KioskManager.enterPlaying(this)
+        try { startLockTask() } catch (_: Exception) {}
+        if (ads.isEmpty()) loadAndPlay() else exoPlayer.play()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun endCallIfPossible() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ANSWER_PHONE_CALLS)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
+        try {
+            (getSystemService(Context.TELECOM_SERVICE) as TelecomManager).endCall()
+        } catch (e: Exception) {
+            Log.w(TAG, "endCall falló: ${e.message}")
+        }
     }
 
     private fun hideSystemUI() {
@@ -525,6 +661,19 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // En Device Owner estos permisos ya vienen autoconcedidos (ver KioskManager).
+    // Este pedido cubre el caso sin Device Owner: alguien tiene que tocar el
+    // diálogo una vez para que el silenciado/colgado de llamadas funcione.
+    private fun requestPhonePermissionsIfNeeded() {
+        val needed = arrayOf(
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.ANSWER_PHONE_CALLS,
+        ).filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+        if (needed.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), PHONE_PERM_REQ)
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == LOCATION_PERM_REQ && grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
@@ -628,6 +777,7 @@ class PlayerActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PlayerActivity"
         private const val LOCATION_PERM_REQ = 101
+        private const val PHONE_PERM_REQ = 102
         // Coseno del ángulo entre la gravedad actual y la de referencia.
         // 0.85 ≈ tolera hasta ~32° de inclinación antes de considerar la
         // lectura ambigua.
