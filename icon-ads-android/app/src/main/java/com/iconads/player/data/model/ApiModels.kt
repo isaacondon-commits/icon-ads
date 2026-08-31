@@ -17,6 +17,9 @@ data class SyncResponse(
     val packageUrl: String? = null,
     val message: String? = null,
     val rotated180: Boolean = false,
+    // El admin tocó "Forzar actualización" en el panel: encolar SyncWorker ya
+    // (que corre checkApkUpdate), sin esperar el push FCM ni el ciclo horario.
+    val forceApkCheck: Boolean = false,
 )
 
 data class HeartbeatInfo(

@@ -636,6 +636,10 @@ class PlayerActivity : AppCompatActivity() {
             val api = NetworkModule.provideDeviceApi(token)
             val syncResp = withContext(Dispatchers.IO) { api.sync(prefs.getPlaylistVersion(), battery, temp, BuildConfig.VERSION_NAME) }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
+            if (syncResp.forceApkCheck) {
+                Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")
+                SyncWorker.scheduleImmediate(this@PlayerActivity)
+            }
             if (!syncResp.needsUpdate) return
 
             val packageUrl = syncResp.packageUrl ?: "api/device/package/${syncResp.version}"
