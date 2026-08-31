@@ -27,6 +27,7 @@ const linkGroups = [
     id: 'tablets', label: 'Tablets', links: [
       { href: '/tablets', label: 'Tablets', icon: '⊡' },
       { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },
+      { href: '/apk', label: 'APK Android', icon: '⬇' },
       { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },
     ],
   },

@@ -281,8 +281,10 @@ export const api = {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error ?? `HTTP ${res.status}`);
     }
-    return res.json() as Promise<{ versionCode: number; versionName: string; url: string }>;
+    return res.json() as Promise<{ versionCode: number; versionName: string; url: string; uploadedAt: string }>;
   },
+
+  getApkStatus: () => request<ApkStatus>('/api/admin/apk'),
 
   // Occupancy stats (#8)
   getOccupancy: () => request<OccupancyEntry[]>('/api/stats/occupancy'),
@@ -443,6 +445,24 @@ export const api = {
   getTabletStandby: (id: number, date?: string) =>
     request<TabletStandby>(`/api/tablets/${id}/standby${date ? `?date=${date}` : ''}`),
 };
+
+export interface ApkVersionGroup {
+  version: string;
+  count: number;
+  upToDate: boolean;
+  tablets: { id: number; name: string; lastSync: string | null }[];
+}
+export interface ApkStatus {
+  published: {
+    versionCode: number | null;
+    versionName: string | null;
+    url: string | null;
+    uploadedAt: string | null;
+  };
+  totalTablets: number;
+  upToDate: number;
+  versions: ApkVersionGroup[];
+}
 
 export interface StandbySegment {
   start: string; end: string; minutes: number; lat: number; lng: number;

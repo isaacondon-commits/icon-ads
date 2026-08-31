@@ -417,18 +417,61 @@ router.post('/apk', requireAuth, apkUpload.single('file'), async (req, res, next
     const filename = `apk/iconads-v${versionCode}.apk`;
     const url = await supabaseStorage.uploadFile(filename, req.file.buffer, 'application/vnd.android.package-archive');
 
+    const uploadedAt = new Date().toISOString();
     await Promise.all([
       prisma.systemConfig.upsert({ where: { key: 'apk_version_code' }, update: { value: String(versionCode) }, create: { key: 'apk_version_code', value: String(versionCode) } }),
       prisma.systemConfig.upsert({ where: { key: 'apk_version_name' }, update: { value: versionName }, create: { key: 'apk_version_name', value: versionName } }),
       prisma.systemConfig.upsert({ where: { key: 'apk_url' }, update: { value: url }, create: { key: 'apk_url', value: url } }),
+      prisma.systemConfig.upsert({ where: { key: 'apk_uploaded_at' }, update: { value: uploadedAt }, create: { key: 'apk_uploaded_at', value: uploadedAt } }),
     ]);
 
     await audit(req, 'UPLOAD_APK', 'system', null, `APK v${versionCode} (${versionName})`);
-    res.status(201).json({ versionCode, versionName, url });
+    res.status(201).json({ versionCode, versionName, url, uploadedAt });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);
   }
+});
+
+// GET /api/admin/apk — versión publicada + estado de despliegue en la flota.
+// El breakdown por appVersion sale de lo que cada tablet reporta en /sync.
+router.get('/apk', requireAuth, async (req, res, next) => {
+  try {
+    const [configs, tablets] = await Promise.all([
+      prisma.systemConfig.findMany({
+        where: { key: { in: ['apk_version_code', 'apk_version_name', 'apk_url', 'apk_uploaded_at'] } },
+      }),
+      prisma.tablet.findMany({ select: { id: true, name: true, appVersion: true, lastSync: true } }),
+    ]);
+    const map = Object.fromEntries(configs.map((c) => [c.key, c.value]));
+    const publishedName = map.apk_version_name ?? null;
+
+    const byVersion = {};
+    for (const t of tablets) {
+      const v = t.appVersion || 'desconocida';
+      (byVersion[v] ||= []).push({ id: t.id, name: t.name, lastSync: t.lastSync });
+    }
+    const versions = Object.entries(byVersion)
+      .map(([version, list]) => ({
+        version,
+        count: list.length,
+        upToDate: publishedName != null && version === publishedName,
+        tablets: list.sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({
+      published: {
+        versionCode: map.apk_version_code ? Number(map.apk_version_code) : null,
+        versionName: publishedName,
+        url: map.apk_url ?? null,
+        uploadedAt: map.apk_uploaded_at ?? null,
+      },
+      totalTablets: tablets.length,
+      upToDate: versions.filter((v) => v.upToDate).reduce((n, v) => n + v.count, 0),
+      versions,
+    });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;
