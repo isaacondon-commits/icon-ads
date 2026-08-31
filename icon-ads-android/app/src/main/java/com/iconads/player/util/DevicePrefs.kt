@@ -69,6 +69,10 @@ class DevicePrefs(context: Context) {
     fun getDeviceAdminAsked(): Boolean = prefs.getBoolean(KEY_DEVICE_ADMIN_ASKED, false)
     fun setDeviceAdminAsked(value: Boolean) = prefs.edit().putBoolean(KEY_DEVICE_ADMIN_ASKED, value).apply()
 
+    // Ya se pidió el rol de filtrado de llamadas (para que no suene el tono).
+    fun getCallRoleAsked(): Boolean = prefs.getBoolean(KEY_CALL_ROLE_ASKED, false)
+    fun setCallRoleAsked(value: Boolean) = prefs.edit().putBoolean(KEY_CALL_ROLE_ASKED, value).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -82,6 +86,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_PROMPTED_APK_VERSION = "prompted_apk_version"
         private const val KEY_PHONE_PERMS_ASKED = "phone_perms_asked"
         private const val KEY_DEVICE_ADMIN_ASKED = "device_admin_asked"
+        private const val KEY_CALL_ROLE_ASKED = "call_role_asked"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

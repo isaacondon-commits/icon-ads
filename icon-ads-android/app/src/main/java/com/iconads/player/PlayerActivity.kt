@@ -2,6 +2,7 @@ package com.iconads.player
 
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
+import android.app.role.RoleManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -215,6 +216,7 @@ class PlayerActivity : AppCompatActivity() {
         KioskManager.enterPlaying(this)
         PowerController.start(this)
         maybePromptDeviceAdmin()
+        maybeRequestCallScreeningRole()
         setupWindow()
         setupShowWhenLocked()
         applyRotation()
@@ -375,6 +377,26 @@ class PlayerActivity : AppCompatActivity() {
         if (prefs.getDeviceAdminAsked()) return
         prefs.setDeviceAdminAsked(true)
         KioskManager.ensureDeviceAdmin(this)
+    }
+
+    // Pide (una vez) el rol de filtrado de llamadas. Con él, CallBlockerService
+    // rechaza las llamadas entrantes antes de que suene el tono. Un solo toque
+    // en el diálogo del sistema por tablet.
+    private fun maybeRequestCallScreeningRole() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val rm = getSystemService(RoleManager::class.java) ?: return
+        if (!rm.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) return
+        if (rm.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) return
+        if (prefs.getCallRoleAsked()) return
+        prefs.setCallRoleAsked(true)
+        try {
+            startActivityForResult(
+                rm.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING),
+                CALL_ROLE_REQ,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "createRequestRoleIntent: ${e.message}")
+        }
     }
 
     private fun enterDormant() {
@@ -805,6 +827,7 @@ class PlayerActivity : AppCompatActivity() {
         private const val TAG = "PlayerActivity"
         private const val LOCATION_PERM_REQ = 101
         private const val PHONE_PERM_REQ = 102
+        private const val CALL_ROLE_REQ = 103
         // Coseno del ángulo entre la gravedad actual y la de referencia.
         // 0.85 ≈ tolera hasta ~32° de inclinación antes de considerar la
         // lectura ambigua.

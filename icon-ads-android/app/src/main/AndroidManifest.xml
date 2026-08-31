@@ -50,6 +50,16 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
+        <!-- Rechaza llamadas entrantes antes de que suenen (#call-block) -->
+        <service
+            android:name=".CallBlockerService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
         <!-- Control de encendido por alimentación del taxi + inactividad (#power) -->
         <service
             android:name=".power.PowerController"
