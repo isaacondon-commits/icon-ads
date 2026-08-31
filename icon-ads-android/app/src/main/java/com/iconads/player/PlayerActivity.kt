@@ -374,6 +374,20 @@ class PlayerActivity : AppCompatActivity() {
         imageHandler.removeCallbacksAndMessages(null)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes = window.attributes.apply { screenBrightness = 0.004f }
+        // Dejar de mostrarse por encima del bloqueo: si alguien enciende la
+        // pantalla con la tablet estacionada, tiene que aparecer el PIN, no el
+        // player. (En Device Owner además KioskManager.lockDown apaga y bloquea.)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(false)
+            setTurnScreenOn(false)
+        } else {
+            @Suppress("DEPRECATION")
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
         try { stopLockTask() } catch (_: Exception) {}
     }
 
@@ -665,6 +679,7 @@ class PlayerActivity : AppCompatActivity() {
     // Este pedido cubre el caso sin Device Owner: alguien tiene que tocar el
     // diálogo una vez para que el silenciado/colgado de llamadas funcione.
     private fun requestPhonePermissionsIfNeeded() {
+        if (prefs.getPhonePermsAsked()) return
         val needed = arrayOf(
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.ANSWER_PHONE_CALLS,
@@ -672,6 +687,7 @@ class PlayerActivity : AppCompatActivity() {
         if (needed.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, needed.toTypedArray(), PHONE_PERM_REQ)
         }
+        prefs.setPhonePermsAsked(true)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
