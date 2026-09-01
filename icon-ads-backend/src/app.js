@@ -154,14 +154,21 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// Redirección pública y estable al APK publicado — la usa el QR de provisioning
-// (Device Owner). URL corta = QR más chico y escaneable; y no hay que regenerar
-// el QR al publicar una versión nueva.
+// APK público y estable para el QR de provisioning (Device Owner). Sirve los
+// bytes DIRECTO (proxy desde el storage) — NO redirect: el downloader de
+// provisioning de Android no sigue redirecciones. URL corta y fija: el QR no
+// hay que regenerarlo al publicar versiones nuevas.
 app.get('/p/apk', async (req, res, next) => {
   try {
     const row = await prisma.systemConfig.findUnique({ where: { key: 'apk_url' } });
     if (!row?.value) return res.status(404).send('No hay APK publicada');
-    res.redirect(302, row.value);
+    const upstream = await fetch(row.value);
+    if (!upstream.ok || !upstream.body) return res.status(502).send('No se pudo obtener el APK');
+    res.set('Content-Type', 'application/vnd.android.package-archive');
+    res.set('Content-Disposition', 'attachment; filename="iconads.apk"');
+    const len = upstream.headers.get('content-length');
+    if (len) res.set('Content-Length', len);
+    require('stream').Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) { next(err); }
 });
 
