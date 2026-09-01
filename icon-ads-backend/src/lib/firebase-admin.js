@@ -17,18 +17,23 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 const isConfigured = app !== null;
 
 // Data-only push (no `notification` field) so it's delivered silently to
-// FcmService.onMessageReceived even while the app is in the foreground/kiosk mode,
-// without showing a system notification. `data` values must be strings.
+// FcmService.onMessageReceived even while la app está en primer plano / kiosco,
+// sin notificación del sistema. `data` values must be strings.
+//
+// IMPORTANTE: NUNCA usar esto en el camino crítico de una respuesta HTTP con
+// await. FCM desde Render a veces tarda 5-30 s (o falla), y eso hacía que
+// bloquear/prender/brillo dieran "failed to fetch". Los endpoints escriben en
+// la DB y responden ya; la tablet agarra el cambio en su próximo sync igual.
+// Este push sólo lo acelera. Igual le ponemos un timeout duro.
+const PUSH_TIMEOUT_MS = 8000;
 async function sendDataPush(tokens, data) {
   if (!app || tokens.length === 0) return { successCount: 0, failureCount: 0 };
   try {
-    return await getMessaging(app).sendEachForMulticast({
-      tokens,
-      data,
-      android: { priority: 'high' },
-    });
+    const send = getMessaging(app).sendEachForMulticast({ tokens, data, android: { priority: 'high' } });
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), PUSH_TIMEOUT_MS));
+    return await Promise.race([send, timeout]);
   } catch (err) {
-    console.warn('[firebase-admin] sendDataPush failed:', err.message);
+    console.warn('[firebase-admin] sendDataPush:', err.message);
     return { successCount: 0, failureCount: tokens.length };
   }
 }

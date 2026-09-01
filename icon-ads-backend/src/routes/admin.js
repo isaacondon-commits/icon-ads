@@ -112,11 +112,10 @@ router.post('/tablet/:id/block', apiKeyOrAuth, async (req, res, next) => {
     const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true, fcmToken: true } });
     if (!tablet) return res.status(404).json({ error: 'No existe' });
     await prisma.tablet.update({ where: { id }, data: { manualStatus: on ? 'bloqueada' : 'activa' } });
-    // Push para que la tablet agarre el cambio en su próximo ciclo enseguida.
-    if (tablet.fcmToken) {
-      try { await firebaseAdmin.sendSyncPush([tablet.fcmToken]); } catch { /* best-effort */ }
-    }
-    await audit(req, on ? 'TABLET_BLOCK' : 'TABLET_UNBLOCK', 'tablet', id, tablet.name);
+    // Push best-effort en background — NO se espera (FCM desde Render puede tardar
+    // y dar "failed to fetch"). La tablet agarra el cambio en su próximo sync.
+    if (tablet.fcmToken) firebaseAdmin.sendSyncPush([tablet.fcmToken]).catch(() => {});
+    audit(req, on ? 'TABLET_BLOCK' : 'TABLET_UNBLOCK', 'tablet', id, tablet.name).catch(() => {});
     res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa',
       message: on ? `"${tablet.name}" bloqueada.` : `"${tablet.name}" desbloqueada.` });
   } catch (err) { next(err); }
@@ -127,16 +126,17 @@ router.post('/tablet/:id/block', apiKeyOrAuth, async (req, res, next) => {
 router.post('/block-all', apiKeyOrAuth, async (req, res, next) => {
   try {
     const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1;
-    await prisma.tablet.updateMany({ data: { manualStatus: on ? 'bloqueada' : 'activa' } });
-    const tablets = await prisma.tablet.findMany({ select: { fcmToken: true } });
-    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
-    let delivered = 0;
-    try { const r = await firebaseAdmin.sendSyncPush(tokens); delivered = r?.successCount || 0; } catch { /* best-effort */ }
-    await audit(req, on ? 'FLEET_BLOCK' : 'FLEET_UNBLOCK', 'system', null, `${tablets.length} tablets`);
-    res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa', count: tablets.length, delivered,
+    const result = await prisma.tablet.updateMany({ data: { manualStatus: on ? 'bloqueada' : 'activa' } });
+    const count = result.count;
+    // Push best-effort en background — no se espera.
+    prisma.tablet.findMany({ select: { fcmToken: true } })
+      .then((ts) => firebaseAdmin.sendSyncPush(ts.map((t) => t.fcmToken).filter(Boolean)))
+      .catch(() => {});
+    audit(req, on ? 'FLEET_BLOCK' : 'FLEET_UNBLOCK', 'system', null, `${count} tablets`).catch(() => {});
+    res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa', count,
       message: on
-        ? `${tablets.length} tablet(s) bloqueadas — dejan de mostrar publicidad (${delivered} al instante).`
-        : `${tablets.length} tablet(s) desbloqueadas — vuelven a mostrar publicidad (${delivered} al instante).` });
+        ? `${count} tablet(s) bloqueadas — dejan de mostrar publicidad. Toma efecto en el próximo sync (≤10 s en modo test).`
+        : `${count} tablet(s) desbloqueadas — vuelven a mostrar publicidad. Toma efecto en el próximo sync (≤10 s en modo test).` });
   } catch (err) { next(err); }
 });
 
@@ -151,11 +151,8 @@ router.post('/tablet/:id/wake', apiKeyOrAuth, async (req, res, next) => {
     if (!tablet.fcmToken) {
       return res.status(409).json({ error: `"${tablet.name}" no tiene token de notificaciones — no se puede despertar a distancia todavía.` });
     }
-    const r = await firebaseAdmin.sendWakePush([tablet.fcmToken]);
-    await audit(req, 'TABLET_WAKE', 'tablet', id, tablet.name);
-    if (!r.successCount) {
-      return res.status(502).json({ error: `No se pudo entregar la orden a "${tablet.name}" (puede estar sin señal). Reintentá en un momento.` });
-    }
+    firebaseAdmin.sendWakePush([tablet.fcmToken]).catch(() => {});
+    audit(req, 'TABLET_WAKE', 'tablet', id, tablet.name).catch(() => {});
     res.json({ ok: true, message: `Orden de encendido enviada a "${tablet.name}". Si tiene señal, prende en unos segundos.` });
   } catch (err) { next(err); }
 });
@@ -165,10 +162,10 @@ router.post('/wake-all', apiKeyOrAuth, async (req, res, next) => {
   try {
     const tablets = await prisma.tablet.findMany({ select: { fcmToken: true } });
     const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
-    const r = await firebaseAdmin.sendWakePush(tokens);
-    await audit(req, 'FLEET_WAKE', 'system', null, `${tokens.length} tablets`);
-    res.json({ ok: true, sent: tokens.length, delivered: r.successCount,
-      message: `Orden de encendido enviada a ${tokens.length} tablet(s) — ${r.successCount} al instante.` });
+    firebaseAdmin.sendWakePush(tokens).catch(() => {});
+    audit(req, 'FLEET_WAKE', 'system', null, `${tokens.length} tablets`).catch(() => {});
+    res.json({ ok: true, sent: tokens.length,
+      message: `Orden de encendido enviada a ${tokens.length} tablet(s). Las que tengan señal prenden en unos segundos.` });
   } catch (err) { next(err); }
 });
 
@@ -194,12 +191,11 @@ router.post('/playlist/:id/rebuild', apiKeyOrAuth, async (req, res, next) => {
     } catch (e) { console.warn('[rebuild] limpiando cache:', e.message); }
     const tablets = await prisma.tablet.findMany({ where: { playlistId: id }, select: { id: true, fcmToken: true } });
     tablets.forEach((t) => forceSyncFlags.add(t.id));
-    let pushed = 0;
-    try { const r = await firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)); pushed = r?.successCount || 0; } catch { /* best-effort */ }
-    await audit(req, 'PLAYLIST_REBUILD', 'playlist', id, `${pl.name} → v${updated.version}`);
+    firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)).catch(() => {});
+    audit(req, 'PLAYLIST_REBUILD', 'playlist', id, `${pl.name} → v${updated.version}`).catch(() => {});
     res.json({
-      ok: true, version: updated.version, tablets: tablets.length, pushed,
-      message: `"${pl.name}" v${updated.version} — ${tablets.length} tablet(s) van a re-bajar el paquete completo (${pushed} al instante).`,
+      ok: true, version: updated.version, tablets: tablets.length,
+      message: `"${pl.name}" v${updated.version} — ${tablets.length} tablet(s) van a re-bajar el paquete completo en su próximo sync.`,
     });
   } catch (err) { next(err); }
 });
@@ -213,16 +209,13 @@ router.post('/tablet/:id/resync', apiKeyOrAuth, async (req, res, next) => {
     const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true, playlistId: true, fcmToken: true } });
     if (!tablet) return res.status(404).json({ error: 'No existe' });
     forceSyncFlags.add(id);
-    let pushed = 0;
-    if (tablet.fcmToken) {
-      try { const r = await firebaseAdmin.sendSyncPush([tablet.fcmToken]); pushed = r?.successCount || 0; } catch { /* best-effort */ }
-    }
-    await audit(req, 'TABLET_RESYNC', 'tablet', id, `${tablet.name} — resync forzado`);
+    if (tablet.fcmToken) firebaseAdmin.sendSyncPush([tablet.fcmToken]).catch(() => {});
+    audit(req, 'TABLET_RESYNC', 'tablet', id, `${tablet.name} — resync forzado`).catch(() => {});
     res.json({
       ok: true,
       hasPlaylist: !!tablet.playlistId,
       message: tablet.playlistId
-        ? `"${tablet.name}" va a re-descargar su playlist en el próximo sync${pushed ? ' (empujada por FCM)' : ''}.`
+        ? `"${tablet.name}" va a re-descargar su playlist en el próximo sync.`
         : `"${tablet.name}" NO tiene playlist asignada — asignale una primero.`,
     });
   } catch (err) { next(err); }
@@ -736,13 +729,12 @@ router.post('/test-mode', apiKeyOrAuth, async (req, res, next) => {
     });
     const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
     tablets.forEach((t) => forceSyncFlags.add(t.id));
-    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
-    const pushResult = await firebaseAdmin.sendSyncPush(tokens);
-    await audit(req, 'SET_TEST_MODE', 'system', null, `kiosk_test_mode=${on ? 'ON' : 'OFF'}`);
+    firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)).catch(() => {});
+    audit(req, 'SET_TEST_MODE', 'system', null, `kiosk_test_mode=${on ? 'ON' : 'OFF'}`).catch(() => {});
     res.json({
       ok: true,
       testMode: on,
-      message: `Modo test ${on ? 'ACTIVADO' : 'DESACTIVADO'} — ${tablets.length} tablets marcadas (${pushResult.successCount} al instante).`,
+      message: `Modo test ${on ? 'ACTIVADO' : 'DESACTIVADO'} — ${tablets.length} tablets. Toma efecto en el próximo sync (≤10 s en modo test).`,
     });
   } catch (err) { next(err); }
 });
@@ -779,9 +771,10 @@ router.post('/brightness', apiKeyOrAuth, async (req, res, next) => {
     });
     const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
     tablets.forEach((t) => forceSyncFlags.add(t.id));
-    const pushResult = await firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean));
-    await audit(req, 'SET_BRIGHTNESS', 'system', null, `screen_brightness=${value}`);
-    res.json({ ok: true, value, message: `Brillo = ${value} — ${tablets.length} tablets marcadas (${pushResult.successCount} al instante).` });
+    firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)).catch(() => {});
+    audit(req, 'SET_BRIGHTNESS', 'system', null, `screen_brightness=${value}`).catch(() => {});
+    const label = value === 'auto' ? 'automático (horario solar)' : `${Math.round((Number(value) / 255) * 100)}% fijo`;
+    res.json({ ok: true, value, message: `Brillo → ${label}. Toma efecto en el próximo sync (≤10 s en modo test).` });
   } catch (err) { next(err); }
 });
 
@@ -793,17 +786,12 @@ router.post('/force-update-apk', apiKeyOrAuth, async (req, res, next) => {
   try {
     const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
     tablets.forEach((t) => forceApkFlags.add(t.id));
-    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
-    const pushResult = await firebaseAdmin.sendSyncPush(tokens);
-    await audit(req, 'FORCE_APK_UPDATE', 'tablet', null,
-      `APK forzada en ${tablets.length} tablets (${pushResult.successCount} push instantáneo)`);
+    firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)).catch(() => {});
+    audit(req, 'FORCE_APK_UPDATE', 'tablet', null, `APK forzada en ${tablets.length} tablets`).catch(() => {});
     res.json({
       ok: true,
       count: tablets.length,
-      pushed: pushResult.successCount,
-      message: tokens.length > 0
-        ? `${tablets.length} tablets marcadas — ${pushResult.successCount} chequeando la APK ahora mismo, el resto en su próxima conexión.`
-        : `${tablets.length} tablets van a chequear la APK en su próxima conexión.`,
+      message: `${tablets.length} tablets marcadas — van a chequear la APK en su próximo sync (≤10 s en modo test), el resto en su próxima conexión.`,
     });
   } catch (err) { next(err); }
 });

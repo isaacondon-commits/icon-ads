@@ -474,13 +474,11 @@ router.post('/force-sync-all', requireAdmin, async (req, res, next) => {
   try {
     const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
     tablets.forEach((t) => forceSyncFlags.add(t.id));
-    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
-    const pushResult = await firebaseAdmin.sendSyncPush(tokens);
-    await audit(req, 'FORCE_SYNC_ALL', 'tablet', null, `Forced sync on ${tablets.length} tablets (${pushResult.successCount} pushed instantly)`);
-    const message = tokens.length > 0
-      ? `${tablets.length} tablets marcadas — ${pushResult.successCount} sincronizando ahora mismo, el resto en su próxima conexión.`
-      : `${tablets.length} tablets re-sincronizarán en su próxima conexión.`;
-    res.json({ ok: true, count: tablets.length, pushed: pushResult.successCount, message });
+    // Push best-effort en background — no se espera (FCM lento desde Render daba
+    // "failed to fetch"). El flag se aplica en el próximo sync igual.
+    firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)).catch(() => {});
+    audit(req, 'FORCE_SYNC_ALL', 'tablet', null, `Forced sync on ${tablets.length} tablets`).catch(() => {});
+    res.json({ ok: true, count: tablets.length, message: `${tablets.length} tablets marcadas — sincronizan en su próximo ciclo (≤10 s en modo test).` });
   } catch (err) {
     next(err);
   }
@@ -493,24 +491,16 @@ router.post('/:id/force-sync', requireAdmin, async (req, res, next) => {
     const tablet = await prisma.tablet.findUnique({ where: { id } });
     if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
     forceSyncFlags.add(id);
-    // El push FCM es best-effort: si falla (token viejo, FCM caído) NO debe
-    // romper el force-sync — la tablet igual lo agarra en su próximo ciclo.
-    let pushed = 0;
-    try {
-      if (tablet.fcmToken) {
-        const r = await firebaseAdmin.sendSyncPush([tablet.fcmToken]);
-        pushed = r.successCount || 0;
-      }
-    } catch (e) {
-      console.warn(`[force-sync] push falló tablet=${id}: ${e.message}`);
-    }
-    audit(req, 'FORCE_SYNC', 'tablet', id, `Forced sync on "${tablet.name}"${pushed > 0 ? ' (push)' : ''}`).catch(() => {});
+    // Push FCM best-effort en background — no se espera (FCM lento desde Render
+    // daba "failed to fetch"). La tablet lo agarra en su próximo ciclo igual.
+    if (tablet.fcmToken) firebaseAdmin.sendSyncPush([tablet.fcmToken]).catch(() => {});
+    audit(req, 'FORCE_SYNC', 'tablet', id, `Forced sync on "${tablet.name}"`).catch(() => {});
     const noPlaylist = !tablet.playlistId;
     res.json({
       ok: true,
       message: noPlaylist
         ? 'Marcada, pero esta tablet NO tiene playlist asignada — no va a mostrar nada hasta que le asignes una.'
-        : pushed > 0 ? 'Sincronizando ahora mismo.' : 'Marcada — sincroniza en su próxima conexión (≤10 s en modo test).',
+        : 'Marcada — sincroniza en su próximo ciclo (≤10 s en modo test).',
     });
   } catch (err) {
     next(err);
