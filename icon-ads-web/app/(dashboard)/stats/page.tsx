@@ -133,7 +133,7 @@ export default function StatsPage() {
           <Kpi label="Cobertura de flota (30d)"
             value={avgCoverage == null ? '—' : `${avgCoverage}%`}
             good={avgCoverage != null && avgCoverage >= 85}
-            tip={<>Promedio de % de días del último mes en que cada tablet estuvo activa (sincronizó). <b>Fuente:</b> <code>sync_logs</code>, endpoint <code>/api/stats/sla</code>. Es el proxy de "disponibilidad" del inventario.</>} />
+            tip={<>Promedio de % de días del último mes en que cada tablet estuvo activa (sincronizó). <b>Fuente:</b> <code>sync_logs</code>, endpoint <code>/api/stats/sla</code>. Es el proxy de disponibilidad del inventario.</>} />
         </div>
 
         {/* Sparkline de impresiones diarias */}
