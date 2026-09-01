@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Playlist, Ad, PlaylistVersion, BASE } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RefreshButton from '@/components/RefreshButton';
+import { useRole } from '@/lib/roles';
 
 const PAGE_SIZE = 10;
 
@@ -33,6 +35,10 @@ export default function PlaylistsPage() {
     Promise.all([api.getPlaylists(), api.getAds()])
       .then(([p, a]) => { setPlaylists(p); setAds(a.filter(ad => ad.active && ad.approvalStatus === 'approved')); })
       .finally(() => setLoading(false));
+
+  const { canCreateContent } = useRole();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
 
   useEffect(() => { load(); }, []);
 
@@ -123,9 +129,14 @@ export default function PlaylistsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Playlists</h1>
-        <button onClick={() => setShowCreate(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nueva playlist
-        </button>
+        <div className="flex items-center gap-2">
+          <RefreshButton onClick={refresh} loading={refreshing} />
+          {canCreateContent && (
+            <button onClick={() => setShowCreate(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              + Nueva playlist
+            </button>
+          )}
+        </div>
       </div>
 
       {deleteError && (

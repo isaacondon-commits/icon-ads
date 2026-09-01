@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { api, Campaign, Client, CampaignTemplate, Favorite } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RefreshButton from '@/components/RefreshButton';
+import { useRole } from '@/lib/roles';
 
 const PAGE_SIZE = 10;
 const DEFAULT_CPM = 5;
@@ -91,6 +93,10 @@ export default function CampaignsPage() {
     if (favsRes.status === 'fulfilled') setFavorites(favsRes.value);
     setLoading(false);
   };
+
+  const { canCreateContent } = useRole();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount, not a compiler target
   useEffect(() => { load(); }, []);
@@ -267,6 +273,7 @@ export default function CampaignsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Campañas</h1>
         <div className="flex items-center gap-2">
+          <RefreshButton onClick={refresh} loading={refreshing} />
           {/* #34 — view toggle */}
           <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
             {(['table', 'cards'] as const).map((m) => (
@@ -287,9 +294,11 @@ export default function CampaignsPage() {
           >
             {archivingExpired ? 'Archivando...' : '📁 Archivar vencidas'}
           </button>
-          <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-            + Nueva campaña
-          </button>
+          {canCreateContent && (
+            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              + Nueva campaña
+            </button>
+          )}
         </div>
       </div>
 

@@ -168,6 +168,21 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
             {entry.playlist?.name ?? <span style={{ color: 'var(--text-muted)' }}>Sin asignar</span>}
           </p>
         </div>
+
+        {/* Salud del hardware */}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pt-1 border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-xs)' }}>
+          {entry.batteryLevel != null && (
+            <span className={entry.batteryLevel <= 20 ? 'text-red-500 font-medium' : ''}>🔋 {entry.batteryLevel}%</span>
+          )}
+          {entry.brightness != null && (
+            <span className={entry.brightnessAuto === false ? 'text-amber-500 font-medium' : ''}
+              title={entry.brightnessAuto === false ? 'Brillo en manual — debería estar en automático' : 'Brillo automático'}>
+              ☀ {entry.brightness}% {entry.brightnessAuto === false ? '(manual)' : entry.brightnessAuto ? '(auto)' : ''}
+            </span>
+          )}
+          {entry.appVersion && <span className="font-mono">v{entry.appVersion}</span>}
+          {entry.serial && <span className="font-mono" title="Nº de serie del hardware">SN {entry.serial}</span>}
+        </div>
       </div>
     </Link>
   );

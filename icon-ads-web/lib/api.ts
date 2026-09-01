@@ -573,6 +573,11 @@ export interface TabletMonitorEntry {
   id: number; name: string; deviceId: string; zone: string | null; timezone: string | null;
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
   playlist: { id: number; name: string } | null; todayPlays: number;
+  batteryLevel: number | null;
+  brightness: number | null;
+  brightnessAuto: boolean | null;
+  serial: string | null;
+  appVersion: string | null;
 }
 export interface StorageStats {
   totalBytes: number; totalMB: number; fileCount: number; adCount: number;

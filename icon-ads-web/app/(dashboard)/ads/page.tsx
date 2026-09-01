@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Ad, Campaign, BASE, StorageStats } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RefreshButton from '@/components/RefreshButton';
+import { useRole } from '@/lib/roles';
 
 const MAX_SIZE_MB = 100;
 const mediaUrl = (fileUrl: string) => fileUrl.startsWith('http') ? fileUrl : `${BASE}${fileUrl}`;
@@ -94,6 +96,10 @@ export default function AdsPage() {
     Promise.all([api.getAds(), api.getCampaigns(), api.getAdTags()])
       .then(([a, c, t]) => { setAds(a); setCampaigns(c); setAllTags(t); })
       .finally(() => setLoading(false));
+
+  const { canCreateContent } = useRole();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
 
   useEffect(() => { load(); }, []);
   useEffect(() => { api.getStorageStats().then(setStorage).catch(() => {}); }, [ads.length]);
@@ -259,9 +265,14 @@ export default function AdsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Anuncios</h1>
-        <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Subir anuncio
-        </button>
+        <div className="flex items-center gap-2">
+          <RefreshButton onClick={refresh} loading={refreshing} />
+          {canCreateContent && (
+            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              + Subir anuncio
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Estados como pestañas */}

@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, Tablet, Playlist } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RefreshButton from '@/components/RefreshButton';
 import { useToast } from '@/lib/toast-context';
+import { useRole } from '@/lib/roles';
 
 const PAGE_SIZE = 10;
 type StatusFilter = 'all' | 'online' | 'offline' | 'no-playlist';
@@ -36,10 +38,15 @@ export default function TabletsPage() {
     typeof window !== 'undefined' ? ((localStorage.getItem('tablets_view') as 'table' | 'cards') ?? 'table') : 'table'
   );
 
+  const { canManage } = useRole();
+  const [refreshing, setRefreshing] = useState(false);
+
   const load = () =>
     Promise.all([api.getTablets(), api.getPlaylists()])
       .then(([t, p]) => { setTablets(t); setPlaylists(p); })
       .finally(() => setLoading(false));
+
+  const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
 
   useEffect(() => { load(); }, []);
 
@@ -169,6 +176,7 @@ export default function TabletsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Tablets</h1>
         <div className="flex items-center gap-2">
+          <RefreshButton onClick={refresh} loading={refreshing} />
           {/* #34 — view toggle */}
           <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
             {(['table', 'cards'] as const).map((m) => (
@@ -188,9 +196,11 @@ export default function TabletsPage() {
             title="Forzar re-sync en todas las tablets">
             {forcingSyncAll ? 'Sincronizando...' : '⟳ Sincronizar todas'}
           </button>
-          <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium" title="Nueva tablet (N)">
-            + Nueva tablet
-          </button>
+          {canManage && (
+            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium" title="Nueva tablet (N)">
+              + Nueva tablet
+            </button>
+          )}
         </div>
       </div>
 
