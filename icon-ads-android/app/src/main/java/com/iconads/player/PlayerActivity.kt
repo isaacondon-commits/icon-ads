@@ -673,15 +673,44 @@ class PlayerActivity : AppCompatActivity() {
         if (lastAdRenderedMs > 0L) ((System.currentTimeMillis() - lastAdRenderedMs) / 1000).toInt() else null
 
     // Captura la ventana del player (incluye el video, vía PixelCopy) y la sube.
-    private fun captureAndUploadScreenshot(token: String) {
+    // Si la pantalla está apagada, la enciende un instante para poder fotografiarla.
+    private fun captureAndUploadScreenshot(token: String, retry: Boolean = true) {
+        try {
+            // Despertar la pantalla (puede estar apagada por el botón de encendido).
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                if (!pm.isInteractive) {
+                    @Suppress("DEPRECATION")
+                    pm.newWakeLock(
+                        android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                            android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                            android.os.PowerManager.ON_AFTER_RELEASE,
+                        "iconads:shot",
+                    ).apply { acquire(5_000L) }
+                }
+            } catch (_: Exception) {}
+
+            // Dar tiempo a que la pantalla encienda y el frame se dibuje.
+            imageHandler.postDelayed({ doCapture(token, retry) }, 1200L)
+        } catch (e: Exception) {
+            Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
+        }
+    }
+
+    private fun doCapture(token: String, retry: Boolean) {
         try {
             val src = binding.root
-            if (src.width == 0 || src.height == 0) return
+            if (src.width == 0 || src.height == 0) {
+                if (retry) imageHandler.postDelayed({ captureAndUploadScreenshot(token, retry = false) }, 1500L)
+                return
+            }
             val full = android.graphics.Bitmap.createBitmap(src.width, src.height, android.graphics.Bitmap.Config.ARGB_8888)
             android.view.PixelCopy.request(window, full, { result ->
                 try {
                     if (result != android.view.PixelCopy.SUCCESS) {
-                        Log.w(TAG, "PixelCopy falló: $result"); return@request
+                        Log.w(TAG, "PixelCopy falló: $result")
+                        if (retry) imageHandler.postDelayed({ captureAndUploadScreenshot(token, retry = false) }, 1500L)
+                        return@request
                     }
                     val targetW = 640
                     val scale = targetW.toFloat() / full.width

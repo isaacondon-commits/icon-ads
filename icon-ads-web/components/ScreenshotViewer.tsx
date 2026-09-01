@@ -38,7 +38,7 @@ export default function ScreenshotViewer({ tabletId, tabletName }: { tabletId: n
           setStatus('done');
         }
       } catch { /* keep polling */ }
-      if (tries > 15) { stop(); setStatus(img ? 'done' : 'error'); }
+      if (tries > 25) { stop(); setStatus(img ? 'done' : 'error'); }
     }, 2000);
   }, [tabletId, img]);
 
@@ -69,8 +69,9 @@ export default function ScreenshotViewer({ tabletId, tabletName }: { tabletId: n
             </div>
 
             {status === 'waiting' && !img && (
-              <div className="aspect-video flex items-center justify-center rounded-lg text-sm" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
-                Esperando la captura de la tablet…
+              <div className="aspect-video flex flex-col items-center justify-center rounded-lg text-sm gap-1" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
+                <span className="inline-block animate-spin text-lg">↻</span>
+                Esperando la captura de la tablet… (puede tardar ~15-30 s)
               </div>
             )}
             {status === 'error' && !img && (
