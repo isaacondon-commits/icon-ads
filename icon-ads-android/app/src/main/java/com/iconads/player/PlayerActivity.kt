@@ -679,22 +679,27 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.Main) {
             try {
                 val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-                if (!pm.isInteractive) {
+                val wasOff = !pm.isInteractive
+                if (wasOff) {
                     @Suppress("DEPRECATION")
                     pm.newWakeLock(
                         android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
                             android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
                             android.os.PowerManager.ON_AFTER_RELEASE,
                         "iconads:shot",
-                    ).apply { acquire(6_000L) }
-                    delay(1500)  // que encienda y dibuje
-                } else {
-                    delay(300)
+                    ).apply { acquire(8_000L) }
                 }
-                if (!doCapture(token)) {
-                    delay(1800)
-                    doCapture(token)
-                }
+                // Traer el player al frente y encender la pantalla (esta ROM no
+                // despierta sólo con el wake lock). Es a sí misma (singleTask).
+                startActivity(
+                    Intent(this@PlayerActivity, PlayerActivity::class.java).addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    ),
+                )
+                delay(if (wasOff) 2800 else 500)
+                if (!doCapture(token)) { delay(2000); doCapture(token) }
             } catch (e: Exception) {
                 Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
             }
