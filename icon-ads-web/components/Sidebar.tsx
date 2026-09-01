@@ -4,8 +4,12 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { useRole } from '@/lib/roles';
 import { useTheme } from '@/lib/theme-context';
 import { api, Notifications } from '@/lib/api';
+
+// Secciones que sólo ve un admin/superadmin (supervisor y operator no).
+const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk', '/api-control', '/public-api']);
 
 const linkGroups = [
   {
@@ -75,6 +79,7 @@ const COLLAPSE_STORAGE_KEY = 'iconads-sidebar-collapsed';
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { isAdmin } = useRole();
   const { theme, toggle } = useTheme();
   const [pendingAds, setPendingAds] = useState(0);
   const [notifications, setNotifications] = useState<Notifications | null>(null);
@@ -127,7 +132,9 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-3 overflow-y-auto">
-        {linkGroups.map((group) => {
+        {linkGroups.map((g) => ({ ...g, links: isAdmin ? g.links : g.links.filter((l) => !ADMIN_ONLY_HREFS.has(l.href)) }))
+          .filter((group) => group.links.length > 0)
+          .map((group) => {
           const open = !collapsedGroups[group.id];
           return (
             <div key={group.id}>

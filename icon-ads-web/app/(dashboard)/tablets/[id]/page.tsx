@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { api, TabletDetail, SyncLog, PlaylistVersion, BASE } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RefreshButton from '@/components/RefreshButton';
 
 type Tab = 'errors' | 'sync' | 'playlist';
 
@@ -32,12 +33,21 @@ export default function TabletDetailPage() {
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/tablets')).finally(() => setLoading(false));
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await load();
+      const { syncs: s, uptimePct7d: u } = await api.getSyncHistory(Number(id));
+      setSyncs(s); setUptimePct7d(u);
+    } catch { /* ignore */ } finally { setRefreshing(false); }
+  };
 
   useEffect(() => {
-    api.getTablet(Number(id))
-      .then(setTablet)
-      .catch(() => router.push('/tablets'))
-      .finally(() => setLoading(false));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router]);
 
   useEffect(() => {
@@ -98,9 +108,12 @@ export default function TabletDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.back()} className="text-sm mb-4 hover:underline flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-        ← Volver
-      </button>
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={() => router.back()} className="text-sm hover:underline flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+          ← Volver
+        </button>
+        <RefreshButton onClick={refresh} loading={refreshing} />
+      </div>
 
       {/* Header card */}
       <div className="card p-6 mb-6">
@@ -177,13 +190,20 @@ export default function TabletDetailPage() {
         </div>
 
         {/* Extra info */}
-        {(tablet.batteryLevel != null || tablet.temperatureC != null || tablet.appVersion || tablet.lastIp || tablet.osVersion || tablet.deviceModel) && (
+        {(tablet.batteryLevel != null || tablet.temperatureC != null || tablet.appVersion || tablet.lastIp || tablet.osVersion || tablet.deviceModel || tablet.brightness != null || tablet.serial) && (
           <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t text-xs" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
             {tablet.batteryLevel != null && (
               <span className={`font-medium ${tablet.batteryLevel <= 20 ? 'text-red-500' : tablet.batteryLevel <= 50 ? 'text-amber-500' : 'text-emerald-600'}`}>
                 Batería: {tablet.batteryLevel}%
               </span>
             )}
+            {tablet.brightness != null && (
+              <span className={tablet.brightnessAuto === false ? 'text-amber-500 font-medium' : ''}
+                title={tablet.brightnessAuto === false ? 'El brillo está en manual — debería estar en automático' : 'Brillo en automático'}>
+                Brillo: {tablet.brightness}% {tablet.brightnessAuto === false ? '(MANUAL)' : tablet.brightnessAuto ? '(auto)' : ''}
+              </span>
+            )}
+            {tablet.serial && <span className="font-mono" title="Nº de serie del hardware — identifica la tablet física">SN: {tablet.serial}</span>}
             {tablet.temperatureC != null && <span>Temp: {tablet.temperatureC.toFixed(1)}°C</span>}
             {tablet.appVersion && <span className="font-mono">APK: {tablet.appVersion}</span>}
             {tablet.lastIp && <span className="font-mono" title="Última IP registrada al sincronizar">IP: {tablet.lastIp}</span>}

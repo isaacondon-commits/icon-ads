@@ -542,6 +542,7 @@ export interface Tablet {
   driverName?: string | null; licensePlate?: string | null;
   spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null; lastIp?: string | null;
   osVersion?: string | null; deviceModel?: string | null;
+  brightness?: number | null; brightnessAuto?: boolean | null; serial?: string | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
