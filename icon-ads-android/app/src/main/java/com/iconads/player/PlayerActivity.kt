@@ -673,10 +673,10 @@ class PlayerActivity : AppCompatActivity() {
         if (lastAdRenderedMs > 0L) ((System.currentTimeMillis() - lastAdRenderedMs) / 1000).toInt() else null
 
     // Captura la ventana del player (incluye el video, vía PixelCopy) y la sube.
-    // Si la pantalla está apagada, la enciende un instante para poder fotografiarla.
-    private fun captureAndUploadScreenshot(token: String, retry: Boolean = true) {
-        try {
-            // Despertar la pantalla (puede estar apagada por el botón de encendido).
+    // Enciende la pantalla si está apagada. Usa su propio scope/handler — NO
+    // imageHandler, que se limpia en cada cambio de anuncio.
+    private fun captureAndUploadScreenshot(token: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
             try {
                 val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
                 if (!pm.isInteractive) {
@@ -686,31 +686,30 @@ class PlayerActivity : AppCompatActivity() {
                             android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
                             android.os.PowerManager.ON_AFTER_RELEASE,
                         "iconads:shot",
-                    ).apply { acquire(5_000L) }
+                    ).apply { acquire(6_000L) }
+                    delay(1500)  // que encienda y dibuje
+                } else {
+                    delay(300)
                 }
-            } catch (_: Exception) {}
-
-            // Dar tiempo a que la pantalla encienda y el frame se dibuje.
-            imageHandler.postDelayed({ doCapture(token, retry) }, 1200L)
-        } catch (e: Exception) {
-            Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
+                if (!doCapture(token)) {
+                    delay(1800)
+                    doCapture(token)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
+            }
         }
     }
 
-    private fun doCapture(token: String, retry: Boolean) {
-        try {
+    private fun doCapture(token: String): Boolean {
+        return try {
             val src = binding.root
-            if (src.width == 0 || src.height == 0) {
-                if (retry) imageHandler.postDelayed({ captureAndUploadScreenshot(token, retry = false) }, 1500L)
-                return
-            }
+            if (src.width == 0 || src.height == 0) return false
             val full = android.graphics.Bitmap.createBitmap(src.width, src.height, android.graphics.Bitmap.Config.ARGB_8888)
             android.view.PixelCopy.request(window, full, { result ->
                 try {
                     if (result != android.view.PixelCopy.SUCCESS) {
-                        Log.w(TAG, "PixelCopy falló: $result")
-                        if (retry) imageHandler.postDelayed({ captureAndUploadScreenshot(token, retry = false) }, 1500L)
-                        return@request
+                        Log.w(TAG, "PixelCopy: $result"); return@request
                     }
                     val targetW = 640
                     val scale = targetW.toFloat() / full.width
@@ -733,9 +732,10 @@ class PlayerActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.w(TAG, "captura post-PixelCopy: ${e.message}")
                 }
-            }, imageHandler)
+            }, android.os.Handler(android.os.Looper.getMainLooper()))
+            true
         } catch (e: Exception) {
-            Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
+            Log.w(TAG, "doCapture: ${e.message}"); false
         }
     }
 
