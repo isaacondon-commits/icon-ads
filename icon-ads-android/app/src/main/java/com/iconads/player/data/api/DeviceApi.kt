@@ -18,6 +18,9 @@ interface DeviceApi {
         @Query("appVersion") appVersion: String? = null,
         @Query("osVersion") osVersion: String? = null,
         @Query("deviceModel") deviceModel: String? = null,
+        @Query("brightness") brightness: Int? = null,
+        @Query("brightnessAuto") brightnessAuto: Boolean? = null,
+        @Query("serial") serial: String? = null,
     ): SyncResponse
 
     @Streaming

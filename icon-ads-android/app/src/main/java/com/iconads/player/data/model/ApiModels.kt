@@ -4,6 +4,7 @@ data class RegisterRequest(
     val deviceId: String,
     val name: String,
     val zone: String? = null,
+    val serial: String? = null,
 )
 
 data class RegisterResponse(

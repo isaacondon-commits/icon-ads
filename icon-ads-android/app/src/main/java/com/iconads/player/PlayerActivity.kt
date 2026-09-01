@@ -629,6 +629,28 @@ class PlayerActivity : AppCompatActivity() {
         } catch (e: Exception) { null }
     }
 
+    // Brillo 0-100 (%) y si está en modo automático. El valor 0-255 de
+    // SCREEN_BRIGHTNESS es el nivel base; en auto no es el que se ve pero
+    // sirve de referencia. Lo que importa para el monitoreo es el modo.
+    private fun getBrightnessPct(): Int? = try {
+        val raw = android.provider.Settings.System.getInt(
+            contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS, -1,
+        )
+        if (raw < 0) null else (raw * 100 / 255)
+    } catch (e: Exception) { null }
+
+    private fun isBrightnessAuto(): Boolean? = try {
+        android.provider.Settings.System.getInt(
+            contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE, 0,
+        ) == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+    } catch (e: Exception) { null }
+
+    private fun getSerial(): String? = try {
+        @Suppress("HardwareIds", "MissingPermission")
+        val s = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Build.getSerial() else @Suppress("DEPRECATION") Build.SERIAL
+        if (s.isNullOrBlank() || s.equals("unknown", true)) null else s
+    } catch (e: Exception) { null }
+
     private suspend fun syncNow() {
         val token = prefs.getToken() ?: run {
             Log.w(TAG, "syncNow: sin token — abortando")
@@ -639,7 +661,14 @@ class PlayerActivity : AppCompatActivity() {
         Log.i(TAG, "syncNow: versión local=${prefs.getPlaylistVersion()} battery=${battery}% temp=${temp}°C")
         try {
             val api = NetworkModule.provideDeviceApi(token)
-            val syncResp = withContext(Dispatchers.IO) { api.sync(prefs.getPlaylistVersion(), battery, temp, BuildConfig.VERSION_NAME) }
+            val syncResp = withContext(Dispatchers.IO) {
+                api.sync(
+                    prefs.getPlaylistVersion(), battery, temp, BuildConfig.VERSION_NAME,
+                    brightness = getBrightnessPct(),
+                    brightnessAuto = isBrightnessAuto(),
+                    serial = getSerial(),
+                )
+            }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
             if (prefs.getTestMode() != syncResp.testMode) {
                 Log.i(TAG, "syncNow: modo test → ${syncResp.testMode}")
@@ -804,6 +833,7 @@ class PlayerActivity : AppCompatActivity() {
                     RegisterRequest(
                         deviceId = deviceId,
                         name = "Tablet ${deviceId.take(8)}",
+                        serial = getSerial(),
                     )
                 )
             }

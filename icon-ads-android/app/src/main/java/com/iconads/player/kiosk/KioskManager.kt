@@ -83,6 +83,19 @@ object KioskManager {
             }
             dpm.setStatusBarDisabled(admin, true)
 
+            // Brillo siempre en automático (Device Owner puede fijar este ajuste).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    dpm.setSystemSetting(
+                        admin,
+                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC.toString(),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "auto-brillo: ${e.message}")
+                }
+            }
+
             for (restriction in listOf(
                 UserManager.DISALLOW_SAFE_BOOT,
                 UserManager.DISALLOW_ADD_USER,
