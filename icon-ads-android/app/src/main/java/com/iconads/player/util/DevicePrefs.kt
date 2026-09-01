@@ -82,6 +82,11 @@ class DevicePrefs(context: Context) {
     fun getBrightnessPolicy(): String = prefs.getString(KEY_BRIGHTNESS_POLICY, "auto") ?: "auto"
     fun setBrightnessPolicy(value: String) = prefs.edit().putString(KEY_BRIGHTNESS_POLICY, value).apply()
 
+    // Tabla de brillo por horario solar (JSON del backend). Vacío => la app usa
+    // su tabla por defecto embebida.
+    fun getBrightnessSchedule(): String = prefs.getString(KEY_BRIGHTNESS_SCHEDULE, "") ?: ""
+    fun setBrightnessSchedule(json: String) = prefs.edit().putString(KEY_BRIGHTNESS_SCHEDULE, json).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -98,6 +103,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_CALL_ROLE_ASKED = "call_role_asked"
         private const val KEY_TEST_MODE = "kiosk_test_mode"
         private const val KEY_BRIGHTNESS_POLICY = "screen_brightness_policy"
+        private const val KEY_BRIGHTNESS_SCHEDULE = "screen_brightness_schedule"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

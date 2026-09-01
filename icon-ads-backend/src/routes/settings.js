@@ -3,6 +3,7 @@ const { z } = require('zod');
 const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
+const { validateSchedule, safeParse } = require('../lib/brightnessSchedule');
 
 router.use(requireAuth);
 
@@ -12,6 +13,7 @@ const ALLOWED_KEYS = [
   'callmebot_phone', 'callmebot_apikey',
   'auto_archive_expired',
   'battery_alert_pct',
+  'brightness_schedule',
 ];
 
 // GET /api/settings — all system config values
@@ -29,7 +31,12 @@ router.put('/:key', requireAdmin, async (req, res, next) => {
   try {
     const key = req.params.key;
     if (!ALLOWED_KEYS.includes(key)) return res.status(400).json({ error: 'Clave no permitida' });
-    const { value } = z.object({ value: z.string() }).parse(req.body);
+    let { value } = z.object({ value: z.string() }).parse(req.body);
+    if (key === 'brightness_schedule') {
+      const norm = validateSchedule(safeParse(value));
+      if (!norm) return res.status(400).json({ error: 'Tabla de brillo inválida: se esperan al menos 2 puntos con ref (sunrise/sunset), offsetMin y pct.' });
+      value = JSON.stringify(norm);
+    }
     const config = await prisma.systemConfig.upsert({
       where: { key },
       update: { value },

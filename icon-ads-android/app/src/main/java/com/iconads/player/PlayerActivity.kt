@@ -380,6 +380,7 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyKioskState()
+        adaptiveBrightness.applySchedule(prefs.getBrightnessSchedule())
         applyBrightness(prefs.getBrightnessPolicy())
     }
 
@@ -866,6 +867,13 @@ class PlayerActivity : AppCompatActivity() {
                 Log.i(TAG, "syncNow: modo test → ${syncResp.testMode}")
                 prefs.setTestMode(syncResp.testMode)
                 withContext(Dispatchers.Main) { applyKioskState() }  // soltar/re-armar kiosco al instante
+            }
+            syncResp.brightnessSchedule?.let { sched ->
+                if (sched != prefs.getBrightnessSchedule()) {
+                    Log.i(TAG, "syncNow: tabla de brillo actualizada")
+                    prefs.setBrightnessSchedule(sched)
+                    withContext(Dispatchers.Main) { adaptiveBrightness.applySchedule(sched) }
+                }
             }
             syncResp.brightnessPolicy?.let { pol ->
                 if (pol != prefs.getBrightnessPolicy()) {

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
+import { sunTimes, fmtMin, brightnessAt, DEFAULT_SCHEDULE, type SchedulePoint } from '@/lib/sun';
 
 export default function SettingsPage() {
   const { show } = useToast();
@@ -158,6 +159,13 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+
+          {/* Brillo por horario solar */}
+          <BrightnessScheduleCard
+            value={settings['brightness_schedule']}
+            saving={saving === 'brightness_schedule'}
+            onSave={(json) => save('brightness_schedule', json)}
+          />
 
           {/* Webhook URL */}
           <div className="card p-6">
@@ -326,6 +334,112 @@ export default function SettingsPage() {
 
         </div>
       )}
+    </div>
+  );
+}
+
+function parseSchedule(value: string | undefined): SchedulePoint[] {
+  if (!value) return DEFAULT_SCHEDULE;
+  try {
+    const arr = JSON.parse(value)?.points;
+    if (!Array.isArray(arr) || arr.length < 2) return DEFAULT_SCHEDULE;
+    return arr.map((p: { ref: string; offsetMin: number; pct: number }) => ({
+      ref: p.ref === 'sunset' ? 'sunset' : 'sunrise',
+      offsetMin: Math.round(Number(p.offsetMin) || 0),
+      pct: Math.max(0, Math.min(100, Math.round(Number(p.pct) || 0))),
+    }));
+  } catch {
+    return DEFAULT_SCHEDULE;
+  }
+}
+
+function BrightnessScheduleCard({ value, saving, onSave }: {
+  value: string | undefined; saving: boolean; onSave: (json: string) => Promise<void>;
+}) {
+  const [pts, setPts] = useState<SchedulePoint[]>(() => parseSchedule(value));
+  const sun = useMemo(() => sunTimes(new Date()), []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resync local editor when saved value changes
+    setPts(parseSchedule(value));
+  }, [value]);
+
+  const set = (i: number, patch: Partial<SchedulePoint>) =>
+    setPts((cur) => cur.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  const addRow = () => setPts((cur) => [...cur, { ref: 'sunset', offsetMin: 0, pct: 50 }]);
+  const delRow = (i: number) => setPts((cur) => cur.filter((_, idx) => idx !== i));
+  const dirty = JSON.stringify({ points: pts }) !== JSON.stringify({ points: parseSchedule(value) });
+
+  // Curva de hoy, cada 30 min.
+  const preview = Array.from({ length: 48 }, (_, k) => {
+    const min = k * 30;
+    return { min, pct: brightnessAt(min, pts, sun) };
+  });
+
+  return (
+    <div className="card p-6">
+      <h2 className="font-semibold mb-1">Brillo por horario solar</h2>
+      <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+        Las tablets no tienen sensor de luz, así que el brillo sigue el amanecer y el atardecer reales de Montevideo (se calculan en cada tablet).
+        Cada punto es relativo a uno de esos dos eventos; entre puntos el brillo cambia gradual. Aplica sólo con el brillo en modo automático.
+      </p>
+      <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+        Hoy en Montevideo: <b>amanecer {fmtMin(sun.sunriseMin)}</b> · <b>atardecer {fmtMin(sun.sunsetMin)}</b>.
+      </p>
+
+      {/* Preview 24 h */}
+      <div className="mb-1 flex items-end gap-px h-16">
+        {preview.map((p) => (
+          <div key={p.min} className="flex-1 rounded-t" title={`${fmtMin(p.min)} → ${Math.round(p.pct)}%`}
+            style={{ height: `${Math.max(p.pct, 3)}%`, background: '#3b82f6', opacity: 0.3 + 0.7 * (p.pct / 100) }} />
+        ))}
+      </div>
+      <div className="flex justify-between text-[10px] mb-4" style={{ color: 'var(--text-xs)' }}>
+        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span>
+      </div>
+
+      <div className="space-y-2">
+        {pts.map((p, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <select className="input w-32" value={p.ref} onChange={(e) => set(i, { ref: e.target.value as SchedulePoint['ref'] })}>
+              <option value="sunrise">Amanecer</option>
+              <option value="sunset">Atardecer</option>
+            </select>
+            <div className="flex items-center gap-1">
+              <input type="number" step={5} className="input w-24 text-right" value={p.offsetMin}
+                onChange={(e) => set(i, { offsetMin: Math.round(Number(e.target.value) || 0) })}
+                onWheel={(e) => e.currentTarget.blur()} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>min (− antes / + después)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <input type="number" min={0} max={100} className="input w-20 text-right" value={p.pct}
+                onChange={(e) => set(i, { pct: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })}
+                onWheel={(e) => e.currentTarget.blur()} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>% brillo</span>
+            </div>
+            <span className="text-xs tabular-nums" style={{ color: 'var(--text-xs)' }}>
+              ≈ {fmtMin((p.ref === 'sunset' ? sun.sunsetMin : sun.sunriseMin) + p.offsetMin)}
+            </span>
+            <button onClick={() => delRow(i)} disabled={pts.length <= 2}
+              className="text-red-500 hover:underline text-xs disabled:opacity-30 ml-auto">Quitar</button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-4">
+        <button onClick={addRow} className="text-xs px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border-md)' }}>
+          + Agregar punto
+        </button>
+        <button onClick={() => setPts(DEFAULT_SCHEDULE)} className="text-xs px-3 py-1.5 rounded-lg border" style={{ borderColor: 'var(--border-md)' }}>
+          Restaurar valores por defecto
+        </button>
+        <button
+          onClick={() => onSave(JSON.stringify({ points: pts }))}
+          disabled={saving || !dirty}
+          className="text-xs px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium ml-auto">
+          {saving ? 'Guardando...' : 'Guardar tabla'}
+        </button>
+      </div>
     </div>
   );
 }

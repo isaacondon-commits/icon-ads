@@ -26,6 +26,8 @@ data class SyncResponse(
     val testMode: Boolean = false,
     // Política de brillo: "auto" o un número 0-255 (brillo fijo).
     val brightnessPolicy: String? = null,
+    // Tabla de brillo por horario solar (JSON). Sólo aplica con "auto".
+    val brightnessSchedule: String? = null,
     // El panel pidió una captura de pantalla de esta tablet.
     val screenshotRequested: Boolean = false,
     // El operador bloqueó esta tablet desde el panel: frenar reproducción y

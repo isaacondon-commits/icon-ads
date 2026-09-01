@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Window
 import android.view.WindowManager
+import org.json.JSONObject
 import java.util.Calendar
 import kotlin.math.abs
 import kotlin.math.log10
@@ -17,18 +18,19 @@ import kotlin.math.log10
 /**
  * Brillo automático hecho por la app.
  *
- * El ROM de estas tablets (Unisoc/Chuwi) no adapta el backlight solo aunque se
- * ponga SCREEN_BRIGHTNESS_MODE_AUTOMATIC — el brillo queda clavado. Acá leemos
- * el sensor de luz ambiente y ajustamos `window.screenBrightness` (0..1), que es
- * un override por-ventana y NO toca el brillo "manual" del sistema.
+ * El ROM de estas tablets (Unisoc/Chuwi) no adapta el backlight aunque se ponga
+ * SCREEN_BRIGHTNESS_MODE_AUTOMATIC, y NINGUNA tiene sensor de luz. Así que el
+ * brillo se maneja por HORARIO SOLAR: cada día se calcula el amanecer y el
+ * atardecer reales de Montevideo ([SunCalc]) y el brillo sigue una tabla
+ * relativa a esos eventos ([schedule], que llega del panel; si no, la de acá).
  *
- * Si la tablet no tiene sensor de luz (todas las de la flota, hoy), no hay con
- * qué adaptar de día — se deja al máximo. Lo único que sí se puede hacer sin
- * sensor es atenuar por horario: después del anochecer baja a NIGHT_LEVEL, de
- * día vuelve al máximo. Con sensor, ese mismo horario actúa como techo (por si
- * una luz cercana da una lectura alta de noche).
+ * Se aplica sobre `window.screenBrightness` (0..1) — override por-ventana, no
+ * toca el brillo "manual" del sistema. Si en el futuro alguna tablet tuviera
+ * sensor de luz, la tabla solar actúa como techo de la curva de lux.
  */
 class AdaptiveBrightness(activity: Activity) : SensorEventListener {
+
+    data class SchedulePoint(val ref: String, val offsetMin: Int, val pct: Int)
 
     private val sm = activity.getSystemService(SensorManager::class.java)
     private val lightSensor: Sensor? = sm?.getDefaultSensor(Sensor.TYPE_LIGHT)
@@ -36,7 +38,6 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
 
     val hasSensor: Boolean get() = lightSensor != null
 
-    /** Último valor crudo del sensor (lux). null si no hay sensor o aún no llegó ninguna lectura. */
     var lastLux: Float? = null
         private set
 
@@ -49,16 +50,37 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
     private var smoothedLux = -1f
     private var applied = -1f
 
-    // (lux, fracción). Se interpola en log10(lux) para que el ojo lo sienta lineal.
+    private var schedule: List<SchedulePoint> = DEFAULT_SCHEDULE
+    private var sunCacheDay = -1
+    private var sunriseMin = 6 * 60
+    private var sunsetMin = 19 * 60
+
+    // (lux, fracción) — interpolado en log10(lux). Sólo se usa si hay sensor.
     private val curve = listOf(
-        1f to 0.05f,       // noche cerrada
-        30f to 0.18f,      // interior tenue
-        120f to 0.33f,     // interior normal
-        400f to 0.50f,     // interior luminoso
-        1500f to 0.72f,    // día nublado / sombra
-        6000f to 0.90f,    // día claro
-        25000f to 1.00f,   // sol directo
+        1f to 0.05f, 30f to 0.18f, 120f to 0.33f, 400f to 0.50f,
+        1500f to 0.72f, 6000f to 0.90f, 25000f to 1.00f,
     )
+
+    /** Carga la tabla de brillo (JSON del backend). Si es inválida, se ignora. */
+    fun applySchedule(json: String?) {
+        if (json.isNullOrBlank()) return
+        try {
+            val arr = JSONObject(json).getJSONArray("points")
+            val pts = ArrayList<SchedulePoint>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val ref = if (o.getString("ref") == "sunset") "sunset" else "sunrise"
+                pts.add(SchedulePoint(ref, o.getInt("offsetMin"), o.getInt("pct").coerceIn(0, 100)))
+            }
+            if (pts.size >= 2) {
+                schedule = pts
+                Log.i(TAG, "tabla de brillo actualizada (${pts.size} puntos)")
+                if (running) applyNow()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "applySchedule: JSON inválido — ${e.message}")
+        }
+    }
 
     fun enable(w: Window) {
         window = w
@@ -67,11 +89,8 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
         if (lightSensor != null) {
             sm?.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL, mainHandler)
         } else {
-            Log.w(TAG, "sin sensor de luz — brillo por horario (día=máx, noche=$NIGHT_LEVEL)")
+            Log.w(TAG, "sin sensor de luz — brillo por horario solar")
         }
-        // Sin sensor no hay eventos que disparen un recálculo: un tick propio
-        // (y con sensor, de respaldo) es lo que hace que el atenuado nocturno
-        // entre/salga solo al cruzar la hora, sin reiniciar la app.
         mainHandler.postDelayed(ticker, TICK_MS)
         Log.i(TAG, "brillo automático ON")
         applyNow()
@@ -79,7 +98,6 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
 
     fun resume(w: Window) = enable(w)
 
-    /** Deja de escuchar el sensor pero NO cambia el brillo actual de la ventana. */
     fun pause() {
         if (!running) return
         running = false
@@ -88,7 +106,6 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
         mainHandler.removeCallbacks(ticker)
     }
 
-    /** Apaga y devuelve el control del brillo al sistema. */
     fun release() {
         pause()
         window?.let { w ->
@@ -119,13 +136,13 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
     }
 
     private fun applyNow() {
-        val ceiling = nightCeiling()
+        val scheduled = scheduledFraction()
         val target = when {
-            !hasSensor -> ceiling
-            smoothedLux < 0f -> currentFraction.coerceAtMost(ceiling)  // sin lectura aún
-            else -> fractionFor(smoothedLux).coerceAtMost(ceiling)
+            !hasSensor -> scheduled
+            smoothedLux < 0f -> currentFraction.coerceAtMost(scheduled)
+            else -> fractionFor(smoothedLux).coerceAtMost(scheduled)
         }
-        val step = 0.06f  // ramp suave para que no parpadee
+        val step = 0.06f // ramp suave para que no parpadee
         currentFraction = when {
             target > currentFraction -> minOf(target, currentFraction + step)
             target < currentFraction -> maxOf(target, currentFraction - step)
@@ -138,18 +155,37 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
         }
     }
 
-    // Después del anochecer (hoy: horario fijo 20:00–07:00) el brillo no pasa
-    // de NIGHT_LEVEL. De día no hay techo (1.0). Sin sensor de luz, ES el
-    // brillo aplicado; con sensor, actúa como límite superior de la curva.
-    private fun nightCeiling(): Float {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        val isNight = if (NIGHT_START_HOUR > NIGHT_END_HOUR) {
-            hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR
-        } else {
-            hour in NIGHT_START_HOUR until NIGHT_END_HOUR
+    // Brillo (0..1) según la tabla solar para el momento actual.
+    private fun scheduledFraction(): Float {
+        val cal = Calendar.getInstance()
+        val doy = cal.get(Calendar.DAY_OF_YEAR)
+        if (doy != sunCacheDay) {
+            SunCalc.sunriseSunsetMinutes(cal)?.let { (r, s) ->
+                sunriseMin = r; sunsetMin = s
+                Log.i(TAG, "hoy: amanecer ${fmt(r)} · atardecer ${fmt(s)}")
+            }
+            sunCacheDay = doy
         }
-        return if (isNight) NIGHT_LEVEL else 1f
+        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        val pts = schedule
+            .map { (if (it.ref == "sunset") sunsetMin else sunriseMin) + it.offsetMin to it.pct / 100f }
+            .sortedBy { it.first }
+        if (pts.isEmpty()) return currentFraction
+        if (nowMin <= pts.first().first) return pts.first().second
+        if (nowMin >= pts.last().first) return pts.last().second
+        for (i in 0 until pts.size - 1) {
+            val (t0, v0) = pts[i]
+            val (t1, v1) = pts[i + 1]
+            if (nowMin in t0..t1) {
+                if (t1 == t0) return v1
+                val f = (nowMin - t0).toFloat() / (t1 - t0)
+                return v0 + f * (v1 - v0)
+            }
+        }
+        return pts.last().second
     }
+
+    private fun fmt(min: Int) = "%02d:%02d".format(min / 60, min % 60)
 
     private fun setWindow(frac: Float, force: Boolean) {
         val w = window ?: return
@@ -178,9 +214,16 @@ class AdaptiveBrightness(activity: Activity) : SensorEventListener {
 
     companion object {
         private const val TAG = "AdaptiveBrightness"
-        private const val NIGHT_START_HOUR = 20  // 20:00 — a partir de acá, atenuado
-        private const val NIGHT_END_HOUR = 7     // 07:00 — a partir de acá, brillo normal
-        private const val NIGHT_LEVEL = 0.55f    // techo nocturno (55%)
-        private const val TICK_MS = 60_000L      // recalcular horario 1 vez por minuto
+        private const val TICK_MS = 60_000L // recalcular la tabla 1 vez por minuto
+
+        // Tabla por defecto (misma que el backend): relativa al amanecer/atardecer.
+        val DEFAULT_SCHEDULE = listOf(
+            SchedulePoint("sunrise", -120, 25),
+            SchedulePoint("sunrise", 0, 55),
+            SchedulePoint("sunrise", 120, 90),
+            SchedulePoint("sunset", -120, 90),
+            SchedulePoint("sunset", 0, 55),
+            SchedulePoint("sunset", 120, 25),
+        )
     }
 }

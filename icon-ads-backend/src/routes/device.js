@@ -11,6 +11,7 @@ const { audit } = require('../lib/auditLog');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const forceApkFlags = require('../lib/forceApkFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
+const { resolveScheduleJson } = require('../lib/brightnessSchedule');
 
 // Registration re-issues the existing token for a known deviceId with no further
 // proof of possession (deviceId — Android's ANDROID_ID — isn't a secret). Keying
@@ -189,6 +190,10 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // número 0-255. Ausente => 'auto'. Se setea desde POST /api/admin/brightness.
     const brRow = await prisma.systemConfig.findUnique({ where: { key: 'screen_brightness' } });
     const brightnessPolicy = brRow?.value || 'auto';
+    // Tabla de brillo por horario solar (systemConfig brightness_schedule). La
+    // app la usa cuando brightnessPolicy === 'auto' y no hay sensor de luz.
+    const bsRow = await prisma.systemConfig.findUnique({ where: { key: 'brightness_schedule' } });
+    const brightnessSchedule = resolveScheduleJson(bsRow?.value);
     // Sólo la Activity del player (que manda appVersion/playerOk) puede sacar
     // la captura — el SyncWorker no. Así el flag no se "consume" en un sync
     // del worker sin que nadie fotografíe.
@@ -202,13 +207,13 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked });
+      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
     }
 
     // #48 — if admin forced a sync, override version check
@@ -217,7 +222,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!forced && playlist.version <= currentVersion) {
       console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
     }
 
     console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
@@ -231,6 +236,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       brightnessPolicy,
       screenshotRequested,
       blocked,
+      brightnessSchedule,
     });
   } catch (err) {
     next(err);
