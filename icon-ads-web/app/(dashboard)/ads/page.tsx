@@ -148,10 +148,23 @@ export default function AdsPage() {
     setShowModal(true);
   };
 
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
+
+  // Lee la duración real de un video en el navegador.
+  const readVideoDuration = (f: File): Promise<number | null> =>
+    new Promise((resolve) => {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.onloadedmetadata = () => { const d = v.duration; URL.revokeObjectURL(v.src); resolve(Number.isFinite(d) ? d : null); };
+      v.onerror = () => { URL.revokeObjectURL(v.src); resolve(null); };
+      v.src = URL.createObjectURL(f);
+    });
+
   // #4/#5 — validate before setting file
   const handleFileChange = (f: File | null) => {
     setFileError('');
     setThumbnailBlob(null);
+    setVideoDuration(null);
     if (!f) { setFile(null); setPreview(null); return; }
 
     if (!ALLOWED_EXT.test(f.name) && !ALLOWED_TYPES.includes(f.type)) {
@@ -174,13 +187,27 @@ export default function AdsPage() {
     if (!form.name) setForm((prev) => ({ ...prev, name: f.name.replace(/\.[^.]+$/, '') }));
     const isVideo = /\.mp4$/i.test(f.name);
     setForm((prev) => ({ ...prev, type: isVideo ? 'video' : 'image' }));
-    if (isVideo) generateVideoThumbnail(f).then(setThumbnailBlob);
+    if (isVideo) {
+      generateVideoThumbnail(f).then(setThumbnailBlob);
+      readVideoDuration(f).then((d) => {
+        setVideoDuration(d);
+        // Sugerir la duración real si el campo sigue en el default.
+        if (d != null && (form.durationS === '10' || form.durationS === '')) {
+          setForm((prev) => ({ ...prev, durationS: String(Math.round(d)) }));
+        }
+      });
+    }
   };
 
   // #3 — upload with progress via XHR
   const handleUpload = async () => {
     if (!file) { setError('Seleccioná un archivo'); return; }
     if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
+    if (videoDuration != null && videoDuration > Number(form.durationS) + 0.5) {
+      setError(`El video dura ${videoDuration.toFixed(1)}s pero configuraste ${form.durationS}s. `
+        + `Subí un video más corto o poné la duración real (${Math.round(videoDuration)}s).`);
+      return;
+    }
     setSaving(true);
     setError('');
     setUploadPct(0);
@@ -627,6 +654,12 @@ export default function AdsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Duración (s)</label>
                   <input type="number" min="1" className="input" value={form.durationS} onChange={(e) => setForm({ ...form, durationS: e.target.value })} onWheel={(e) => e.currentTarget.blur()} />
+                  {videoDuration != null && (
+                    <p className={`text-xs mt-1 ${videoDuration > Number(form.durationS) + 0.5 ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                      El video dura {videoDuration.toFixed(1)}s
+                      {videoDuration > Number(form.durationS) + 0.5 && ' — no se puede subir: es más largo que la duración configurada'}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
