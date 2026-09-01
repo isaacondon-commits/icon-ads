@@ -24,6 +24,8 @@ data class SyncResponse(
     // Modo test: la tablet ignora el desenchufe y el cierre por 10 min de
     // inactividad (kiosco siempre prendido, botón de encendido = on/off).
     val testMode: Boolean = false,
+    // Política de brillo: "auto" o un número 0-255 (brillo fijo).
+    val brightnessPolicy: String? = null,
 )
 
 data class HeartbeatInfo(

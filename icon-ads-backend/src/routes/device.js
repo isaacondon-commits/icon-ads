@@ -170,16 +170,20 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // POST /api/admin/test-mode.
     const tmRow = await prisma.systemConfig.findUnique({ where: { key: 'kiosk_test_mode' } });
     const testMode = tmRow?.value === '1';
+    // Política de brillo remota (systemConfig screen_brightness): 'auto' o un
+    // número 0-255. Ausente => 'auto'. Se setea desde POST /api/admin/brightness.
+    const brRow = await prisma.systemConfig.findUnique({ where: { key: 'screen_brightness' } });
+    const brightnessPolicy = brRow?.value || 'auto';
 
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode });
+      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy });
     }
 
     // #48 — if admin forced a sync, override version check
@@ -188,7 +192,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!forced && playlist.version <= currentVersion) {
       console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy });
     }
 
     console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
@@ -199,6 +203,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       rotated180: tablet.rotated180,
       forceApkCheck,
       testMode,
+      brightnessPolicy,
     });
   } catch (err) {
     next(err);

@@ -81,18 +81,8 @@ object KioskManager {
             // la tablet (WiFi, datos). Fuera de modo test, kiosco cerrado.
             setKioskLock(context, !DevicePrefs(context).getTestMode())
 
-            // Brillo siempre en automático (Device Owner puede fijar este ajuste).
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                try {
-                    dpm.setSystemSetting(
-                        admin,
-                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC.toString(),
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "auto-brillo: ${e.message}")
-                }
-            }
+            // Brillo según la política remota (auto / fijo).
+            applyBrightnessPolicy(context, DevicePrefs(context).getBrightnessPolicy())
 
             for (restriction in listOf(
                 UserManager.DISALLOW_SAFE_BOOT,
@@ -167,6 +157,42 @@ object KioskManager {
             } catch (e: Exception) {
                 Log.w(TAG, "setLockTaskFeatures: ${e.message}")
             }
+        }
+    }
+
+    /**
+     * Aplica la política de brillo. `policy` = "auto" (brillo automático del
+     * sistema) o un número 0-255 (brillo fijo, mode manual). En estas tablets
+     * el auto dimma demasiado; conviene un fijo alto.
+     */
+    fun applyBrightnessPolicy(context: Context, policy: String) {
+        if (!isDeviceOwner(context)) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        val admin = AdminReceiver.component(context)
+        val dpm = dpm(context)
+        try {
+            if (policy == "auto") {
+                dpm.setSystemSetting(
+                    admin,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC.toString(),
+                )
+            } else {
+                val n = policy.toIntOrNull()?.coerceIn(0, 255) ?: 220
+                dpm.setSystemSetting(
+                    admin,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL.toString(),
+                )
+                dpm.setSystemSetting(
+                    admin,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                    n.toString(),
+                )
+            }
+            Log.i(TAG, "brillo → $policy")
+        } catch (e: Exception) {
+            Log.w(TAG, "applyBrightnessPolicy: ${e.message}")
         }
     }
 

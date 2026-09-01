@@ -689,6 +689,13 @@ class PlayerActivity : AppCompatActivity() {
                 prefs.setTestMode(syncResp.testMode)
                 withContext(Dispatchers.Main) { applyKioskState() }  // soltar/re-armar kiosco al instante
             }
+            syncResp.brightnessPolicy?.let { pol ->
+                if (pol != prefs.getBrightnessPolicy()) {
+                    Log.i(TAG, "syncNow: brillo → $pol")
+                    prefs.setBrightnessPolicy(pol)
+                    KioskManager.applyBrightnessPolicy(this@PlayerActivity, pol)
+                }
+            }
             if (syncResp.forceApkCheck) {
                 Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")
                 SyncWorker.scheduleImmediate(this@PlayerActivity)

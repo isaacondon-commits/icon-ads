@@ -78,6 +78,10 @@ class DevicePrefs(context: Context) {
     fun getTestMode(): Boolean = prefs.getBoolean(KEY_TEST_MODE, false)
     fun setTestMode(value: Boolean) = prefs.edit().putBoolean(KEY_TEST_MODE, value).apply()
 
+    // Política de brillo remota: "auto" o un número 0-255.
+    fun getBrightnessPolicy(): String = prefs.getString(KEY_BRIGHTNESS_POLICY, "auto") ?: "auto"
+    fun setBrightnessPolicy(value: String) = prefs.edit().putString(KEY_BRIGHTNESS_POLICY, value).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -93,6 +97,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_DEVICE_ADMIN_ASKED = "device_admin_asked"
         private const val KEY_CALL_ROLE_ASKED = "call_role_asked"
         private const val KEY_TEST_MODE = "kiosk_test_mode"
+        private const val KEY_BRIGHTNESS_POLICY = "screen_brightness_policy"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

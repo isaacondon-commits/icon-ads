@@ -543,6 +543,35 @@ router.post('/test-mode', apiKeyOrAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/brightness  { value: 'auto' | 0..255 }
+// Política de brillo de toda la flota. 'auto' = brillo automático del sistema.
+// Un número = brillo fijo (255 = máximo). En estas tablets el auto dimma
+// demasiado, así que conviene un fijo alto (~220).
+router.post('/brightness', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const raw = req.body?.value;
+    let value;
+    if (raw === 'auto' || raw === 'max') {
+      value = raw === 'max' ? '255' : 'auto';
+    } else {
+      const n = Math.round(Number(raw));
+      if (!Number.isFinite(n) || n < 0 || n > 255) {
+        return res.status(400).json({ error: "value debe ser 'auto', 'max' o un número 0-255" });
+      }
+      value = String(n);
+    }
+    await prisma.systemConfig.upsert({
+      where: { key: 'screen_brightness' },
+      update: { value }, create: { key: 'screen_brightness', value },
+    });
+    const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
+    tablets.forEach((t) => forceSyncFlags.add(t.id));
+    const pushResult = await firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean));
+    await audit(req, 'SET_BRIGHTNESS', 'system', null, `screen_brightness=${value}`);
+    res.json({ ok: true, value, message: `Brillo = ${value} — ${tablets.length} tablets marcadas (${pushResult.successCount} al instante).` });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/force-update-apk — como force-sync-all pero para la APK:
 // marca toda la flota para re-chequear la versión publicada YA (ignorando el
 // guard local promptedApkVersion) y las empuja por FCM. Las que ya están en la
