@@ -285,6 +285,10 @@ export const api = {
   },
 
   getApkStatus: () => request<ApkStatus>('/api/admin/apk'),
+  requestScreenshot: (tabletId: number) =>
+    request<{ ok: boolean; message: string }>(`/api/admin/tablet/${tabletId}/request-screenshot`, { method: 'POST' }),
+  getScreenshot: (tabletId: number) =>
+    request<{ image: string | null; at: string | null }>(`/api/admin/tablet/${tabletId}/screenshot`),
   forceUpdateApkAll: () =>
     request<{ ok: boolean; count: number; pushed: number; message: string }>(
       '/api/admin/force-update-apk', { method: 'POST' },
@@ -543,6 +547,7 @@ export interface Tablet {
   spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null; lastIp?: string | null;
   osVersion?: string | null; deviceModel?: string | null;
   brightness?: number | null; brightnessAuto?: boolean | null; serial?: string | null;
+  playerOk?: boolean | null; lastAdAgoS?: number | null; lastScreenshotAt?: string | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
@@ -573,12 +578,17 @@ export interface OccupancyEntry {
 export interface TabletMonitorEntry {
   id: number; name: string; deviceId: string; zone: string | null; timezone: string | null;
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
+  health?: 'ok' | 'offline' | 'no-reproduce';
   playlist: { id: number; name: string } | null; todayPlays: number;
   batteryLevel: number | null;
   brightness: number | null;
   brightnessAuto: boolean | null;
   serial: string | null;
   appVersion: string | null;
+  playerOk?: boolean | null;
+  lastAdAgoS?: number | null;
+  hasScreenshot?: boolean;
+  lastScreenshotAt?: string | null;
 }
 export interface StorageStats {
   totalBytes: number; totalMB: number; fileCount: number; adCount: number;

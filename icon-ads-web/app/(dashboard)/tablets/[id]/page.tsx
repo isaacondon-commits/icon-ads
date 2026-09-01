@@ -6,6 +6,7 @@ import { api, TabletDetail, SyncLog, PlaylistVersion, BASE } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
+import ScreenshotViewer from '@/components/ScreenshotViewer';
 
 type Tab = 'errors' | 'sync' | 'playlist';
 
@@ -125,10 +126,16 @@ export default function TabletDetailPage() {
             </div>
             <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{tablet.deviceId}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {isOnline && tablet.playerOk === false && (
+              <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
+                NO REPRODUCE{tablet.lastAdAgoS != null ? ` (hace ${Math.round(tablet.lastAdAgoS / 60)} min)` : ''}
+              </span>
+            )}
             <span className={`text-xs px-2 py-1 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
               {isOnline ? 'online' : 'offline'}
             </span>
+            <ScreenshotViewer tabletId={tablet.id} tabletName={tablet.name} />
             <button
               onClick={() => setShowMsgModal(true)}
               className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200"

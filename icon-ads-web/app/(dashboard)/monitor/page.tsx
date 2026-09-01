@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api, TabletMonitorEntry } from '@/lib/api';
+import ScreenshotViewer from '@/components/ScreenshotViewer';
 
 const POLL_INTERVAL = 30;
 
@@ -59,6 +60,7 @@ export default function MonitorPage() {
   const offline = entries.length - online;
   const totalPlays = entries.reduce((s, e) => s + e.todayPlays, 0);
   const alerts = entries.filter((e) => e.status === 'offline' && e.offlineMinutes > 120);
+  const notPlaying = entries.filter((e) => e.health === 'no-reproduce');
 
   return (
     <div>
@@ -80,6 +82,16 @@ export default function MonitorPage() {
           </span>
         </div>
       </div>
+
+      {/* CRÍTICO: online pero sin publicidad */}
+      {notPlaying.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800">
+          <p className="text-sm font-bold text-red-700 dark:text-red-400">
+            🚨 {notPlaying.length} tablet{notPlaying.length > 1 ? 's' : ''} ONLINE pero SIN mostrar publicidad: {notPlaying.map(t => t.name).join(', ')}
+          </p>
+          <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">Tocá &quot;Ver pantalla&quot; en la tablet para ver qué está pasando.</p>
+        </div>
+      )}
 
       {/* #4 — offline >2h alert banner */}
       {alerts.length > 0 && (
@@ -127,20 +139,21 @@ function SummaryCard({ label, value, color, dotColor }: { label: string; value: 
 function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
   const isOnline = entry.status === 'online';
   const isLongOffline = !isOnline && entry.offlineMinutes > 120;
+  const notPlaying = entry.health === 'no-reproduce';
 
   return (
     <Link href={`/tablets/${entry.id}`} className="block">
-      <div className={`card p-4 flex flex-col gap-3 hover:border-blue-400 transition-colors cursor-pointer ${isLongOffline ? 'border-orange-300 dark:border-orange-700' : ''}`}>
+      <div className={`card p-4 flex flex-col gap-3 hover:border-blue-400 transition-colors cursor-pointer ${notPlaying ? 'border-red-400 dark:border-red-600' : isLongOffline ? 'border-orange-300 dark:border-orange-700' : ''}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{entry.name}</p>
             {entry.zone && <p className="text-xs truncate" style={{ color: 'var(--text-xs)' }}>{entry.zone}</p>}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
-            <span className={`text-xs font-medium ${isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
-              style={!isOnline && !isLongOffline ? { color: 'var(--text-muted)' } : undefined}>
-              {isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
+            <span className={`w-2 h-2 rounded-full ${notPlaying ? 'bg-red-500 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
+            <span className={`text-xs font-medium ${notPlaying ? 'text-red-600' : isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
+              style={!isOnline && !isLongOffline && !notPlaying ? { color: 'var(--text-muted)' } : undefined}>
+              {notPlaying ? 'NO REPRODUCE' : isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
             </span>
           </div>
         </div>
@@ -167,6 +180,12 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
           <p className="text-xs font-medium truncate mt-0.5">
             {entry.playlist?.name ?? <span style={{ color: 'var(--text-muted)' }}>Sin asignar</span>}
           </p>
+        </div>
+
+        {/* Ver pantalla (fuera del Link) */}
+        <div className="pt-1 border-t" style={{ borderColor: 'var(--border)' }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <ScreenshotViewer tabletId={entry.id} tabletName={entry.name} />
         </div>
 
         {/* Salud del hardware */}
