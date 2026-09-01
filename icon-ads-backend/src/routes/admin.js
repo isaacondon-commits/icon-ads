@@ -110,14 +110,31 @@ router.post('/tablet/:id/block', apiKeyOrAuth, async (req, res, next) => {
     const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true, fcmToken: true } });
     if (!tablet) return res.status(404).json({ error: 'No existe' });
     await prisma.tablet.update({ where: { id }, data: { manualStatus: on ? 'bloqueada' : 'activa' } });
-    forceSyncFlags.add(id);
-    let pushed = 0;
+    // Push para que la tablet agarre el cambio en su próximo ciclo enseguida.
     if (tablet.fcmToken) {
-      try { const r = await firebaseAdmin.sendSyncPush([tablet.fcmToken]); pushed = r?.successCount || 0; } catch { /* best-effort */ }
+      try { await firebaseAdmin.sendSyncPush([tablet.fcmToken]); } catch { /* best-effort */ }
     }
     await audit(req, on ? 'TABLET_BLOCK' : 'TABLET_UNBLOCK', 'tablet', id, tablet.name);
-    res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa', pushed,
+    res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa',
       message: on ? `"${tablet.name}" bloqueada.` : `"${tablet.name}" desbloqueada.` });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/block-all  { on: true|false }
+// Bloquea/desbloquea TODA la flota de una.
+router.post('/block-all', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1;
+    await prisma.tablet.updateMany({ data: { manualStatus: on ? 'bloqueada' : 'activa' } });
+    const tablets = await prisma.tablet.findMany({ select: { fcmToken: true } });
+    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
+    let delivered = 0;
+    try { const r = await firebaseAdmin.sendSyncPush(tokens); delivered = r?.successCount || 0; } catch { /* best-effort */ }
+    await audit(req, on ? 'FLEET_BLOCK' : 'FLEET_UNBLOCK', 'system', null, `${tablets.length} tablets`);
+    res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa', count: tablets.length, delivered,
+      message: on
+        ? `${tablets.length} tablet(s) bloqueadas — dejan de mostrar publicidad (${delivered} al instante).`
+        : `${tablets.length} tablet(s) desbloqueadas — vuelven a mostrar publicidad (${delivered} al instante).` });
   } catch (err) { next(err); }
 });
 

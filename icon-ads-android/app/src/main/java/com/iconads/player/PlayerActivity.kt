@@ -326,7 +326,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUI()
-        if (!dormant && ads.isNotEmpty()) exoPlayer.play()
+        if (!dormant && !blockedByPanel && ads.isNotEmpty()) exoPlayer.play()
         if (!dormant && prefs.getBrightnessPolicy() == "auto") adaptiveBrightness.resume(window)
     }
 
@@ -575,6 +575,7 @@ class PlayerActivity : AppCompatActivity() {
     // ── Carga de playlist ────────────────────────────────────────────────────
 
     private fun loadAndPlay() {
+        if (blockedByPanel) { Log.i(TAG, "loadAndPlay ignorado: tablet bloqueada"); return }
         lifecycleScope.launch {
             showLoading(true)
             ads = withContext(Dispatchers.IO) { playlistRepo.loadAds() }
@@ -586,6 +587,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun activateFallback() {
+        if (blockedByPanel) return
         lifecycleScope.launch {
             ads = withContext(Dispatchers.IO) { playlistRepo.loadAds() }
             currentIndex = 0
@@ -604,6 +606,7 @@ class PlayerActivity : AppCompatActivity() {
     // ── Reproducción ─────────────────────────────────────────────────────────
 
     private fun playNext() {
+        if (blockedByPanel) return
         // A playlist reload can land an empty list while a video/image callback
         // is already in flight (e.g. campaign expired mid-playback) — guard
         // against a modulo-by-zero crash.
@@ -613,6 +616,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun playAd(ad: Ad) {
+        if (blockedByPanel) { Log.i(TAG, "playAd ignorado: tablet bloqueada"); return }
         adStartTime = System.currentTimeMillis()
         lastAdRenderedMs = adStartTime
         imageHandler.removeCallbacksAndMessages(null)

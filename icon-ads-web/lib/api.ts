@@ -295,6 +295,8 @@ export const api = {
     request<{ ok: boolean; sent: number; delivered: number; message: string }>('/api/admin/wake-all', { method: 'POST' }),
   blockTablet: (tabletId: number, on: boolean) =>
     request<{ ok: boolean; manualStatus: string; message: string }>(`/api/admin/tablet/${tabletId}/block`, { method: 'POST', body: JSON.stringify({ on }) }),
+  blockAllTablets: (on: boolean) =>
+    request<{ ok: boolean; count: number; delivered: number; message: string }>('/api/admin/block-all', { method: 'POST', body: JSON.stringify({ on }) }),
   getScreenshot: (tabletId: number) =>
     request<{ image: string | null; at: string | null }>(`/api/admin/tablet/${tabletId}/screenshot`),
   forceUpdateApkAll: () =>

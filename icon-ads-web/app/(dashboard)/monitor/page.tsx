@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api, TabletMonitorEntry } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 const POLL_INTERVAL = 30;
 
@@ -26,6 +27,8 @@ export default function MonitorPage() {
   const [unblockingId, setUnblockingId] = useState<number | null>(null);
   const [wakingId, setWakingId] = useState<number | null>(null);
   const [wakingAll, setWakingAll] = useState(false);
+  const [blockingAll, setBlockingAll] = useState(false);
+  const [confirmBlockAll, setConfirmBlockAll] = useState<null | boolean>(null);
   const { show } = useToast();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -68,6 +71,7 @@ export default function MonitorPage() {
   const notPlaying = entries.filter((e) => e.health === 'no-reproduce');
   const blocked = entries.filter((e) => e.health === 'blocked');
   const lowBattery = entries.filter((e) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20);
+  const allBlocked = entries.length > 0 && blocked.length === entries.length;
 
   const unblock = async (id: number) => {
     setUnblockingId(id);
@@ -100,6 +104,18 @@ export default function MonitorPage() {
     } finally { setWakingAll(false); }
   };
 
+  const blockAll = async (on: boolean) => {
+    setConfirmBlockAll(null);
+    setBlockingAll(true);
+    try {
+      const r = await api.blockAllTablets(on);
+      show(r.message);
+      await fetchData();
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al cambiar el estado de la flota', 'error');
+    } finally { setBlockingAll(false); }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -112,6 +128,15 @@ export default function MonitorPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => setConfirmBlockAll(!allBlocked)} disabled={blockingAll}
+            title={allBlocked ? 'Todas vuelven a mostrar publicidad' : 'Todas dejan de mostrar publicidad (el kiosco sigue armado)'}
+            className={`text-xs px-3 py-1.5 rounded-lg border font-medium disabled:opacity-50 ${
+              allBlocked
+                ? 'hover:bg-emerald-50 dark:hover:bg-emerald-950 text-emerald-700 border-emerald-300'
+                : 'hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300'
+            }`}>
+            {blockingAll ? 'Aplicando...' : allBlocked ? 'Desbloquear todas' : 'Bloquear todas'}
+          </button>
           <button onClick={wakeAll} disabled={wakingAll}
             title="Manda orden de encendido a toda la flota (las que tengan señal prenden en segundos)"
             className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50">
@@ -208,6 +233,18 @@ export default function MonitorPage() {
             <TabletCard key={t.id} entry={t} onWake={() => wake(t.id)} waking={wakingId === t.id} />
           ))}
         </div>
+      )}
+
+      {confirmBlockAll !== null && (
+        <ConfirmDialog
+          title={confirmBlockAll ? 'Bloquear toda la flota' : 'Desbloquear toda la flota'}
+          message={confirmBlockAll
+            ? `Las ${entries.length} tablets dejan de mostrar publicidad (quedan en negro, el kiosco sigue armado). Se reanuda cuando desbloqueás.`
+            : `Las ${entries.length} tablets vuelven a mostrar publicidad.`}
+          confirmLabel={confirmBlockAll ? 'Bloquear todas' : 'Desbloquear todas'}
+          onConfirm={() => blockAll(confirmBlockAll)}
+          onCancel={() => setConfirmBlockAll(null)}
+        />
       )}
     </div>
   );
