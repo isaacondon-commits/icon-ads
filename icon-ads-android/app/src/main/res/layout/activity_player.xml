@@ -12,6 +12,7 @@
         android:layout_height="match_parent"
         android:visibility="gone"
         app:show_buffering="when_playing"
+        app:surface_type="texture_view"
         app:resize_mode="fit" />
 
     <!-- Visor de imágenes -->
