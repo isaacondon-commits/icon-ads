@@ -1,5 +1,7 @@
 const router = require('express').Router();
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const XLSX = require('xlsx');
 const PptxGenJS = require('pptxgenjs');
@@ -170,6 +172,38 @@ router.post('/wake-all', apiKeyOrAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/playlist/:id/rebuild — regenera el paquete de una playlist:
+// sube la versión, borra el ZIP cacheado y marca a todas sus tablets para
+// re-bajarlo. Para cuando un paquete quedó incompleto (faltaban archivos) y en
+// las tablets se veían sólo algunos anuncios repitiéndose.
+router.post('/playlist/:id/rebuild', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const pl = await prisma.playlist.findUnique({ where: { id }, select: { id: true, name: true, version: true } });
+    if (!pl) return res.status(404).json({ error: 'No existe' });
+    const updated = await prisma.playlist.update({
+      where: { id }, data: { version: pl.version + 1, contentHash: null },
+    });
+    try {
+      const cacheDir = path.join(__dirname, '../../cache');
+      if (fs.existsSync(cacheDir)) {
+        for (const f of fs.readdirSync(cacheDir)) {
+          if (f.startsWith(`playlist_${id}_`)) fs.unlinkSync(path.join(cacheDir, f));
+        }
+      }
+    } catch (e) { console.warn('[rebuild] limpiando cache:', e.message); }
+    const tablets = await prisma.tablet.findMany({ where: { playlistId: id }, select: { id: true, fcmToken: true } });
+    tablets.forEach((t) => forceSyncFlags.add(t.id));
+    let pushed = 0;
+    try { const r = await firebaseAdmin.sendSyncPush(tablets.map((t) => t.fcmToken).filter(Boolean)); pushed = r?.successCount || 0; } catch { /* best-effort */ }
+    await audit(req, 'PLAYLIST_REBUILD', 'playlist', id, `${pl.name} → v${updated.version}`);
+    res.json({
+      ok: true, version: updated.version, tablets: tablets.length, pushed,
+      message: `"${pl.name}" v${updated.version} — ${tablets.length} tablet(s) van a re-bajar el paquete completo (${pushed} al instante).`,
+    });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.
@@ -232,6 +266,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
       return {
         id: t.id, name: t.name,
         manualStatus: t.manualStatus,
+        playlistId: t.playlistId ?? null,
         playlist: pl ? `${pl.name} (v${pl.version})` : null,
         adsEnPlaylist: ads.length,
         adsReproducibles: playable.length,

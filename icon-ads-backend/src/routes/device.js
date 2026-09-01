@@ -259,13 +259,17 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const cacheDir = path.join(__dirname, '../../cache');
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Only include active, non-deleted, approved ads
-    const adsPayload = playlist.playlistAds
+    // Sólo anuncios activos, no borrados y aprobados. Se dedupe por filename para
+    // que un mismo archivo no entre dos veces al ZIP (aunque el anuncio esté
+    // repetido en la lista, cosa que sí se refleja en adsPayload/orden).
+    const activeAds = playlist.playlistAds
       .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus === 'approved')
-      .map(({ ad, order }) => ({
-        id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
-        duration_s: ad.durationS, order, campaignId: ad.campaignId,
-      }));
+      .map(({ ad, order }) => ({ ad, order }));
+
+    const adsPayload = activeAds.map(({ ad, order }) => ({
+      id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
+      duration_s: ad.durationS, order, campaignId: ad.campaignId,
+    }));
 
     const hash = crypto
       .createHash('sha256')
@@ -274,37 +278,75 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     const cachedZip = path.join(cacheDir, `playlist_${playlist.id}_${hash}.zip`);
 
+    console.log(`[package] tablet=${tablet.id} playlist=${playlist.id} v${playlist.version} ads=${adsPayload.length} hash=${hash.slice(0, 8)}`);
+
+    // Cache hit: el ZIP ya generado y completo se sirve tal cual.
+    if (playlist.contentHash === hash && fs.existsSync(cachedZip)) {
+      console.log(`[package] cache hit — sirviendo desde disco`);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
+      res.setHeader('X-Playlist-Hash', hash);
+      return fs.createReadStream(cachedZip).pipe(res);
+    }
+
+    // PRE-RESOLVER TODA la media ANTES de responder. Si falta aunque sea un
+    // archivo, se aborta con 503 y la tablet reintenta más tarde — nunca se
+    // sirve (ni se cachea) un paquete incompleto: eso hacía que en la tablet
+    // faltaran anuncios y los demás se repitieran en loop.
+    const uniqueByFilename = [];
+    const seen = new Set();
+    for (const { ad } of activeAds) {
+      if (seen.has(ad.filename)) continue;
+      seen.add(ad.filename);
+      uniqueByFilename.push(ad);
+    }
+
+    const mediaEntries = [];
+    for (const ad of uniqueByFilename) {
+      const filePath = path.join(uploadDir, ad.filename);
+      if (fs.existsSync(filePath)) {
+        mediaEntries.push({ name: `media/${ad.filename}`, filePath });
+        continue;
+      }
+      if (ad.fileUrl && /^https?:\/\//.test(ad.fileUrl)) {
+        try {
+          const remote = await fetch(ad.fileUrl);
+          if (!remote.ok) throw new Error(`HTTP ${remote.status}`);
+          const buf = Buffer.from(await remote.arrayBuffer());
+          if (buf.length === 0) throw new Error('archivo vacío');
+          mediaEntries.push({ name: `media/${ad.filename}`, buffer: buf });
+          continue;
+        } catch (fetchErr) {
+          console.warn(`[package] media faltante ${ad.filename} (${ad.fileUrl}): ${fetchErr.message} — abortando paquete`);
+          return res.status(503).json({ error: `Media incompleta (${ad.filename}). Reintentar.` });
+        }
+      }
+      console.warn(`[package] media faltante ${ad.filename} (sin archivo ni URL) — abortando paquete`);
+      return res.status(503).json({ error: `Media incompleta (${ad.filename}). Reintentar.` });
+    }
+
+    console.log(`[package] generando ZIP (${mediaEntries.length} archivos)…`);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
     res.setHeader('X-Playlist-Hash', hash);
 
-    console.log(`[package] tablet=${tablet.id} playlist=${playlist.id} v${playlist.version} ads=${playlist.playlistAds.length} hash=${hash.slice(0, 8)}`);
-
-    // Serve from cache if hash matches (#31)
-    if (playlist.contentHash === hash && fs.existsSync(cachedZip)) {
-      console.log(`[package] cache hit — sirviendo desde disco`);
-      return fs.createReadStream(cachedZip).pipe(res);
-    }
-
-    console.log(`[package] generando ZIP…`);
     const playlistJson = JSON.stringify(
       { version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
     );
 
-    // Pipe archive directly to response; collect chunks to cache in background
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.on('error', (err) => {
       console.error('[package] archive error:', err.message);
-      if (!res.writableEnded) next(err);
+      if (!res.writableEnded) res.destroy(err);
     });
-
-    // Stream directly to client — this is the fix; never buffer-then-serve
     archive.pipe(res);
 
-    // Simultaneously collect chunks for disk cache
+    // Cachear en background sólo si el ZIP se completó OK.
     const cacheChunks = [];
+    let archiveFailed = false;
     archive.on('data', (chunk) => cacheChunks.push(Buffer.from(chunk)));
     archive.on('end', () => {
+      if (archiveFailed) return;
       const buf = Buffer.concat(cacheChunks);
       console.log(`[package] ZIP enviado — ${(buf.length / 1024).toFixed(1)} KB`);
       fs.writeFile(cachedZip, buf, async (writeErr) => {
@@ -315,30 +357,12 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
         } catch { /* non-fatal */ }
       });
     });
+    res.on('error', () => { archiveFailed = true; });
 
     archive.append(playlistJson, { name: 'playlist.json' });
-    for (const { ad } of playlist.playlistAds) {
-      const filePath = path.join(uploadDir, ad.filename);
-      if (fs.existsSync(filePath)) {
-        console.log(`[package] + media/${ad.filename} (disco)`);
-        archive.file(filePath, { name: `media/${ad.filename}` });
-        continue;
-      }
-      // Storage migrated to Supabase/R2 (#41) — file isn't on local disk, fetch it
-      // from its public URL instead of skipping it silently.
-      if (ad.fileUrl && /^https?:\/\//.test(ad.fileUrl)) {
-        try {
-          const remote = await fetch(ad.fileUrl);
-          if (!remote.ok) throw new Error(`HTTP ${remote.status}`);
-          const buf = Buffer.from(await remote.arrayBuffer());
-          console.log(`[package] + media/${ad.filename} (remoto, ${(buf.length / 1024).toFixed(0)} KB)`);
-          archive.append(buf, { name: `media/${ad.filename}` });
-        } catch (fetchErr) {
-          console.warn(`[package] no se pudo descargar ${ad.fileUrl}: ${fetchErr.message}`);
-        }
-        continue;
-      }
-      console.warn(`[package] archivo no encontrado: ${filePath}`);
+    for (const e of mediaEntries) {
+      if (e.filePath) archive.file(e.filePath, { name: e.name });
+      else archive.append(e.buffer, { name: e.name });
     }
     archive.finalize();
   } catch (err) {
