@@ -105,10 +105,12 @@ app.use(cors({
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
+  // 60/min es muy justo para un operador de flota (12 syncs + polling de
+  // páginas). 180/min sigue cortando abuso pero deja trabajar.
+  max: 180,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again in a minute.' },
+  message: { error: 'Demasiadas solicitudes, probá de nuevo en un minuto.' },
 });
 app.use('/api', apiLimiter);
 app.use(express.json());
