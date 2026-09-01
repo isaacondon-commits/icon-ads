@@ -140,8 +140,8 @@ export default function TabletsPage() {
     try {
       const res = await api.forceSync(id);
       show(res.message);
-    } catch {
-      show('Error al forzar sync', 'error');
+    } catch (e) {
+      show(e instanceof Error ? `Error: ${e.message}` : 'Error al forzar sync', 'error');
     } finally { setForcingSync(null); }
   };
 
@@ -150,8 +150,8 @@ export default function TabletsPage() {
     try {
       const res = await api.forceSyncAll();
       show(res.message);
-    } catch {
-      show('Error al forzar sync general', 'error');
+    } catch (e) {
+      show(e instanceof Error ? `Error: ${e.message}` : 'Error al forzar sync general', 'error');
     } finally { setForcingSyncAll(false); }
   };
 

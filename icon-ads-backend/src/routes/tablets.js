@@ -453,12 +453,25 @@ router.post('/:id/force-sync', requireAdmin, async (req, res, next) => {
     const tablet = await prisma.tablet.findUnique({ where: { id } });
     if (!tablet) return res.status(404).json({ error: 'Tablet not found' });
     forceSyncFlags.add(id);
-    const pushResult = tablet.fcmToken ? await firebaseAdmin.sendSyncPush([tablet.fcmToken]) : { successCount: 0 };
-    await audit(req, 'FORCE_SYNC', 'tablet', id, `Forced sync on "${tablet.name}"${pushResult.successCount > 0 ? ' (pushed instantly)' : ''}`);
-    const message = pushResult.successCount > 0
-      ? 'Sincronizando ahora mismo.'
-      : 'La tablet re-sincronizará en la próxima conexión.';
-    res.json({ ok: true, message });
+    // El push FCM es best-effort: si falla (token viejo, FCM caído) NO debe
+    // romper el force-sync — la tablet igual lo agarra en su próximo ciclo.
+    let pushed = 0;
+    try {
+      if (tablet.fcmToken) {
+        const r = await firebaseAdmin.sendSyncPush([tablet.fcmToken]);
+        pushed = r.successCount || 0;
+      }
+    } catch (e) {
+      console.warn(`[force-sync] push falló tablet=${id}: ${e.message}`);
+    }
+    audit(req, 'FORCE_SYNC', 'tablet', id, `Forced sync on "${tablet.name}"${pushed > 0 ? ' (push)' : ''}`).catch(() => {});
+    const noPlaylist = !tablet.playlistId;
+    res.json({
+      ok: true,
+      message: noPlaylist
+        ? 'Marcada, pero esta tablet NO tiene playlist asignada — no va a mostrar nada hasta que le asignes una.'
+        : pushed > 0 ? 'Sincronizando ahora mismo.' : 'Marcada — sincroniza en su próxima conexión (≤10 s en modo test).',
+    });
   } catch (err) {
     next(err);
   }

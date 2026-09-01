@@ -84,6 +84,52 @@ router.post('/rename-tablets', apiKeyOrAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/admin/fleet-health — diagnóstico por tablet (apiKeyOrAuth).
+router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const [tablets, playlists] = await Promise.all([
+      prisma.tablet.findMany({
+        select: { id: true, name: true, playlistId: true, lastSync: true, appVersion: true, fcmToken: true, serial: true },
+        orderBy: { id: 'asc' },
+      }),
+      prisma.playlist.findMany({
+        select: {
+          id: true, name: true, version: true,
+          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true } } } },
+        },
+      }),
+    ]);
+    const now = Date.now();
+    const plById = Object.fromEntries(playlists.map((p) => [p.id, p]));
+    const rows = tablets.map((t) => {
+      const pl = t.playlistId ? plById[t.playlistId] : null;
+      const ads = pl?.playlistAds?.map((pa) => pa.ad) ?? [];
+      const playable = ads.filter((a) =>
+        a.active && !a.deletedAt && a.approvalStatus === 'approved'
+        && (!a.startsAt || new Date(a.startsAt) <= now) && (!a.endsAt || new Date(a.endsAt) >= now));
+      return {
+        id: t.id, name: t.name,
+        playlist: pl ? `${pl.name} (v${pl.version})` : null,
+        adsEnPlaylist: ads.length,
+        adsReproducibles: playable.length,
+        fcmToken: !!t.fcmToken,
+        appVersion: t.appVersion,
+        serial: t.serial,
+        lastSyncHace: t.lastSync ? Math.round((now - new Date(t.lastSync).getTime()) / 1000) + 's' : 'nunca',
+      };
+    });
+    res.json({
+      resumen: {
+        total: rows.length,
+        sinPlaylist: rows.filter((r) => !r.playlist).length,
+        playlistVacia: rows.filter((r) => r.playlist && r.adsEnPlaylist === 0).length,
+        sinAdsReproducibles: rows.filter((r) => r.playlist && r.adsReproducibles === 0).length,
+      },
+      tablets: rows,
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/admin/dashboard-stats — full system summary with alerts
 router.get('/dashboard-stats', requireAuth, async (req, res, next) => {
   try {
