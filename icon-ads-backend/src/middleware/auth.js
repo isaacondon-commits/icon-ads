@@ -12,9 +12,24 @@ function requireAuth(req, res, next) {
   }
 }
 
+// Acceso de administración pleno: admin / superadmin.
+// Bloquea 'operator' (solo lectura) y 'supervisor' (sólo puede CREAR anuncios,
+// campañas y playlists — ver requireCreator).
 function requireAdmin(req, res, next) {
-  if (req.user?.role === 'operator') return res.status(403).json({ error: 'Acceso denegado: cuenta de solo lectura' });
+  if (!['admin', 'superadmin'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Acceso denegado: se requiere rol de administrador' });
+  }
   next();
 }
 
-module.exports = { requireAuth, requireAdmin };
+// Permite CREAR contenido (anuncios, campañas, playlists): admin / superadmin /
+// supervisor. Sigue bloqueando 'operator'. Editar y borrar ese contenido queda
+// en requireAdmin.
+function requireCreator(req, res, next) {
+  if (!['admin', 'superadmin', 'supervisor'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Acceso denegado: cuenta de solo lectura' });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, requireCreator };

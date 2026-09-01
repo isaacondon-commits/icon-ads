@@ -2,10 +2,18 @@ const router = require('express').Router();
 const { z } = require('zod');
 const crypto = require('crypto');
 const prisma = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 
 router.use(requireAuth);
+
+// Gating por rol. GET libre (operator lee). Crear una playlist lo puede hacer
+// supervisor; editar contenido / borrar / revertir / duplicar, sólo admin.
+router.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  const p = req.path.replace(/\/+$/, '') || '/';
+  return (req.method === 'POST' && p === '/' ? requireCreator : requireAdmin)(req, res, next);
+});
 
 router.param('id', (req, res, next, id) => {
   if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });

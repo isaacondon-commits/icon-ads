@@ -158,7 +158,14 @@ app.get('/api/health', async (req, res) => {
 // bytes DIRECTO (proxy desde el storage) — NO redirect: el downloader de
 // provisioning de Android no sigue redirecciones. URL corta y fija: el QR no
 // hay que regenerarlo al publicar versiones nuevas.
-app.get('/p/apk', async (req, res, next) => {
+const apkProxyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 40, // ~suficiente para provisionar tandas de tablets; corta abuso de ancho de banda
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Demasiadas descargas. Probá de nuevo en un rato.',
+});
+app.get('/p/apk', apkProxyLimiter, async (req, res, next) => {
   try {
     const row = await prisma.systemConfig.findUnique({ where: { key: 'apk_url' } });
     if (!row?.value) return res.status(404).send('No hay APK publicada');

@@ -44,6 +44,25 @@ router.post('/seed', async (req, res, next) => {
   }
 });
 
+// POST /api/admin/seed-supervisor — crea (una vez) el usuario supervisor.
+// Endpoint temporal, gated con apiKeyOrAuth; se elimina tras usarlo.
+router.post('/seed-supervisor', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const email = (req.body?.email || 'supervisor@iconads.com').toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ message: 'Ya existe', email: existing.email, role: existing.role });
+    }
+    const password = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: { email, password: hashed, name: req.body?.name || 'Supervisor', role: 'supervisor' },
+    });
+    await audit(req, 'CREATE_SUPERVISOR', 'user', user.id, `email=${email}`);
+    res.status(201).json({ email: user.email, role: user.role, password });
+  } catch (err) { next(err); }
+});
+
 // GET /api/admin/dashboard-stats — full system summary with alerts
 router.get('/dashboard-stats', requireAuth, async (req, res, next) => {
   try {

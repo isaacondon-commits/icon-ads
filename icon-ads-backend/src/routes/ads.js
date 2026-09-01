@@ -7,9 +7,10 @@ const sharp = require('sharp');
 const prisma = require('../lib/prisma');
 const r2 = require('../lib/r2');
 const supabaseStorage = require('../lib/supabase-storage');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
+const { mp4DurationSeconds } = require('../lib/mp4Duration');
 
 const IMAGE_MAX = 10 * 1024 * 1024;
 const VIDEO_MAX = 100 * 1024 * 1024;
@@ -49,6 +50,16 @@ const upload = multer({
 });
 
 router.use(requireAuth);
+
+// Gating por rol. GET libre para todos los autenticados (operator lee).
+// Crear un anuncio lo puede hacer supervisor; el resto de escrituras
+// (editar / borrar / aprobar / pausar) sólo admin.
+const CREATE_PATHS = new Set(['/upload', '/confirm']);
+router.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  const p = req.path.replace(/\/+$/, '') || '/';
+  return (req.method === 'POST' && CREATE_PATHS.has(p) ? requireCreator : requireAdmin)(req, res, next);
+});
 
 router.param('id', (req, res, next, id) => {
   if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -206,6 +217,18 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     }
 
     const { campaignId, name, type, durationS, priority, targetUrl, thumbnailUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
+
+    // El video no puede durar más que la duración configurada para el anuncio:
+    // si dura más, se cortaría en pantalla. Se acepta hasta 0.5s de margen.
+    if (isVideo) {
+      const realDur = mp4DurationSeconds(req.file.buffer);
+      if (realDur != null && realDur > durationS + 0.5) {
+        return res.status(400).json({
+          error: `El video dura ${realDur.toFixed(1)}s pero configuraste ${durationS}s para el anuncio. `
+            + `Subí un video de ${durationS}s o menos, o poné la duración real del video al crear el anuncio.`,
+        });
+      }
+    }
 
     let fileBuffer = req.file.buffer;
     if (!isVideo) fileBuffer = await compressImage(fileBuffer, req.file.mimetype);
