@@ -29,8 +29,28 @@ export default function MonitorPage() {
   const [wakingAll, setWakingAll] = useState(false);
   const [blockingAll, setBlockingAll] = useState(false);
   const [confirmBlockAll, setConfirmBlockAll] = useState<null | boolean>(null);
+  const [brightAuto, setBrightAuto] = useState(true);
+  const [brightPct, setBrightPct] = useState(90);
+  const [savingBright, setSavingBright] = useState(false);
   const { show } = useToast();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadBrightness = () => {
+    api.getFleetBrightness().then((b) => {
+      setBrightAuto(b.isAuto);
+      if (b.pct != null) setBrightPct(b.pct);
+    }).catch(() => {});
+  };
+  const commitBrightness = async (val: number | 'auto') => {
+    setSavingBright(true);
+    try {
+      const r = await api.setFleetBrightness(val === 'auto' ? 'auto' : Math.round((val / 100) * 255));
+      setBrightAuto(val === 'auto');
+      show(r.message);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al cambiar el brillo', 'error');
+    } finally { setSavingBright(false); }
+  };
 
   const fetchData = async () => {
     try {
@@ -56,6 +76,7 @@ export default function MonitorPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch + polling on mount, not a compiler target
     fetchData();
+    loadBrightness();
     resetCountdown();
     const poll = setInterval(() => { fetchData(); resetCountdown(); }, POLL_INTERVAL * 1000);
     return () => {
@@ -149,6 +170,45 @@ export default function MonitorPage() {
             Auto en {countdown}s
           </span>
         </div>
+      </div>
+
+      {/* Brillo de toda la flota */}
+      <div className="card p-3 mb-4 flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium">☀ Brillo de la flota</span>
+        <button
+          onClick={() => commitBrightness('auto')}
+          disabled={savingBright}
+          title="Vuelve a la tabla de brillo por horario solar (Ajustes)"
+          className={`text-xs px-2.5 py-1 rounded-lg border font-medium disabled:opacity-50 ${
+            brightAuto
+              ? 'bg-blue-600 text-white border-blue-600'
+              : 'text-blue-600 border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950'
+          }`}>
+          Auto (solar)
+        </button>
+        <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+          <input
+            type="range" min={5} max={100} step={5}
+            value={brightPct}
+            onChange={(e) => { setBrightPct(Number(e.target.value)); setBrightAuto(false); }}
+            onPointerUp={() => commitBrightness(brightPct)}
+            onKeyUp={(e) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) commitBrightness(brightPct); }}
+            disabled={savingBright}
+            className="flex-1 accent-blue-600"
+          />
+          <span className="text-sm font-semibold tabular-nums w-12 text-right">
+            {brightAuto ? 'auto' : `${brightPct}%`}
+          </span>
+        </div>
+        <button
+          onClick={() => commitBrightness(brightPct)}
+          disabled={savingBright}
+          className="text-xs px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium">
+          {savingBright ? '…' : 'Fijar'}
+        </button>
+        <span className="text-[11px] w-full sm:w-auto" style={{ color: 'var(--text-muted)' }}>
+          Fijar aplica un brillo constante a las 12 (anula el horario solar hasta que toques &quot;Auto&quot;).
+        </span>
       </div>
 
       {/* CRÍTICO: online pero sin publicidad */}

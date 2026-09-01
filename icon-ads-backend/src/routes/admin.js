@@ -747,10 +747,19 @@ router.post('/test-mode', apiKeyOrAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// POST /api/admin/brightness  { value: 'auto' | 0..255 }
-// Política de brillo de toda la flota. 'auto' = brillo automático del sistema.
-// Un número = brillo fijo (255 = máximo). En estas tablets el auto dimma
-// demasiado, así que conviene un fijo alto (~220).
+// GET /api/admin/brightness — política de brillo actual de la flota.
+router.get('/brightness', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const row = await prisma.systemConfig.findUnique({ where: { key: 'screen_brightness' } });
+    const value = row?.value || 'auto';
+    const isAuto = value === 'auto';
+    res.json({ value, isAuto, pct: isAuto ? null : Math.round((Number(value) / 255) * 100) });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/brightness  { value: 'auto' | 'max' | 0..255 }
+// Política de brillo de toda la flota. 'auto' = tabla de brillo por horario
+// solar (la app calcula amanecer/atardecer). Un número = brillo fijo.
 router.post('/brightness', apiKeyOrAuth, async (req, res, next) => {
   try {
     const raw = req.body?.value;

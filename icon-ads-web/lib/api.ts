@@ -308,6 +308,10 @@ export const api = {
     request<{ ok: boolean; manualStatus: string; message: string }>(`/api/admin/tablet/${tabletId}/block`, { method: 'POST', body: JSON.stringify({ on }) }),
   blockAllTablets: (on: boolean) =>
     request<{ ok: boolean; count: number; delivered: number; message: string }>('/api/admin/block-all', { method: 'POST', body: JSON.stringify({ on }) }),
+  getFleetBrightness: () =>
+    request<{ value: string; isAuto: boolean; pct: number | null }>('/api/admin/brightness'),
+  setFleetBrightness: (value: number | 'auto' | 'max') =>
+    request<{ ok: boolean; value: string; message: string }>('/api/admin/brightness', { method: 'POST', body: JSON.stringify({ value }) }),
   getScreenshot: (tabletId: number) =>
     request<{ image: string | null; at: string | null }>(`/api/admin/tablet/${tabletId}/screenshot`),
   forceUpdateApkAll: () =>
