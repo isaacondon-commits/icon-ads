@@ -406,6 +406,25 @@ setInterval(async () => {
   } catch (err) { console.warn('[location-cleanup]', err.message); }
 }, 24 * 60 * 60 * 1000);
 
+// Limpieza de tablets fantasma: filas que nunca reportaron una versión de app y
+// llevan >1h sin sincronizar (dispositivos viejos de pruebas que re-registran
+// solos). Una tablet real reporta versión a los segundos de registrarse.
+const cleanGhostTablets = async () => {
+  try {
+    const cutoff = new Date(Date.now() - 60 * 60 * 1000);
+    const ghosts = await prisma.tablet.findMany({
+      where: { appVersion: null, lastSync: { lt: cutoff }, createdAt: { lt: cutoff } },
+      select: { id: true, deviceId: true },
+    });
+    for (const g of ghosts) {
+      await prisma.tablet.delete({ where: { id: g.id } }).catch(() => {});
+    }
+    if (ghosts.length) console.log(`[ghost-cleanup] ${ghosts.length} tablet(s) fantasma borradas: ${ghosts.map((g) => g.deviceId).join(', ')}`);
+  } catch (err) { console.warn('[ghost-cleanup]', err.message); }
+};
+setInterval(cleanGhostTablets, 30 * 60 * 1000);
+setTimeout(cleanGhostTablets, 60 * 1000);
+
 // #42 — Daily backup log
 setInterval(async () => {
   try {
