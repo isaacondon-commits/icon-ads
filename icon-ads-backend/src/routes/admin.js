@@ -485,7 +485,7 @@ router.get('/apk', apiKeyOrAuth, async (req, res, next) => {
       prisma.systemConfig.findMany({
         where: { key: { in: ['apk_version_code', 'apk_version_name', 'apk_url', 'apk_uploaded_at'] } },
       }),
-      prisma.tablet.findMany({ select: { id: true, name: true, appVersion: true, lastSync: true } }),
+      prisma.tablet.findMany({ select: { id: true, name: true, appVersion: true, lastSync: true, brightness: true, brightnessAuto: true, serial: true, batteryLevel: true } }),
     ]);
     const map = Object.fromEntries(configs.map((c) => [c.key, c.value]));
     const publishedName = map.apk_version_name ?? null;
@@ -493,7 +493,7 @@ router.get('/apk', apiKeyOrAuth, async (req, res, next) => {
     const byVersion = {};
     for (const t of tablets) {
       const v = t.appVersion || 'desconocida';
-      (byVersion[v] ||= []).push({ id: t.id, name: t.name, lastSync: t.lastSync });
+      (byVersion[v] ||= []).push({ id: t.id, name: t.name, lastSync: t.lastSync, brightness: t.brightness, brightnessAuto: t.brightnessAuto, serial: t.serial, battery: t.batteryLevel });
     }
     const versions = Object.entries(byVersion)
       .map(([version, list]) => ({
