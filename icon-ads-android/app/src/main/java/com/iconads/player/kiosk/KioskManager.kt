@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.UserManager
 import android.util.Log
 import com.iconads.player.receiver.AdminReceiver
+import com.iconads.player.util.DevicePrefs
 
 /**
  * Todo lo que sólo se puede hacer cuando la app es Device Owner
@@ -76,12 +77,9 @@ object KioskManager {
         val pkg = context.packageName
         try {
             dpm.setLockTaskPackages(admin, arrayOf(pkg))
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                // Kiosco real: sin barra de estado, sin notificaciones, sin
-                // keyguard mientras el player está en primer plano.
-                dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
-            }
-            dpm.setStatusBarDisabled(admin, true)
+            // En modo test se libera la barra de estado para poder configurar
+            // la tablet (WiFi, datos). Fuera de modo test, kiosco cerrado.
+            setKioskLock(context, !DevicePrefs(context).getTestMode())
 
             // Brillo siempre en automático (Device Owner puede fijar este ajuste).
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -141,6 +139,34 @@ object KioskManager {
             Log.i(TAG, "Políticas de Device Owner aplicadas")
         } catch (e: Exception) {
             Log.w(TAG, "applyPolicies falló: ${e.message}")
+        }
+    }
+
+    /**
+     * Cierra (locked=true) o libera (locked=false) el kiosco a nivel sistema:
+     * barra de estado y features de lock task. Con modo test se libera para
+     * poder entrar a Ajustes.
+     */
+    fun setKioskLock(context: Context, locked: Boolean) {
+        if (!isDeviceOwner(context)) return
+        val admin = AdminReceiver.component(context)
+        val dpm = dpm(context)
+        try { dpm.setStatusBarDisabled(admin, locked) } catch (e: Exception) {
+            Log.w(TAG, "setStatusBarDisabled: ${e.message}")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                dpm.setLockTaskFeatures(
+                    admin,
+                    if (locked) DevicePolicyManager.LOCK_TASK_FEATURE_NONE
+                    else DevicePolicyManager.LOCK_TASK_FEATURE_HOME or
+                        DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS or
+                        DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or
+                        DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO,
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "setLockTaskFeatures: ${e.message}")
+            }
         }
     }
 

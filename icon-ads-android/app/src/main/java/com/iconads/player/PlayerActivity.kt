@@ -336,8 +336,10 @@ class PlayerActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() { /* bloqueado en modo kiosco */ }
 
-    // Kiosco: consumir HOME y RECENTS para evitar salida accidental
+    // Kiosco: consumir HOME y RECENTS para evitar salida accidental.
+    // En modo test se dejan pasar, para poder salir a Ajustes.
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (prefs.getTestMode()) return super.onKeyDown(keyCode, event)
         return when (keyCode) {
             KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_APP_SWITCH, KeyEvent.KEYCODE_MENU -> true
             else -> super.onKeyDown(keyCode, event)
@@ -346,10 +348,22 @@ class PlayerActivity : AppCompatActivity() {
 
     // ── Configuración ────────────────────────────────────────────────────────
 
+    // Entra en lock task (kiosco real) salvo que esté el modo test, donde se
+    // libera para poder configurar la tablet (WiFi, datos, etc.).
+    private fun applyKioskState() {
+        if (prefs.getTestMode()) {
+            try { stopLockTask() } catch (_: Exception) {}
+            KioskManager.setKioskLock(this, false)
+        } else {
+            try { startLockTask() } catch (e: Exception) { Log.w(TAG, "Lock task no disponible") }
+            KioskManager.setKioskLock(this, true)
+        }
+    }
+
     private fun setupWindow() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        try { startLockTask() } catch (e: Exception) { Log.w(TAG, "Lock task no disponible") }
+        applyKioskState()
     }
 
     // Mostrar el player por encima del bloqueo y encender la pantalla cuando
@@ -443,7 +457,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         setupShowWhenLocked()
         KioskManager.enterPlaying(this)
-        try { startLockTask() } catch (_: Exception) {}
+        applyKioskState()
         loadAndPlay()  // exoPlayer.stop() en enterDormant liberó el media item
     }
 
@@ -673,6 +687,7 @@ class PlayerActivity : AppCompatActivity() {
             if (prefs.getTestMode() != syncResp.testMode) {
                 Log.i(TAG, "syncNow: modo test → ${syncResp.testMode}")
                 prefs.setTestMode(syncResp.testMode)
+                withContext(Dispatchers.Main) { applyKioskState() }  // soltar/re-armar kiosco al instante
             }
             if (syncResp.forceApkCheck) {
                 Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")
