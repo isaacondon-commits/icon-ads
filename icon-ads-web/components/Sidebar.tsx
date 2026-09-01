@@ -44,7 +44,6 @@ const linkGroups = [
   },
   {
     id: 'interaccion', label: 'Interacción', links: [
-      { href: '/surveys', label: 'Encuestas', icon: '?' },
       { href: '/abtests', label: 'A/B Tests', icon: '⊟' },
       { href: '/driver-points', label: 'Puntos taxistas', icon: '★' },
     ],

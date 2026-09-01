@@ -35,10 +35,31 @@ const tabletSchema = z.object({
 router.get('/', async (req, res, next) => {
   try {
     const tablets = await prisma.tablet.findMany({
-      include: { playlist: { select: { id: true, name: true, version: true } } },
+      include: {
+        playlist: {
+          select: {
+            id: true, name: true, version: true,
+            playlistAds: { select: { ad: { select: { campaign: { select: { id: true, name: true } } } } } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(tablets);
+    // Campañas a las que "pertenece" cada tablet = campañas con al menos un
+    // anuncio en la playlist asignada (deduplicadas).
+    const shaped = tablets.map((t) => {
+      const byId = new Map();
+      for (const pa of t.playlist?.playlistAds ?? []) {
+        const c = pa.ad?.campaign;
+        if (c) byId.set(c.id, c.name);
+      }
+      const campaigns = [...byId].map(([id, name]) => ({ id, name }));
+      const playlist = t.playlist
+        ? { id: t.playlist.id, name: t.playlist.name, version: t.playlist.version }
+        : null;
+      return { ...t, playlist, campaigns };
+    });
+    res.json(shaped);
   } catch (err) {
     next(err);
   }

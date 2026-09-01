@@ -572,6 +572,7 @@ export interface Tablet {
   lux?: number | null; lightSensor?: boolean | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
+  campaigns?: { id: number; name: string }[];
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
   manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
   rotated180?: boolean;

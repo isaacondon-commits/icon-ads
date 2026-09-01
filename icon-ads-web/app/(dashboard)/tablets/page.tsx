@@ -264,6 +264,14 @@ export default function TabletsPage() {
                   <div className="flex justify-between">
                     <span>Playlist</span><span className="font-medium">{t.playlist?.name ?? '—'}</span>
                   </div>
+                  <div className="flex justify-between gap-2">
+                    <span>Campaña</span>
+                    <span className="font-medium text-right truncate" title={t.campaigns?.map((c) => c.name).join(', ')}>
+                      {t.campaigns && t.campaigns.length > 0
+                        ? `${t.campaigns[0].name}${t.campaigns.length > 1 ? ` +${t.campaigns.length - 1}` : ''}`
+                        : '—'}
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span>Último sync</span><span>{t.lastSync ? new Date(t.lastSync).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Nunca'}</span>
                   </div>
@@ -289,7 +297,7 @@ export default function TabletsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
-                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Batería', 'APK', 'Playlist', 'Última sincronía', ''].map((h) => (
+                {['Nombre', 'Device ID', 'Zona', 'Estado', 'Batería', 'APK', 'Playlist', 'Campaña', 'Última sincronía', ''].map((h) => (
                   <th key={h} className={`${h ? 'text-left' : ''} px-5 py-3 font-medium text-xs`} style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -348,6 +356,14 @@ export default function TabletsPage() {
                     </td>
                     <td className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{t.appVersion ?? '—'}</td>
                     <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{t.playlist?.name ?? '—'}</td>
+                    <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {t.campaigns && t.campaigns.length > 0 ? (
+                        <span title={t.campaigns.map((c) => c.name).join(', ')}>
+                          {t.campaigns[0].name}
+                          {t.campaigns.length > 1 && <span className="ml-1 opacity-60">+{t.campaigns.length - 1}</span>}
+                        </span>
+                      ) : '—'}
+                    </td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
                       {t.lastSync ? new Date(t.lastSync).toLocaleString('es-AR') : 'Nunca'}
                     </td>
