@@ -77,9 +77,12 @@ class PlayerActivity : AppCompatActivity() {
     private var currentIndex = 0
     private var adStartTime = 0L
     private var failCount = 0
-    // Última vez que un anuncio efectivamente pasó a mostrarse. Sirve para
-    // detectar "online pero no reproduce" desde el panel.
+    // Última vez que un anuncio efectivamente pasó a mostrarse (playAd()).
     private var lastAdRenderedMs = 0L
+    // Última vez que un FRAME real se dibujó (video: onRenderedFirstFrame;
+    // imagen: Coil onSuccess). Es la señal fiable de "hay algo en pantalla".
+    private var lastFrameRenderedMs = 0L
+    private var errorStreak = 0
 
     // "Dormido": el PowerController pidió cerrar la app (auto apagado o tablet
     // quieta 10 min). Se pausa la reproducción y se oscurece la pantalla; el
@@ -488,10 +491,17 @@ class PlayerActivity : AppCompatActivity() {
         exoPlayer = ExoPlayer.Builder(this).build().also {
             binding.playerView.player = it
             binding.playerView.useController = false
+            it.setVideoScalingMode(androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
         }
         exoPlayer.addListener(object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                // Un frame de video efectivamente se dibujó -> el player está OK.
+                lastFrameRenderedMs = System.currentTimeMillis()
+                errorStreak = 0
+            }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
+                    errorStreak = 0
                     recordMetric(completed = true)
                     playNext()
                 }
@@ -501,6 +511,7 @@ class PlayerActivity : AppCompatActivity() {
                 // Hide video immediately to avoid black screen
                 binding.playerView.visibility = View.GONE
                 recordMetric(completed = false, error = true)
+                errorStreak++
                 failCount++
                 when {
                     failCount < ads.size -> playNext()
@@ -582,6 +593,10 @@ class PlayerActivity : AppCompatActivity() {
         binding.imageView.load(ad.localPath) {
             crossfade(300)
             error(android.R.color.black)
+            listener(
+                onSuccess = { _, _ -> lastFrameRenderedMs = System.currentTimeMillis(); errorStreak = 0 },
+                onError = { _, _ -> errorStreak++ },
+            )
         }
         imageHandler.postDelayed({
             recordMetric(completed = true)
@@ -663,14 +678,26 @@ class PlayerActivity : AppCompatActivity() {
         ) == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
     } catch (e: Exception) { null }
 
-    // "El player está mostrando publicidad de verdad": tiene anuncios cargados
-    // y alguno pasó a pantalla en los últimos 2 minutos.
-    private fun playerOk(): Boolean =
-        ads.isNotEmpty() && lastAdRenderedMs > 0L &&
-            System.currentTimeMillis() - lastAdRenderedMs < 120_000L
+    // "El player está mostrando publicidad de verdad": tiene anuncios, no está
+    // en un loop de errores, y O BIEN dibujó un frame hace poco O el video está
+    // efectivamente reproduciendo (READY + playing).
+    private fun playerOk(): Boolean {
+        if (ads.isEmpty()) return false
+        if (errorStreak >= maxOf(3, ads.size)) return false
+        val now = System.currentTimeMillis()
+        val recentFrame = lastFrameRenderedMs > 0L && now - lastFrameRenderedMs < 180_000L
+        val videoPlaying = try {
+            exoPlayer.isPlaying && exoPlayer.playbackState == Player.STATE_READY
+        } catch (_: Exception) { false }
+        return recentFrame || videoPlaying
+    }
 
-    private fun lastAdAgoS(): Int? =
-        if (lastAdRenderedMs > 0L) ((System.currentTimeMillis() - lastAdRenderedMs) / 1000).toInt() else null
+    // Segundos desde el último frame real en pantalla (o desde playAd si nunca
+    // hubo frame). Lo que el panel muestra como "hace X min sin publicidad".
+    private fun lastAdAgoS(): Int? {
+        val ref = maxOf(lastFrameRenderedMs, lastAdRenderedMs)
+        return if (ref > 0L) ((System.currentTimeMillis() - ref) / 1000).toInt() else null
+    }
 
     // Captura la ventana del player (incluye el video, vía PixelCopy) y la sube.
     // Enciende la pantalla si está apagada. Usa su propio scope/handler — NO

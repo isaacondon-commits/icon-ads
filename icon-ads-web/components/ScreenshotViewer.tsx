@@ -14,6 +14,19 @@ export default function ScreenshotViewer({ tabletId, tabletName }: { tabletId: n
 
   const stop = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
 
+  const downloadImage = (dataUri: string, when: string | null) => {
+    const d = when ? new Date(when) : new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    const safeName = tabletName.replace(/[\\/:*?"<>|]/g, '').trim();
+    const a = document.createElement('a');
+    a.href = dataUri;
+    a.download = `${safeName} - ${stamp}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const capture = useCallback(async () => {
     stop();
     setStatus('waiting');
@@ -36,6 +49,7 @@ export default function ScreenshotViewer({ tabletId, tabletName }: { tabletId: n
           setImg(r.image);
           setAt(r.at);
           setStatus('done');
+          downloadImage(r.image, r.at); // descarga automática con nombre + hora
         }
       } catch { /* keep polling */ }
       if (tries > 25) { stop(); setStatus(img ? 'done' : 'error'); }
@@ -83,7 +97,12 @@ export default function ScreenshotViewer({ tabletId, tabletName }: { tabletId: n
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img} alt={`Pantalla de ${tabletName}`} className="w-full rounded-lg border" style={{ borderColor: 'var(--border-md)' }} />
-                {at && <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>Tomada {new Date(at).toLocaleString('es-UY')}</p>}
+                <div className="flex items-center justify-between mt-2">
+                  {at && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Tomada {new Date(at).toLocaleString('es-UY')} · se descargó automáticamente</p>}
+                  <button onClick={() => img && downloadImage(img, at)} className="text-xs px-2.5 py-1 rounded-lg border" style={{ borderColor: 'var(--border-md)' }}>
+                    Descargar de nuevo
+                  </button>
+                </div>
               </>
             )}
           </div>
