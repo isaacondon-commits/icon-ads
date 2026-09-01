@@ -1,9 +1,21 @@
 const router = require('express').Router();
+const { Prisma } = require('@prisma/client');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const latencyTracker = require('../lib/latencyTracker');
 
 router.use(requireAuth);
+
+// Fragmento SQL opcional para filtrar metrics por campaña y/o tablet. `prefix`
+// es el alias de la tabla metrics en la query ('' o 'm').
+function metricFilter(prefix, campaignId, tabletId) {
+  const col = prefix ? Prisma.raw(`${prefix}.`) : Prisma.raw('');
+  const parts = [];
+  if (Number.isFinite(campaignId)) parts.push(Prisma.sql`${col}campaign_id = ${campaignId}`);
+  if (Number.isFinite(tabletId)) parts.push(Prisma.sql`${col}tablet_id = ${tabletId}`);
+  return parts.length ? Prisma.sql` AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
+}
+const intParam = (v) => (v !== undefined && v !== '' && Number.isFinite(parseInt(v)) ? parseInt(v) : undefined);
 
 // GET /api/stats — global stats + chart data (#35 enhanced)
 router.get('/', async (req, res, next) => {
@@ -24,9 +36,9 @@ router.get('/', async (req, res, next) => {
         prisma.campaign.count({ where: { active: true, deletedAt: null } }),
         prisma.ad.count({ where: { active: true, deletedAt: null } }),
         prisma.$queryRaw`
-          SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
+          SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
           FROM metrics WHERE played_at >= ${sevenDaysAgo}
-          GROUP BY DATE(played_at AT TIME ZONE 'UTC') ORDER BY date ASC
+          GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
         `,
         prisma.$queryRaw`
           SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
@@ -136,37 +148,60 @@ router.get('/weekly', async (req, res, next) => {
   }
 });
 
-// GET /api/stats/range?from=&to= — plays filtered by date range (#13)
+// GET /api/stats/daily?from=&to=&campaignId=&tabletId= — reproducciones por día
+router.get('/daily', async (req, res, next) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    to.setHours(23, 59, 59, 999);
+    const campaignId = intParam(req.query.campaignId);
+    const tabletId = intParam(req.query.tabletId);
+    const rows = await prisma.$queryRaw(Prisma.sql`
+      SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
+      FROM metrics
+      WHERE played_at BETWEEN ${from} AND ${to} ${metricFilter('', campaignId, tabletId)}
+      GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
+    `);
+    res.json(rows.map((r) => ({ date: String(r.date).slice(0, 10), count: Number(r.count) })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stats/range?from=&to=&campaignId=&tabletId= — plays filtered by date range (#13)
 router.get('/range', async (req, res, next) => {
   try {
     const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
     const to = req.query.to ? new Date(req.query.to) : new Date();
     to.setHours(23, 59, 59, 999);
+    const campaignId = intParam(req.query.campaignId);
+    const tabletId = intParam(req.query.tabletId);
+    const f = (p) => metricFilter(p, campaignId, tabletId);
 
     const [dailyRows, campaignRows, tabletRows, adRows] = await Promise.all([
-      prisma.$queryRaw`
-        SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
-        FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
-        GROUP BY DATE(played_at AT TIME ZONE 'UTC') ORDER BY date ASC
-      `,
-      prisma.$queryRaw`
+      prisma.$queryRaw(Prisma.sql`
+        SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
+        FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
+        GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
+      `),
+      prisma.$queryRaw(Prisma.sql`
         SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
         FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
-        WHERE m.played_at BETWEEN ${from} AND ${to}
+        WHERE m.played_at BETWEEN ${from} AND ${to} ${f('m')}
         GROUP BY c.id, c.name ORDER BY count DESC LIMIT 10
-      `,
-      prisma.$queryRaw`
+      `),
+      prisma.$queryRaw(Prisma.sql`
         SELECT t.id AS "tabletId", t.name AS "tabletName", COUNT(m.id)::int AS count
         FROM metrics m JOIN tablets t ON m.tablet_id = t.id
-        WHERE m.played_at BETWEEN ${from} AND ${to}
+        WHERE m.played_at BETWEEN ${from} AND ${to} ${f('m')}
         GROUP BY t.id, t.name ORDER BY count DESC LIMIT 10
-      `,
-      prisma.$queryRaw`
+      `),
+      prisma.$queryRaw(Prisma.sql`
         SELECT a.id AS "adId", a.name AS "adName", COUNT(m.id)::int AS count
         FROM metrics m JOIN ads a ON m.ad_id = a.id
-        WHERE m.played_at BETWEEN ${from} AND ${to}
+        WHERE m.played_at BETWEEN ${from} AND ${to} ${f('m')}
         GROUP BY a.id, a.name ORDER BY count DESC LIMIT 10
-      `,
+      `),
     ]);
 
     res.json({
@@ -217,11 +252,12 @@ router.get('/heatmap', async (req, res, next) => {
     const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
     const to = req.query.to ? new Date(req.query.to) : new Date();
     to.setHours(23, 59, 59, 999);
-    const rows = await prisma.$queryRaw`
-      SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE 'UTC')::int AS hour, COUNT(*)::int AS count
+    const rows = await prisma.$queryRaw(Prisma.sql`
+      SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour, COUNT(*)::int AS count
       FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
+      ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
       GROUP BY hour ORDER BY hour ASC
-    `;
+    `);
     const heatmap = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
     for (const r of rows) heatmap[Number(r.hour)].count = Number(r.count);
     res.json(heatmap);
@@ -237,14 +273,15 @@ router.get('/heatmap-by-day', async (req, res, next) => {
     const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
     const to = req.query.to ? new Date(req.query.to) : new Date();
     to.setHours(23, 59, 59, 999);
-    const rows = await prisma.$queryRaw`
-      SELECT DATE(played_at AT TIME ZONE 'UTC') AS date,
-             EXTRACT(HOUR FROM played_at AT TIME ZONE 'UTC')::int AS hour,
+    const rows = await prisma.$queryRaw(Prisma.sql`
+      SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date,
+             EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour,
              COUNT(*)::int AS count
       FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
-      GROUP BY DATE(played_at AT TIME ZONE 'UTC'), hour
+      ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
+      GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo'), hour
       ORDER BY date ASC, hour ASC
-    `;
+    `);
     res.json(rows.map((r) => ({ date: String(r.date).slice(0, 10), hour: Number(r.hour), count: Number(r.count) })));
   } catch (err) {
     next(err);
@@ -459,12 +496,12 @@ router.get('/zone-hour', async (req, res, next) => {
     const rows = await prisma.$queryRaw`
       SELECT
         COALESCE(t.zone, 'Sin zona') AS zone,
-        EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'UTC')::int AS hour,
+        EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'America/Montevideo')::int AS hour,
         COUNT(*)::int AS count
       FROM metrics m
       JOIN tablets t ON m.tablet_id = t.id
       WHERE m.played_at >= ${from}
-      GROUP BY COALESCE(t.zone, 'Sin zona'), EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'UTC')
+      GROUP BY COALESCE(t.zone, 'Sin zona'), EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'America/Montevideo')
       ORDER BY zone, hour
     `;
     res.json(rows.map((r) => ({ zone: r.zone, hour: Number(r.hour), count: Number(r.count) })));
@@ -502,11 +539,11 @@ router.get('/monthly', async (req, res, next) => {
   try {
     const rows = await prisma.$queryRaw`
       SELECT
-        TO_CHAR(DATE_TRUNC('month', played_at AT TIME ZONE 'UTC'), 'YYYY-MM') AS month,
+        TO_CHAR(DATE_TRUNC('month', played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM') AS month,
         COUNT(*)::int AS count
       FROM metrics
       WHERE played_at >= NOW() - INTERVAL '12 months'
-      GROUP BY DATE_TRUNC('month', played_at AT TIME ZONE 'UTC')
+      GROUP BY DATE_TRUNC('month', played_at AT TIME ZONE 'America/Montevideo')
       ORDER BY month
     `;
     res.json(rows.map((r) => ({ month: String(r.month), count: Number(r.count) })));

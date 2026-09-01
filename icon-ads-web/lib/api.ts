@@ -67,6 +67,14 @@ async function directUploadFile(file: Blob, filename: string, contentType: strin
   return presign;
 }
 
+export interface StatsFilter { campaignId?: number | null; tabletId?: number | null; }
+function statsQs(from: string, to: string, opts?: StatsFilter): string {
+  const p = new URLSearchParams({ from, to });
+  if (opts?.campaignId) p.set('campaignId', String(opts.campaignId));
+  if (opts?.tabletId) p.set('tabletId', String(opts.tabletId));
+  return p.toString();
+}
+
 export const api = {
   // Auth
   login: (email: string, password: string) =>
@@ -209,7 +217,10 @@ export const api = {
   // Stats
   getStats: () => request<SystemStats>('/api/stats'),
   getWeeklyStats: (weeks?: number) => request<WeeklyEntry[]>(`/api/stats/weekly${weeks ? `?weeks=${weeks}` : ''}`),
-  getRangeStats: (from: string, to: string) => request<RangeStats>(`/api/stats/range?from=${from}&to=${to}`),
+  getRangeStats: (from: string, to: string, opts?: StatsFilter) =>
+    request<RangeStats>(`/api/stats/range?${statsQs(from, to, opts)}`),
+  getDailyStats: (from: string, to: string, opts?: StatsFilter) =>
+    request<DailyEntry[]>(`/api/stats/daily?${statsQs(from, to, opts)}`),
   getMetricsCsvUrl: () => `${BASE}/api/stats/metrics/export`,
 
   // Logs
@@ -223,10 +234,10 @@ export const api = {
   unlockUser: (userId: number) => request<{ ok: boolean }>(`/api/auth/unlock/${userId}`, { method: 'PATCH' }),
 
   // Stats extras
-  getHeatmap: (from?: string, to?: string) =>
-    request<HourlyCount[]>(`/api/stats/heatmap${from ? `?from=${from}&to=${to}` : ''}`),
-  getHeatmapByDay: (from?: string, to?: string) =>
-    request<DayHourCount[]>(`/api/stats/heatmap-by-day${from ? `?from=${from}&to=${to}` : ''}`),
+  getHeatmap: (from?: string, to?: string, opts?: StatsFilter) =>
+    request<HourlyCount[]>(`/api/stats/heatmap${from ? `?${statsQs(from, to!, opts)}` : ''}`),
+  getHeatmapByDay: (from?: string, to?: string, opts?: StatsFilter) =>
+    request<DayHourCount[]>(`/api/stats/heatmap-by-day${from ? `?${statsQs(from, to!, opts)}` : ''}`),
   getCompletionRate: (from?: string, to?: string) =>
     request<CompletionRate[]>(`/api/stats/completion${from ? `?from=${from}&to=${to}` : ''}`),
   getPlaylistStats: (from?: string, to?: string) =>
@@ -619,6 +630,7 @@ export interface SystemStats {
   expiringCampaigns: { id: number; name: string; clientName: string; endDate: string; daysLeft: number }[];
 }
 export interface WeeklyEntry { week: string; from: string; to: string; count: number; }
+export interface DailyEntry { date: string; count: number; }
 export interface RangeStats {
   from: string; to: string; totalPlays: number;
   dailyPlays: { date: string; count: number }[];
