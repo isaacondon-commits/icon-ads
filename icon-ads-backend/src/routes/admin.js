@@ -44,6 +44,46 @@ router.post('/seed', async (req, res, next) => {
   }
 });
 
+// DELETE /api/admin/tablet/:id — borra una fila de tablet (limpieza de orfanas).
+router.delete('/tablet/:id', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const t = await prisma.tablet.findUnique({ where: { id } });
+    if (!t) return res.status(404).json({ error: 'No existe' });
+    await prisma.tablet.delete({ where: { id } });
+    await audit(req, 'DELETE', 'tablet', id, `Borrada "${t.name}" (deviceId=${t.deviceId})`);
+    res.json({ ok: true, deleted: { id, name: t.name } });
+  } catch (err) {
+    if (err.code === 'P2003') return res.status(409).json({ error: 'Tiene datos relacionados' });
+    next(err);
+  }
+});
+
+// POST /api/admin/rename-tablets  { prefix?: 'Taxi', digits?: 2 }
+// Renombra, ordenadas por id, todas las tablets que ya reportaron una versión
+// de app (las reales) a "<prefix> NN". Deja las que nunca sincronizaron.
+router.post('/rename-tablets', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const prefix = (req.body?.prefix || 'Taxi').trim();
+    const digits = Math.min(Math.max(Number(req.body?.digits) || 2, 1), 4);
+    const tablets = await prisma.tablet.findMany({
+      where: { appVersion: { not: null } },
+      orderBy: { id: 'asc' },
+      select: { id: true, name: true },
+    });
+    const mapping = [];
+    for (let i = 0; i < tablets.length; i++) {
+      const newName = `${prefix} ${String(i + 1).padStart(digits, '0')}`;
+      if (tablets[i].name !== newName) {
+        await prisma.tablet.update({ where: { id: tablets[i].id }, data: { name: newName } });
+      }
+      mapping.push({ id: tablets[i].id, from: tablets[i].name, to: newName });
+    }
+    await audit(req, 'RENAME_TABLETS', 'tablet', null, `${mapping.length} renombradas a "${prefix} NN"`);
+    res.json({ ok: true, renamed: mapping.length, mapping });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/seed-supervisor — crea (una vez) el usuario supervisor.
 // Endpoint temporal, gated con apiKeyOrAuth; se elimina tras usarlo.
 router.post('/seed-supervisor', apiKeyOrAuth, async (req, res, next) => {

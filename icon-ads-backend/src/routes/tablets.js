@@ -75,6 +75,11 @@ router.get('/monitor', async (req, res, next) => {
         lastSync: t.lastSync,
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
         todayPlays: countMap[t.id] ?? 0,
+        batteryLevel: t.batteryLevel ?? null,
+        brightness: t.brightness ?? null,
+        brightnessAuto: t.brightnessAuto ?? null,
+        serial: t.serial ?? null,
+        appVersion: t.appVersion ?? null,
       };
     });
     res.json(result);

@@ -92,6 +92,11 @@ const MIGRATIONS = [
   // v22 — manual 180° screen flip per tablet (charger connector can end up on
   // either side depending on how the mount was installed)
   { name: 'tablets.rotated_180',       sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS rotated_180 BOOLEAN NOT NULL DEFAULT false` },
+  // v24 — brillo de pantalla reportado + nº de serie del hardware (para
+  // identificar cada fila con su tablet física)
+  { name: 'tablets.brightness',        sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS brightness INT` },
+  { name: 'tablets.brightness_auto',   sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS brightness_auto BOOLEAN` },
+  { name: 'tablets.serial',            sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS serial TEXT` },
   // v23 — multiple clients per campaign (billing client stays campaigns.client_id;
   // this table holds additional clients associated with the campaign)
   { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },

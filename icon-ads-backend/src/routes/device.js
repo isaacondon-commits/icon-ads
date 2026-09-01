@@ -58,23 +58,27 @@ router.post('/register', registerLimiter, async (req, res, next) => {
       }
     }
 
-    const { deviceId, name, zone } = z.object({
+    const { deviceId, name, zone, serial } = z.object({
       deviceId: z.string().min(1),
       name: z.string().min(1).optional(),
       zone: z.string().optional(),
+      serial: z.string().optional(),
     }).parse(req.body);
 
     const existing = await prisma.tablet.findUnique({ where: { deviceId } });
     if (existing) {
       // Re-registration of an already-known device — logged for visibility since
       // this is the same call an attacker with a leaked deviceId would make.
+      if (serial && serial !== existing.serial) {
+        await prisma.tablet.update({ where: { id: existing.id }, data: { serial } }).catch(() => {});
+      }
       await audit(req, 'DEVICE_REREGISTER', 'tablet', existing.id, `deviceId=${deviceId} ip=${req.ip}`);
       return res.json({ token: existing.token, tabletId: existing.id });
     }
 
     const token = crypto.randomBytes(32).toString('hex');
     const tablet = await prisma.tablet.create({
-      data: { deviceId, name: name || deviceId, zone, token },
+      data: { deviceId, name: name || deviceId, zone, token, serial: serial || null },
     });
     res.status(201).json({ token: tablet.token, tabletId: tablet.id });
   } catch (err) {
@@ -128,6 +132,9 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const appVersion = req.query.appVersion || undefined;
     const osVersion = req.query.osVersion || undefined;
     const deviceModel = req.query.deviceModel || undefined;
+    const brightness = req.query.brightness !== undefined ? parseInt(req.query.brightness) : undefined;
+    const brightnessAuto = req.query.brightnessAuto !== undefined ? req.query.brightnessAuto === 'true' : undefined;
+    const serial = req.query.serial || undefined;
     const tablet = req.tablet;
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
@@ -143,6 +150,9 @@ router.get('/sync', requireDevice, async (req, res, next) => {
         ...(appVersion !== undefined ? { appVersion } : {}),
         ...(osVersion !== undefined ? { osVersion } : {}),
         ...(deviceModel !== undefined ? { deviceModel } : {}),
+        ...(Number.isFinite(brightness) ? { brightness } : {}),
+        ...(brightnessAuto !== undefined ? { brightnessAuto } : {}),
+        ...(serial !== undefined ? { serial } : {}),
       },
     });
 
