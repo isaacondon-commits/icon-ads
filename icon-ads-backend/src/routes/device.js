@@ -195,16 +195,20 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const isPlayerSync = playerOk !== undefined || appVersion !== undefined;
     const screenshotRequested = isPlayerSync && screenshotFlags.has(tablet.id);
     if (screenshotRequested) screenshotFlags.delete(tablet.id);
+    // El operador bloqueó esta tablet desde el panel (manualStatus). La app
+    // frena la reproducción y muestra una pantalla neutra hasta que se
+    // desbloquee — pero sigue sincronizando normalmente.
+    const blocked = tablet.manualStatus === 'bloqueada';
 
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested });
+      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked });
     }
 
     // #48 — if admin forced a sync, override version check
@@ -213,7 +217,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!forced && playlist.version <= currentVersion) {
       console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked });
     }
 
     console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
@@ -226,6 +230,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       testMode,
       brightnessPolicy,
       screenshotRequested,
+      blocked,
     });
   } catch (err) {
     next(err);

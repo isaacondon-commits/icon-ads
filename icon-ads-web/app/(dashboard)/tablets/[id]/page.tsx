@@ -36,6 +36,7 @@ export default function TabletDetailPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  const [togglingBlock, setTogglingBlock] = useState(false);
 
   const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/tablets')).finally(() => setLoading(false));
   const refresh = async () => {
@@ -98,6 +99,19 @@ export default function TabletDetailPage() {
     } finally { setResyncing(false); }
   };
 
+  const handleToggleBlock = async () => {
+    if (!tablet) return;
+    const blocking = tablet.manualStatus !== 'bloqueada';
+    setTogglingBlock(true);
+    try {
+      await api.updateTablet(tablet.id, { manualStatus: blocking ? 'bloqueada' : 'activa' });
+      show(blocking ? 'Tablet bloqueada — deja de mostrar publicidad hasta que la desbloquees.' : 'Tablet desbloqueada — vuelve a mostrar publicidad.');
+      await load();
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al cambiar el estado', 'error');
+    } finally { setTogglingBlock(false); }
+  };
+
   const handleRegenerateToken = async () => {
     if (!tablet) return;
     setRegenerating(true);
@@ -139,6 +153,23 @@ export default function TabletDetailPage() {
             <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{tablet.deviceId}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {tablet.manualStatus === 'bloqueada' && (
+              <span className="text-xs px-2 py-1 rounded-full font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+                🔒 BLOQUEADA — no muestra publicidad
+              </span>
+            )}
+            <button
+              onClick={handleToggleBlock}
+              disabled={togglingBlock}
+              title={tablet.manualStatus === 'bloqueada' ? 'Vuelve a mostrar publicidad' : 'Frena la publicidad sin desarmar el kiosco'}
+              className={`text-xs px-3 py-1.5 rounded-lg border font-medium disabled:opacity-50 ${
+                tablet.manualStatus === 'bloqueada'
+                  ? 'hover:bg-emerald-50 dark:hover:bg-emerald-950 text-emerald-700 border-emerald-300'
+                  : 'hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300'
+              }`}
+            >
+              {togglingBlock ? 'Aplicando...' : tablet.manualStatus === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}
+            </button>
             {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && (
               <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
                 {tablet.onFallback === true

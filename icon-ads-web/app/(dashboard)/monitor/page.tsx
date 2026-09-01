@@ -22,6 +22,7 @@ export default function MonitorPage() {
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(POLL_INTERVAL);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [unblockingId, setUnblockingId] = useState<number | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = async () => {
@@ -61,6 +62,15 @@ export default function MonitorPage() {
   const totalPlays = entries.reduce((s, e) => s + e.todayPlays, 0);
   const alerts = entries.filter((e) => e.status === 'offline' && e.offlineMinutes > 120);
   const notPlaying = entries.filter((e) => e.health === 'no-reproduce');
+  const blocked = entries.filter((e) => e.health === 'blocked');
+
+  const unblock = async (id: number) => {
+    setUnblockingId(id);
+    try {
+      await api.updateTablet(id, { manualStatus: 'activa' });
+      await fetchData();
+    } catch { /* el toast global de errores lo cubre */ } finally { setUnblockingId(null); }
+  };
 
   return (
     <div>
@@ -90,6 +100,30 @@ export default function MonitorPage() {
             🚨 {notPlaying.length} tablet{notPlaying.length > 1 ? 's' : ''} ONLINE pero SIN mostrar publicidad: {notPlaying.map(t => t.name).join(', ')}
           </p>
           <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">Tocá &quot;Ver pantalla&quot; en la tablet para ver qué está pasando.</p>
+        </div>
+      )}
+
+      {/* Tablets bloqueadas desde el panel — no muestran publicidad a propósito,
+          pero hay que verlas acá y poder desbloquearlas sin ir a otra pantalla. */}
+      {blocked.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800">
+          <p className="text-sm font-bold text-amber-700 dark:text-amber-400 mb-1.5">
+            🔒 {blocked.length} tablet{blocked.length > 1 ? 's' : ''} BLOQUEADA{blocked.length > 1 ? 'S' : ''} — no muestra{blocked.length > 1 ? 'n' : ''} publicidad
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {blocked.map((t) => (
+              <span key={t.id} className="inline-flex items-center gap-1.5 text-xs bg-white dark:bg-black/20 rounded-full pl-2.5 pr-1 py-1 border border-amber-200 dark:border-amber-800">
+                {t.name}
+                <button
+                  onClick={() => unblock(t.id)}
+                  disabled={unblockingId === t.id}
+                  className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {unblockingId === t.id ? 'Desbloqueando...' : 'Desbloquear'}
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
@@ -140,22 +174,23 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
   const isOnline = entry.status === 'online';
   const isLongOffline = !isOnline && entry.offlineMinutes > 120;
   const notPlaying = entry.health === 'no-reproduce';
+  const isBlocked = entry.health === 'blocked';
   const onFallback = notPlaying && entry.onFallback === true;
   const notPlayingLabel = onFallback ? 'NO CARGÓ PLAYLIST' : 'NO REPRODUCE';
 
   return (
     <Link href={`/tablets/${entry.id}`} className="block">
-      <div className={`card p-4 flex flex-col gap-3 hover:border-blue-400 transition-colors cursor-pointer ${notPlaying ? 'border-red-400 dark:border-red-600' : isLongOffline ? 'border-orange-300 dark:border-orange-700' : ''}`}>
+      <div className={`card p-4 flex flex-col gap-3 hover:border-blue-400 transition-colors cursor-pointer ${isBlocked ? 'border-amber-400 dark:border-amber-600' : notPlaying ? 'border-red-400 dark:border-red-600' : isLongOffline ? 'border-orange-300 dark:border-orange-700' : ''}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{entry.name}</p>
             {entry.zone && <p className="text-xs truncate" style={{ color: 'var(--text-xs)' }}>{entry.zone}</p>}
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <span className={`w-2 h-2 rounded-full ${notPlaying ? 'bg-red-500 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
-            <span className={`text-xs font-medium ${notPlaying ? 'text-red-600' : isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
-              style={!isOnline && !isLongOffline && !notPlaying ? { color: 'var(--text-muted)' } : undefined}>
-              {notPlaying ? notPlayingLabel : isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
+            <span className={`w-2 h-2 rounded-full ${isBlocked ? 'bg-amber-500' : notPlaying ? 'bg-red-500 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
+            <span className={`text-xs font-medium ${isBlocked ? 'text-amber-600' : notPlaying ? 'text-red-600' : isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
+              style={!isOnline && !isLongOffline && !notPlaying && !isBlocked ? { color: 'var(--text-muted)' } : undefined}>
+              {isBlocked ? '🔒 BLOQUEADA' : notPlaying ? notPlayingLabel : isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
             </span>
           </div>
         </div>

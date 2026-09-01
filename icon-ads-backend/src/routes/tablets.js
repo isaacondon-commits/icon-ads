@@ -65,10 +65,12 @@ router.get('/monitor', async (req, res, next) => {
     const result = tablets.map((t) => {
       const diffMin = t.lastSync ? (now - new Date(t.lastSync).getTime()) / 60000 : Infinity;
       const online = diffMin < 10;
-      // Salud: 'offline' si no sincroniza; 'no-reproduce' si está online, tiene
-      // playlist y el player reporta que NO está mostrando anuncios; 'ok' si no.
+      // Salud: 'blocked' si el operador la bloqueó desde el panel; 'offline' si
+      // no sincroniza; 'no-reproduce' si está online, tiene playlist y el player
+      // reporta que NO está mostrando anuncios; 'ok' si no.
       let health = 'ok';
-      if (!online) health = 'offline';
+      if (t.manualStatus === 'bloqueada') health = 'blocked';
+      else if (!online) health = 'offline';
       else if (t.playlistId && (t.playerOk === false || t.onFallback === true)) health = 'no-reproduce';
       return {
         id: t.id,
@@ -78,6 +80,7 @@ router.get('/monitor', async (req, res, next) => {
         timezone: t.timezone,
         status: online ? 'online' : 'offline',
         health,
+        manualStatus: t.manualStatus ?? 'activa',
         offlineMinutes: Math.floor(diffMin),
         lastSync: t.lastSync,
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,

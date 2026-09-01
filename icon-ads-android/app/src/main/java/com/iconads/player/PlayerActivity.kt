@@ -91,6 +91,11 @@ class PlayerActivity : AppCompatActivity() {
     // bloqueo/apagado real lo hace KioskManager si la app es Device Owner.
     private var dormant = false
 
+    // El operador bloqueó la tablet desde el panel (manualStatus="bloqueada").
+    // A diferencia de `dormant` (apagado por energía/quietud), acá el kiosco
+    // sigue armado y la pantalla prendida — sólo se frena la reproducción.
+    private var blockedByPanel = false
+
     // Auto-detected via gravitySensorListener below — true once the tablet's
     // live orientation has settled ~180° away from its first-boot reference.
     private var sensorFlipped180 = false
@@ -490,6 +495,24 @@ class PlayerActivity : AppCompatActivity() {
         loadAndPlay()  // exoPlayer.stop() en enterDormant liberó el media item
     }
 
+    private fun enterBlocked() {
+        if (blockedByPanel) return
+        blockedByPanel = true
+        Log.i(TAG, "Bloqueada desde el panel: frenando reproducción")
+        exoPlayer.pause()
+        imageHandler.removeCallbacksAndMessages(null)
+        binding.messageOverlay.visibility = View.VISIBLE
+        binding.messageText.text = "⏸ Tablet bloqueada desde el panel"
+    }
+
+    private fun exitBlocked() {
+        if (!blockedByPanel) return
+        blockedByPanel = false
+        Log.i(TAG, "Desbloqueada desde el panel: reanudando reproducción")
+        binding.messageOverlay.visibility = View.GONE
+        if (!dormant) loadAndPlay()
+    }
+
     @SuppressLint("MissingPermission")
     private fun endCallIfPossible() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
@@ -842,6 +865,9 @@ class PlayerActivity : AppCompatActivity() {
                     prefs.setBrightnessPolicy(pol)
                     withContext(Dispatchers.Main) { applyBrightness(pol) }
                 }
+            }
+            if (syncResp.blocked != blockedByPanel) {
+                withContext(Dispatchers.Main) { if (syncResp.blocked) enterBlocked() else exitBlocked() }
             }
             if (syncResp.screenshotRequested) {
                 Log.i(TAG, "syncNow: el panel pidió captura de pantalla")

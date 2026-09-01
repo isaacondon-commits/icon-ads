@@ -28,6 +28,9 @@ data class SyncResponse(
     val brightnessPolicy: String? = null,
     // El panel pidió una captura de pantalla de esta tablet.
     val screenshotRequested: Boolean = false,
+    // El operador bloqueó esta tablet desde el panel: frenar reproducción y
+    // mostrar una pantalla neutra hasta que se desbloquee (sigue sincronizando).
+    val blocked: Boolean = false,
 )
 
 data class ScreenshotUpload(

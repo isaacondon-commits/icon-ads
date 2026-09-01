@@ -581,7 +581,8 @@ export interface OccupancyEntry {
 export interface TabletMonitorEntry {
   id: number; name: string; deviceId: string; zone: string | null; timezone: string | null;
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
-  health?: 'ok' | 'offline' | 'no-reproduce';
+  health?: 'ok' | 'offline' | 'no-reproduce' | 'blocked';
+  manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
   playlist: { id: number; name: string } | null; todayPlays: number;
   batteryLevel: number | null;
   brightness: number | null;

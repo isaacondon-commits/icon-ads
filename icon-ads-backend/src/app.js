@@ -316,10 +316,12 @@ const notifyChannels = async (title, body) => {
 setInterval(async () => {
   try {
     const tablets = await prisma.tablet.findMany({
-      select: { id: true, name: true, zone: true, lastSync: true, playlistId: true, playerOk: true, onFallback: true, lastAdAgoS: true },
+      select: { id: true, name: true, zone: true, lastSync: true, playlistId: true, playerOk: true, onFallback: true, lastAdAgoS: true, manualStatus: true },
     });
     const tenMinAgo = Date.now() - 10 * 60 * 1000;
     for (const t of tablets) {
+      // Bloqueada a propósito desde el panel — no es una falla, no alertar.
+      if (t.manualStatus === 'bloqueada') { notPlayingAlerted.delete(t.id); continue; }
       const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
       const notPlaying = online && t.playlistId && (t.playerOk === false || t.onFallback === true);
       if (notPlaying && !notPlayingAlerted.has(t.id)) {
