@@ -167,7 +167,24 @@ export default function PlaylistsPage() {
       ) : (
         <div className="space-y-4">
           {paged.map((p) => {
-            const adCount = p.playlistAds?.length ?? 0;
+            const pas = p.playlistAds ?? [];
+            const adCount = pas.length;
+            // Cadencia: el player reproduce la lista en loop. Ciclo = suma de
+            // duraciones. Cada anuncio se ve una vez por ciclo (o N veces si
+            // está N veces en la lista).
+            const cycleS = pas.reduce((s, pa) => s + (pa.ad?.durationS || 0), 0);
+            const perHour = cycleS > 0 ? Math.round((3600 / cycleS) * 10) / 10 : 0;
+            const perDay = cycleS > 0 ? Math.round((86400 / cycleS)) : 0;
+            const byDur = Object.entries(
+              pas.reduce<Record<number, number>>((acc, pa) => {
+                const d = pa.ad?.durationS || 0; acc[d] = (acc[d] || 0) + 1; return acc;
+              }, {})
+            ).sort((a, b) => Number(a[0]) - Number(b[0]));
+            const repeatCounts = pas.reduce<Record<string, number>>((acc, pa) => {
+              const n = pa.ad?.name || '?'; acc[n] = (acc[n] || 0) + 1; return acc;
+            }, {});
+            const repeated = Object.entries(repeatCounts).filter(([, n]) => n > 1);
+            const fmtS = (s: number) => s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
             return (
               <div key={p.id} className="card p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -194,14 +211,41 @@ export default function PlaylistsPage() {
                     <button onClick={() => setDeleteTarget(p)} className="text-red-500 border border-red-100 hover:bg-red-50 dark:hover:bg-red-950 px-3 py-1.5 rounded-lg text-xs font-medium">Eliminar</button>
                   </div>
                 </div>
-                {p.playlistAds && p.playlistAds.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {p.playlistAds.map((pa) => (
-                      <span key={pa.id} className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
-                        {pa.order + 1}. {pa.ad.name}
-                      </span>
-                    ))}
-                  </div>
+                {pas.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {pas.map((pa) => (
+                        <span key={pa.id} className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
+                          {pa.order + 1}. {pa.ad.name} <span className="opacity-60">· {pa.ad.durationS}s</span>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Cadencia */}
+                    <div className="mt-3 pt-3 border-t grid grid-cols-2 sm:grid-cols-4 gap-3" style={{ borderColor: 'var(--border)' }}>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-xs)' }}>Ciclo completo</p>
+                        <p className="font-bold text-sm mt-0.5">{fmtS(cycleS)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-xs)' }}>Cada anuncio se ve cada</p>
+                        <p className="font-bold text-sm mt-0.5">{fmtS(cycleS)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-xs)' }}>Veces por hora</p>
+                        <p className="font-bold text-sm mt-0.5">{perHour}× <span className="font-normal opacity-60">({perDay}/día)</span></p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-xs)' }}>Por duración</p>
+                        <p className="font-medium text-xs mt-1">{byDur.map(([d, n]) => `${n}× ${d}s`).join(' · ')}</p>
+                      </div>
+                    </div>
+                    {repeated.length > 0 && (
+                      <p className="text-xs mt-2 text-amber-600">
+                        Repetidos en la lista: {repeated.map(([n, k]) => `${n} (${k}× → se ve cada ${fmtS(Math.round(cycleS / k))})`).join(', ')}
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <p className="text-sm" style={{ color: 'var(--text-xs)' }}>Sin anuncios asignados.</p>
                 )}
