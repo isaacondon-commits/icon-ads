@@ -26,6 +26,12 @@ data class SyncResponse(
     val testMode: Boolean = false,
     // Política de brillo: "auto" o un número 0-255 (brillo fijo).
     val brightnessPolicy: String? = null,
+    // El panel pidió una captura de pantalla de esta tablet.
+    val screenshotRequested: Boolean = false,
+)
+
+data class ScreenshotUpload(
+    val image: String, // data URI: "data:image/jpeg;base64,...."
 )
 
 data class HeartbeatInfo(

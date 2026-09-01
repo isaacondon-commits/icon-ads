@@ -21,7 +21,12 @@ interface DeviceApi {
         @Query("brightness") brightness: Int? = null,
         @Query("brightnessAuto") brightnessAuto: Boolean? = null,
         @Query("serial") serial: String? = null,
+        @Query("playerOk") playerOk: Boolean? = null,
+        @Query("lastAdAgoS") lastAdAgoS: Int? = null,
     ): SyncResponse
+
+    @POST("api/device/screenshot")
+    suspend fun uploadScreenshot(@Body body: ScreenshotUpload)
 
     @Streaming
     @GET

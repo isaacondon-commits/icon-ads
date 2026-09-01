@@ -77,6 +77,9 @@ class PlayerActivity : AppCompatActivity() {
     private var currentIndex = 0
     private var adStartTime = 0L
     private var failCount = 0
+    // Última vez que un anuncio efectivamente pasó a mostrarse. Sirve para
+    // detectar "online pero no reproduce" desde el panel.
+    private var lastAdRenderedMs = 0L
 
     // "Dormido": el PowerController pidió cerrar la app (auto apagado o tablet
     // quieta 10 min). Se pausa la reproducción y se oscurece la pantalla; el
@@ -550,6 +553,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun playAd(ad: Ad) {
         adStartTime = System.currentTimeMillis()
+        lastAdRenderedMs = adStartTime
         imageHandler.removeCallbacksAndMessages(null)
         when (ad.type) {
             "video" -> playVideo(ad)
@@ -659,6 +663,53 @@ class PlayerActivity : AppCompatActivity() {
         ) == android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
     } catch (e: Exception) { null }
 
+    // "El player está mostrando publicidad de verdad": tiene anuncios cargados
+    // y alguno pasó a pantalla en los últimos 2 minutos.
+    private fun playerOk(): Boolean =
+        ads.isNotEmpty() && lastAdRenderedMs > 0L &&
+            System.currentTimeMillis() - lastAdRenderedMs < 120_000L
+
+    private fun lastAdAgoS(): Int? =
+        if (lastAdRenderedMs > 0L) ((System.currentTimeMillis() - lastAdRenderedMs) / 1000).toInt() else null
+
+    // Captura la ventana del player (incluye el video, vía PixelCopy) y la sube.
+    private fun captureAndUploadScreenshot(token: String) {
+        try {
+            val src = binding.root
+            if (src.width == 0 || src.height == 0) return
+            val full = android.graphics.Bitmap.createBitmap(src.width, src.height, android.graphics.Bitmap.Config.ARGB_8888)
+            android.view.PixelCopy.request(window, full, { result ->
+                try {
+                    if (result != android.view.PixelCopy.SUCCESS) {
+                        Log.w(TAG, "PixelCopy falló: $result"); return@request
+                    }
+                    val targetW = 640
+                    val scale = targetW.toFloat() / full.width
+                    val scaled = android.graphics.Bitmap.createScaledBitmap(
+                        full, targetW, (full.height * scale).toInt(), true,
+                    )
+                    val bos = java.io.ByteArrayOutputStream()
+                    scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 55, bos)
+                    val b64 = android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP)
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        try {
+                            NetworkModule.provideDeviceApi(token).uploadScreenshot(
+                                com.iconads.player.data.model.ScreenshotUpload("data:image/jpeg;base64,$b64"),
+                            )
+                            Log.i(TAG, "screenshot subido (${bos.size()} bytes)")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "uploadScreenshot: ${e.message}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "captura post-PixelCopy: ${e.message}")
+                }
+            }, imageHandler)
+        } catch (e: Exception) {
+            Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
+        }
+    }
+
     private fun getSerial(): String? = try {
         @Suppress("HardwareIds", "MissingPermission")
         val s = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Build.getSerial() else @Suppress("DEPRECATION") Build.SERIAL
@@ -681,6 +732,8 @@ class PlayerActivity : AppCompatActivity() {
                     brightness = getBrightnessPct(),
                     brightnessAuto = isBrightnessAuto(),
                     serial = getSerial(),
+                    playerOk = playerOk(),
+                    lastAdAgoS = lastAdAgoS(),
                 )
             }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
@@ -695,6 +748,10 @@ class PlayerActivity : AppCompatActivity() {
                     prefs.setBrightnessPolicy(pol)
                     KioskManager.applyBrightnessPolicy(this@PlayerActivity, pol)
                 }
+            }
+            if (syncResp.screenshotRequested) {
+                Log.i(TAG, "syncNow: el panel pidió captura de pantalla")
+                withContext(Dispatchers.Main) { captureAndUploadScreenshot(token) }
             }
             if (syncResp.forceApkCheck) {
                 Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")
