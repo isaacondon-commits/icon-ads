@@ -73,8 +73,32 @@ class PowerController : Service() {
 
     private val powerPoll = object : Runnable {
         override fun run() {
-            evaluatePlugged(isPlugged())
+            val plugged = isPlugged()
+            evaluatePlugged(plugged)
+            // Screen kicker: esta ROM (Unisoc/Chuwi) ignora el wake lock
+            // sostenido y apaga la pantalla a los 10 s. Mientras esté enchufada
+            // y el player deba verse, re-despertamos cada tick — cada kick da
+            // ~10 s, así queda encendida de forma continua y la ventana llega
+            // a dibujarse.
+            if (plugged && !appClosed) kickScreen()
             handler.postDelayed(this, POWER_POLL_MS)
+        }
+    }
+
+    private fun kickScreen() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            if (pm.isInteractive) return
+            @Suppress("DEPRECATION")
+            pm.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    android.os.PowerManager.ON_AFTER_RELEASE,
+                "iconads:kick",
+            ).apply { acquire(POWER_POLL_MS + 3_000L) }
+            Log.i(TAG, "kickScreen: re-despertando pantalla")
+        } catch (e: Exception) {
+            Log.w(TAG, "kickScreen: ${e.message}")
         }
     }
 
