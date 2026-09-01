@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, WeeklyEntry, RangeStats, HourlyCount, DayHourCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry, TabletAdPlay } from '@/lib/api';
+import { api, WeeklyEntry, RangeStats, HourlyCount, DayHourCount, CompletionRate, PlaylistStat, AdNoPlays, ZoneStat, SyncInterval, RoiEntry, ZoneHourEntry, SlaStat, MonthlyEntry, TabletAdPlay, TabletMonitorEntry } from '@/lib/api';
+import InfoTip from '@/components/InfoTip';
+import RefreshButton from '@/components/RefreshButton';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
@@ -26,6 +28,8 @@ export default function StatsPage() {
   const [monthly, setMonthly] = useState<MonthlyEntry[]>([]);
   const [tabletAdPlays, setTabletAdPlays] = useState<TabletAdPlay[]>([]);
   const [expandedTablet, setExpandedTablet] = useState<number | null>(null);
+  const [monitor, setMonitor] = useState<TabletMonitorEntry[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   // eslint-disable-next-line react-hooks/purity -- default date range reads wall-clock time; no React Compiler in use, no SSR of this data
   const defaultFrom = toInputDate(new Date(Date.now() - 30 * 86400000));
@@ -53,7 +57,7 @@ export default function StatsPage() {
     }).finally(() => { setLoadingRange(false); setLoadingExtra(false); });
   };
 
-  useEffect(() => {
+  const loadAll = () => {
     api.getWeeklyStats(8).then(setWeekly).finally(() => setLoadingWeekly(false));
     api.getPlaylistStats().then(setPlaylists).catch(() => {});
     api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
@@ -63,16 +67,122 @@ export default function StatsPage() {
     api.getZoneHourStats().then(setZoneHour).catch(() => {});
     api.getSlaStats().then(setSlaStats).catch(() => {});
     api.getMonthlyStats().then(setMonthly).catch(() => {});
+    api.getTabletMonitor().then(setMonitor).catch(() => {});
+    fetchRange(from, to);
+  };
+  const refreshAll = async () => { setRefreshing(true); try { loadAll(); } finally { setTimeout(() => setRefreshing(false), 600); } };
+
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount, not a compiler target
-    fetchRange(defaultFrom, defaultTo);
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const maxWeekly = Math.max(...weekly.map((w) => w.count), 1);
 
+  // ── KPIs ejecutivos (derivados de los datos ya cargados) ──────────────────
+  const rangeDays = Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86400000) + 1);
+  const totalImpr = range?.totalPlays ?? 0;
+  const avgDaily = Math.round(totalImpr / rangeDays);
+  const last7Impr = (range?.dailyPlays ?? []).slice(-7).reduce((s, d) => s + d.count, 0);
+  const activeCampaigns = range?.playsByCampaign.length ?? 0;
+  const complTotal = completion.reduce((s, c) => s + c.totalPlays, 0);
+  const complDone = completion.reduce((s, c) => s + c.completedPlays, 0);
+  const completionPct = complTotal > 0 ? Math.round((complDone / complTotal) * 100) : null;
+  const avgCoverage = slaStats.length ? Math.round(slaStats.reduce((s, x) => s + x.coveragePct, 0) / slaStats.length) : null;
+  const activeTablets = new Set((range?.playsByTablet ?? []).map((t) => t.tabletId)).size;
+  // Flota
+  const fleetTotal = monitor.length;
+  const fleetOnline = monitor.filter((m) => m.status === 'online').length;
+  const fleetOnlinePct = fleetTotal ? Math.round((fleetOnline / fleetTotal) * 100) : null;
+  const manualBrightness = monitor.filter((m) => m.brightnessAuto === false).length;
+  const lowBattery = monitor.filter((m) => m.batteryLevel != null && m.batteryLevel <= 20).length;
+  const versionCounts = monitor.reduce<Record<string, number>>((acc, m) => {
+    const v = m.appVersion || '—'; acc[v] = (acc[v] || 0) + 1; return acc;
+  }, {});
+  const versionSpread = Object.entries(versionCounts).sort((a, b) => b[1] - a[1]);
+  const sparkMax = Math.max(1, ...(range?.dailyPlays ?? []).map((d) => d.count));
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Estadísticas</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Estadísticas</h1>
+        <RefreshButton onClick={refreshAll} loading={refreshing} />
+      </div>
+
+      {/* ══ Resumen ejecutivo ══ */}
+      <div className="card p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold">Resumen ejecutivo</h2>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Rango: {from} → {to} · {rangeDays} días</span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <Kpi label="Impresiones (rango)" value={totalImpr.toLocaleString('es-UY')}
+            tip={<>Cada vez que un anuncio se mostró en una tablet dentro del rango de fechas. <b>Fuente:</b> tabla <code>metrics</code> (una fila por reproducción registrada), endpoint <code>/api/stats/range</code>.</>} />
+          <Kpi label="Últimos 7 días" value={last7Impr.toLocaleString('es-UY')}
+            tip={<>Impresiones de los 7 días más recientes del rango. Sirve para ver la tendencia corta. <b>Fuente:</b> <code>metrics.daily_plays</code>.</>} />
+          <Kpi label="Promedio diario" value={avgDaily.toLocaleString('es-UY')}
+            tip={<>Impresiones totales ÷ días del rango. Base para proyectar volumen mensual.</>} />
+          <Kpi label="Campañas con actividad" value={activeCampaigns}
+            tip={<>Campañas que tuvieron al menos una impresión en el rango. Si es menor que la cantidad de campañas activas, hay campañas que no están saliendo.</>} />
+          <Kpi label="Tasa de finalización"
+            value={completionPct == null ? '—' : `${completionPct}%`}
+            good={completionPct != null && completionPct >= 80}
+            tip={<>% de reproducciones que llegaron hasta el final (no se cortaron a mitad). <b>Fuente:</b> campo <code>completed</code> de <code>metrics</code>. Bajo = videos más largos que su duración configurada, o cortes por cambio de playlist.</>} />
+          <Kpi label="Cobertura de flota (30d)"
+            value={avgCoverage == null ? '—' : `${avgCoverage}%`}
+            good={avgCoverage != null && avgCoverage >= 85}
+            tip={<>Promedio de % de días del último mes en que cada tablet estuvo activa (sincronizó). <b>Fuente:</b> <code>sync_logs</code>, endpoint <code>/api/stats/sla</code>. Es el proxy de "disponibilidad" del inventario.</>} />
+        </div>
+
+        {/* Sparkline de impresiones diarias */}
+        {(range?.dailyPlays?.length ?? 0) > 1 && (
+          <div className="mt-5 pt-5 border-t" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+              Impresiones por día
+              <InfoTip>Una barra por día del rango. Detecta días caídos (barras en cero) y picos.</InfoTip>
+            </p>
+            <div className="flex items-end gap-0.5 h-20">
+              {(range?.dailyPlays ?? []).map((d) => (
+                <div key={d.date} className="flex-1 rounded-t" title={`${d.date}: ${d.count}`}
+                  style={{ height: `${Math.max((d.count / sparkMax) * 100, d.count > 0 ? 4 : 1)}%`, background: '#3b82f6', opacity: 0.35 + 0.65 * (d.count / sparkMax) }} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ══ Salud de la flota ══ */}
+      {fleetTotal > 0 && (
+        <div className="card p-6 mb-6">
+          <h2 className="font-semibold mb-4">Salud de la flota
+            <InfoTip>Estado en vivo de las tablets. <b>Fuente:</b> <code>/api/tablets/monitor</code>, actualizado en cada sync de cada tablet (~cada 30 s).</InfoTip>
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <Kpi label="Online ahora" value={fleetOnlinePct == null ? '—' : `${fleetOnlinePct}%`}
+              sub={`${fleetOnline}/${fleetTotal}`} good={fleetOnlinePct != null && fleetOnlinePct >= 90}
+              tip={<>Tablets que sincronizaron en los últimos 10 minutos.</>} />
+            <Kpi label="Tablets activas (rango)" value={activeTablets}
+              tip={<>Tablets que reprodujeron al menos un anuncio en el rango. Si es menor que las online, algunas están prendidas pero sin contenido.</>} />
+            <Kpi label="Brillo en manual" value={manualBrightness} good={manualBrightness === 0}
+              tip={<>Tablets cuyo brillo NO está en automático. Deberían estar todas en auto. Fuente: ajuste <code>SCREEN_BRIGHTNESS_MODE</code> reportado por la tablet.</>} />
+            <Kpi label="Batería baja (≤20%)" value={lowBattery} good={lowBattery === 0}
+              tip={<>Tablets con batería crítica. En un taxi con cargador permanente no debería pasar.</>} />
+            <div>
+              <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Versiones de app</p>
+              <div className="flex flex-wrap gap-1.5">
+                {versionSpread.map(([v, n]) => (
+                  <span key={v} className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
+                    {v === '—' ? 'sin dato' : `v${v}`}: {n}
+                  </span>
+                ))}
+              </div>
+              {versionSpread.length > 1 && <p className="text-[11px] text-amber-500 mt-1">Hay tablets en versiones distintas</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* #20 — Week-over-week */}
       <div className="card p-6 mb-6">
@@ -786,6 +896,27 @@ export default function StatsPage() {
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+function Kpi({ label, value, sub, tip, good }: {
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  tip?: React.ReactNode;
+  good?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs mb-1 flex items-center" style={{ color: 'var(--text-muted)' }}>
+        {label}
+        {tip && <InfoTip>{tip}</InfoTip>}
+      </p>
+      <p className={`text-2xl font-bold tabular-nums ${good === true ? 'text-emerald-600' : good === false ? 'text-amber-500' : ''}`}>
+        {value}
+        {sub && <span className="text-sm font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{sub}</span>}
+      </p>
     </div>
   );
 }
