@@ -100,6 +100,27 @@ router.post('/tablet/:id/request-screenshot', apiKeyOrAuth, async (req, res, nex
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/tablet/:id/block  { on: true|false }
+// Bloquea/desbloquea una tablet (manualStatus). Bloqueada = frena la
+// reproducción y muestra pantalla neutra, pero sigue sincronizando.
+router.post('/tablet/:id/block', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1;
+    const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true, fcmToken: true } });
+    if (!tablet) return res.status(404).json({ error: 'No existe' });
+    await prisma.tablet.update({ where: { id }, data: { manualStatus: on ? 'bloqueada' : 'activa' } });
+    forceSyncFlags.add(id);
+    let pushed = 0;
+    if (tablet.fcmToken) {
+      try { const r = await firebaseAdmin.sendSyncPush([tablet.fcmToken]); pushed = r?.successCount || 0; } catch { /* best-effort */ }
+    }
+    await audit(req, on ? 'TABLET_BLOCK' : 'TABLET_UNBLOCK', 'tablet', id, tablet.name);
+    res.json({ ok: true, manualStatus: on ? 'bloqueada' : 'activa', pushed,
+      message: on ? `"${tablet.name}" bloqueada.` : `"${tablet.name}" desbloqueada.` });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.
