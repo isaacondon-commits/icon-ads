@@ -25,6 +25,7 @@ import androidx.core.content.ContextCompat
 import com.iconads.player.PlayerActivity
 import com.iconads.player.R
 import com.iconads.player.kiosk.KioskManager
+import com.iconads.player.util.DevicePrefs
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -47,6 +48,7 @@ import kotlin.math.sqrt
 class PowerController : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
+    private val prefs by lazy { DevicePrefs(this) }
     private lateinit var sensorManager: SensorManager
     private var accel: Sensor? = null
     private var sigMotion: Sensor? = null
@@ -79,8 +81,9 @@ class PowerController : Service() {
             // sostenido y apaga la pantalla a los 10 s. Mientras esté enchufada
             // y el player deba verse, re-despertamos cada tick — cada kick da
             // ~10 s, así queda encendida de forma continua y la ventana llega
-            // a dibujarse.
-            if (plugged && !appClosed) kickScreen()
+            // a dibujarse. En modo test NO kickeamos, así el botón de encendido
+            // hace on/off manual.
+            if (plugged && !appClosed && !prefs.getTestMode()) kickScreen()
             handler.postDelayed(this, POWER_POLL_MS)
         }
     }
@@ -131,7 +134,7 @@ class PowerController : Service() {
 
     private val stillnessCheck = object : Runnable {
         override fun run() {
-            if (!appClosed && isPlugged() &&
+            if (!appClosed && !prefs.getTestMode() && isPlugged() &&
                 System.currentTimeMillis() - lastMotionMs > STILLNESS_TIMEOUT_MS
             ) {
                 Log.i(TAG, "10 min sin movimiento — cerrando app")
@@ -164,7 +167,7 @@ class PowerController : Service() {
 
         // Estado inicial al arrancar (boot / actualización de la app).
         lastPlugged = isPlugged()
-        if (lastPlugged == true) onPowerConnected() else closeApp(byStillness = false)
+        if (lastPlugged == true || prefs.getTestMode()) onPowerConnected() else closeApp(byStillness = false)
 
         handler.postDelayed(stillnessCheck, STILLNESS_POLL_MS)
         handler.postDelayed(powerPoll, POWER_POLL_MS)
@@ -236,6 +239,10 @@ class PowerController : Service() {
     }
 
     private fun onPowerDisconnected() {
+        if (prefs.getTestMode()) {
+            Log.i(TAG, "Corriente desconectada — MODO TEST: se ignora, el player sigue")
+            return
+        }
         Log.i(TAG, "Corriente desconectada — esperando confirmación (${POWER_OFF_DEBOUNCE_MS}ms)")
         pendingPowerOff?.let { handler.removeCallbacks(it) }
         val r = Runnable {

@@ -12,6 +12,7 @@ const { audit } = require('../lib/auditLog');
 const supabaseStorage = require('../lib/supabase-storage');
 const firebaseAdmin = require('../lib/firebase-admin');
 const forceApkFlags = require('../lib/forceApkFlags');
+const forceSyncFlags = require('../lib/forceSyncFlags');
 
 const apkUpload = multer({
   storage: multer.memoryStorage(),
@@ -473,6 +474,31 @@ router.get('/apk', apiKeyOrAuth, async (req, res, next) => {
       totalTablets: tablets.length,
       upToDate: versions.filter((v) => v.upToDate).reduce((n, v) => n + v.count, 0),
       versions,
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/test-mode  { on: true|false }
+// Modo test de kiosco: las tablets ignoran el desenchufe y el cierre por
+// inactividad (quedan siempre prendidas, botón de encendido = on/off manual).
+// Empuja a la flota para que lo agarren rápido.
+router.post('/test-mode', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1;
+    await prisma.systemConfig.upsert({
+      where: { key: 'kiosk_test_mode' },
+      update: { value: on ? '1' : '0' },
+      create: { key: 'kiosk_test_mode', value: on ? '1' : '0' },
+    });
+    const tablets = await prisma.tablet.findMany({ select: { id: true, fcmToken: true } });
+    tablets.forEach((t) => forceSyncFlags.add(t.id));
+    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
+    const pushResult = await firebaseAdmin.sendSyncPush(tokens);
+    await audit(req, 'SET_TEST_MODE', 'system', null, `kiosk_test_mode=${on ? 'ON' : 'OFF'}`);
+    res.json({
+      ok: true,
+      testMode: on,
+      message: `Modo test ${on ? 'ACTIVADO' : 'DESACTIVADO'} — ${tablets.length} tablets marcadas (${pushResult.successCount} al instante).`,
     });
   } catch (err) { next(err); }
 });

@@ -640,6 +640,10 @@ class PlayerActivity : AppCompatActivity() {
             val api = NetworkModule.provideDeviceApi(token)
             val syncResp = withContext(Dispatchers.IO) { api.sync(prefs.getPlaylistVersion(), battery, temp, BuildConfig.VERSION_NAME) }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
+            if (prefs.getTestMode() != syncResp.testMode) {
+                Log.i(TAG, "syncNow: modo test → ${syncResp.testMode}")
+                prefs.setTestMode(syncResp.testMode)
+            }
             if (syncResp.forceApkCheck) {
                 Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")
                 SyncWorker.scheduleImmediate(this@PlayerActivity)

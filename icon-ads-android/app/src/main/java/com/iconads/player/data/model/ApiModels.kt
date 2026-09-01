@@ -20,6 +20,9 @@ data class SyncResponse(
     // El admin tocó "Forzar actualización" en el panel: encolar SyncWorker ya
     // (que corre checkApkUpdate), sin esperar el push FCM ni el ciclo horario.
     val forceApkCheck: Boolean = false,
+    // Modo test: la tablet ignora el desenchufe y el cierre por 10 min de
+    // inactividad (kiosco siempre prendido, botón de encendido = on/off).
+    val testMode: Boolean = false,
 )
 
 data class HeartbeatInfo(

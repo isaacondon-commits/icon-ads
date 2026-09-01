@@ -73,6 +73,11 @@ class DevicePrefs(context: Context) {
     fun getCallRoleAsked(): Boolean = prefs.getBoolean(KEY_CALL_ROLE_ASKED, false)
     fun setCallRoleAsked(value: Boolean) = prefs.edit().putBoolean(KEY_CALL_ROLE_ASKED, value).apply()
 
+    // Modo test remoto (systemConfig kiosk_test_mode): ignora desenchufe +
+    // cierre por inactividad. Lo refresca PlayerActivity en cada sync.
+    fun getTestMode(): Boolean = prefs.getBoolean(KEY_TEST_MODE, false)
+    fun setTestMode(value: Boolean) = prefs.edit().putBoolean(KEY_TEST_MODE, value).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -87,6 +92,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_PHONE_PERMS_ASKED = "phone_perms_asked"
         private const val KEY_DEVICE_ADMIN_ASKED = "device_admin_asked"
         private const val KEY_CALL_ROLE_ASKED = "call_role_asked"
+        private const val KEY_TEST_MODE = "kiosk_test_mode"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
