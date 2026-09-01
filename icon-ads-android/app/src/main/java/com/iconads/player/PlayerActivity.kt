@@ -53,6 +53,7 @@ import com.iconads.player.data.repository.PlaylistRepository
 import com.iconads.player.databinding.ActivityPlayerBinding
 import com.iconads.player.kiosk.KioskManager
 import com.iconads.player.power.PowerController
+import com.iconads.player.util.AdaptiveBrightness
 import com.iconads.player.util.DevicePrefs
 import com.iconads.player.work.SyncWorker
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +72,7 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var metricRepo: MetricRepository
     private lateinit var sensorManager: SensorManager
     private var gravitySensor: Sensor? = null
+    private val adaptiveBrightness by lazy { AdaptiveBrightness(this) }
 
     private val imageHandler = Handler(Looper.getMainLooper())
     private var ads: List<Ad> = emptyList()
@@ -301,6 +303,7 @@ class PlayerActivity : AppCompatActivity() {
         unregisterReceiver(rotationChangedReceiver)
         unregisterReceiver(closeAppReceiver)
         sensorManager.unregisterListener(gravityListener)
+        adaptiveBrightness.pause()
         try {
             (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
                 .listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
@@ -319,6 +322,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onResume()
         hideSystemUI()
         if (!dormant && ads.isNotEmpty()) exoPlayer.play()
+        if (!dormant && prefs.getBrightnessPolicy() == "auto") adaptiveBrightness.resume(window)
     }
 
     override fun onPause() {
@@ -331,6 +335,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onDestroy()
         exoPlayer.release()
         imageHandler.removeCallbacksAndMessages(null)
+        adaptiveBrightness.release()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -370,6 +375,19 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyKioskState()
+        applyBrightness(prefs.getBrightnessPolicy())
+    }
+
+    // Aplica la política de brillo. "auto" = brillo automático manejado por la
+    // app (sensor de luz → window.screenBrightness). Un número = brillo fijo
+    // vía DevicePolicyManager (modo manual del sistema).
+    private fun applyBrightness(policy: String) {
+        if (policy == "auto") {
+            adaptiveBrightness.enable(window)
+        } else {
+            adaptiveBrightness.release()
+            KioskManager.applyBrightnessPolicy(this, policy)
+        }
     }
 
     // Mostrar el player por encima del bloqueo y encender la pantalla cuando
@@ -438,6 +456,7 @@ class PlayerActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
         )
+        adaptiveBrightness.pause()  // sin adaptar mientras está dormida
         window.attributes = window.attributes.apply { screenBrightness = 0.004f }
         // Dejar de mostrarse por encima del bloqueo: si alguien enciende la
         // pantalla con la tablet estacionada, tiene que aparecer el PIN, no el
@@ -458,8 +477,12 @@ class PlayerActivity : AppCompatActivity() {
         dormant = false
         Log.i(TAG, "Saliendo de modo dormido: reanudando reproducción")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.attributes = window.attributes.apply {
-            screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        if (prefs.getBrightnessPolicy() == "auto") {
+            adaptiveBrightness.resume(window)
+        } else {
+            window.attributes = window.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
         }
         setupShowWhenLocked()
         KioskManager.enterPlaying(this)
@@ -793,15 +816,18 @@ class PlayerActivity : AppCompatActivity() {
         Log.i(TAG, "syncNow: versión local=${prefs.getPlaylistVersion()} battery=${battery}% temp=${temp}°C")
         try {
             val api = NetworkModule.provideDeviceApi(token)
+            val autoBrightness = prefs.getBrightnessPolicy() == "auto"
             val syncResp = withContext(Dispatchers.IO) {
                 api.sync(
                     prefs.getPlaylistVersion(), battery, temp, BuildConfig.VERSION_NAME,
-                    brightness = getBrightnessPct(),
-                    brightnessAuto = isBrightnessAuto(),
+                    brightness = if (autoBrightness) (adaptiveBrightness.currentFraction * 100).toInt() else getBrightnessPct(),
+                    brightnessAuto = if (autoBrightness) true else isBrightnessAuto(),
                     serial = getSerial(),
                     playerOk = playerOk(),
                     lastAdAgoS = lastAdAgoS(),
                     onFallback = onFallback(),
+                    lux = if (autoBrightness) adaptiveBrightness.lastLux else null,
+                    lightSensor = if (autoBrightness) adaptiveBrightness.hasSensor else null,
                 )
             }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
@@ -814,7 +840,7 @@ class PlayerActivity : AppCompatActivity() {
                 if (pol != prefs.getBrightnessPolicy()) {
                     Log.i(TAG, "syncNow: brillo → $pol")
                     prefs.setBrightnessPolicy(pol)
-                    KioskManager.applyBrightnessPolicy(this@PlayerActivity, pol)
+                    withContext(Dispatchers.Main) { applyBrightness(pol) }
                 }
             }
             if (syncResp.screenshotRequested) {

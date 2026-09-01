@@ -24,6 +24,8 @@ interface DeviceApi {
         @Query("playerOk") playerOk: Boolean? = null,
         @Query("lastAdAgoS") lastAdAgoS: Int? = null,
         @Query("onFallback") onFallback: Boolean? = null,
+        @Query("lux") lux: Float? = null,
+        @Query("lightSensor") lightSensor: Boolean? = null,
     ): SyncResponse
 
     @POST("api/device/screenshot")

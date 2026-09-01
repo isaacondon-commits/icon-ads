@@ -232,6 +232,12 @@ export default function TabletDetailPage() {
               <span className={tablet.brightnessAuto === false ? 'text-amber-500 font-medium' : ''}
                 title={tablet.brightnessAuto === false ? 'El brillo está en manual — debería estar en automático' : 'Brillo en automático'}>
                 Brillo: {tablet.brightness}% {tablet.brightnessAuto === false ? '(MANUAL)' : tablet.brightnessAuto ? '(auto)' : ''}
+                {tablet.lux != null && ` · ${Math.round(tablet.lux)} lx`}
+              </span>
+            )}
+            {tablet.lightSensor === false && (
+              <span className="text-red-500 font-medium" title="La tablet no tiene sensor de luz — el brillo automático no puede adaptar, queda al máximo">
+                Sin sensor de luz
               </span>
             )}
             {tablet.serial && <span className="font-mono" title="Nº de serie del hardware — identifica la tablet física">SN: {tablet.serial}</span>}

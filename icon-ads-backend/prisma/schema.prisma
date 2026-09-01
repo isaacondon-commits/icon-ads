@@ -206,6 +206,8 @@ model Tablet {
   serial           String?
   playerOk         Boolean?        @map("player_ok")
   onFallback       Boolean?        @map("on_fallback")
+  lux              Float?          @map("lux")
+  lightSensor      Boolean?        @map("light_sensor")
   lastAdAgoS       Int?            @map("last_ad_ago_s")
   lastScreenshot   String?         @map("last_screenshot")
   lastScreenshotAt DateTime?       @map("last_screenshot_at")

@@ -103,6 +103,8 @@ const MIGRATIONS = [
   { name: 'tablets.last_screenshot',   sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_screenshot TEXT` },
   { name: 'tablets.last_screenshot_at', sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_screenshot_at TIMESTAMPTZ` },
   { name: 'tablets.on_fallback',       sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS on_fallback BOOLEAN` },
+  { name: 'tablets.lux',               sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS lux DOUBLE PRECISION` },
+  { name: 'tablets.light_sensor',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS light_sensor BOOLEAN` },
   // v23 — multiple clients per campaign (billing client stays campaigns.client_id;
   // this table holds additional clients associated with the campaign)
   { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },

@@ -199,6 +199,12 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
             <span className={entry.brightnessAuto === false ? 'text-amber-500 font-medium' : ''}
               title={entry.brightnessAuto === false ? 'Brillo en manual — debería estar en automático' : 'Brillo automático'}>
               ☀ {entry.brightness}% {entry.brightnessAuto === false ? '(manual)' : entry.brightnessAuto ? '(auto)' : ''}
+              {entry.lux != null && ` · ${Math.round(entry.lux)} lx`}
+            </span>
+          )}
+          {entry.lightSensor === false && (
+            <span className="text-red-500 font-medium" title="La tablet no tiene sensor de luz — el brillo automático queda al máximo">
+              sin sensor de luz
             </span>
           )}
           {entry.appVersion && <span className="font-mono">v{entry.appVersion}</span>}

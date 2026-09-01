@@ -89,6 +89,8 @@ router.get('/monitor', async (req, res, next) => {
         appVersion: t.appVersion ?? null,
         playerOk: t.playerOk ?? null,
         onFallback: t.onFallback ?? null,
+        lux: t.lux ?? null,
+        lightSensor: t.lightSensor ?? null,
         lastAdAgoS: t.lastAdAgoS ?? null,
         hasScreenshot: !!t.lastScreenshotAt,
         lastScreenshotAt: t.lastScreenshotAt ?? null,

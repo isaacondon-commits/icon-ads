@@ -550,6 +550,7 @@ export interface Tablet {
   osVersion?: string | null; deviceModel?: string | null;
   brightness?: number | null; brightnessAuto?: boolean | null; serial?: string | null;
   playerOk?: boolean | null; onFallback?: boolean | null; lastAdAgoS?: number | null; lastScreenshotAt?: string | null;
+  lux?: number | null; lightSensor?: boolean | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
@@ -589,6 +590,8 @@ export interface TabletMonitorEntry {
   appVersion: string | null;
   playerOk?: boolean | null;
   onFallback?: boolean | null;
+  lux?: number | null;
+  lightSensor?: boolean | null;
   lastAdAgoS?: number | null;
   hasScreenshot?: boolean;
   lastScreenshotAt?: string | null;

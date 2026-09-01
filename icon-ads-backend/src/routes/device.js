@@ -141,6 +141,10 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // onFallback: la app está mostrando SÓLO el video institucional de respaldo
     // (campaignId < 0) => no logró cargar/descargar su playlist real.
     const onFallback = req.query.onFallback !== undefined ? req.query.onFallback === 'true' : undefined;
+    // Brillo automático manejado por la app: lux medido y si la tablet tiene
+    // sensor de luz (si no lo tiene, el brillo auto no puede adaptar).
+    const lux = req.query.lux !== undefined ? parseFloat(req.query.lux) : undefined;
+    const lightSensor = req.query.lightSensor !== undefined ? req.query.lightSensor === 'true' : undefined;
     const tablet = req.tablet;
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
@@ -162,6 +166,8 @@ router.get('/sync', requireDevice, async (req, res, next) => {
         ...(playerOk !== undefined ? { playerOk } : {}),
         ...(Number.isFinite(lastAdAgoS) ? { lastAdAgoS } : {}),
         ...(onFallback !== undefined ? { onFallback } : {}),
+        ...(Number.isFinite(lux) ? { lux } : {}),
+        ...(lightSensor !== undefined ? { lightSensor } : {}),
       },
     });
 
