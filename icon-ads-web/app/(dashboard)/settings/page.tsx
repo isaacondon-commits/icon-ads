@@ -49,8 +49,10 @@ export default function SettingsPage() {
   const callmebotPhone = settings['callmebot_phone'] ?? '';
   const callmebotApikey = settings['callmebot_apikey'] ?? '';
   const autoArchive = settings['auto_archive_expired'] === 'true';
+  const batteryAlertPct = settings['battery_alert_pct'] ?? '20';
 
   const [retentionInput, setRetentionInput] = useState('');
+  const [batteryInput, setBatteryInput] = useState('');
   const [webhookInput, setWebhookInput] = useState('');
   const [gaInput, setGaInput] = useState('');
   const [callmebotPhoneInput, setCallmebotPhoneInput] = useState('');
@@ -63,6 +65,7 @@ export default function SettingsPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local form inputs from loaded settings, not a compiler target
     setRetentionInput(settings['metrics_retention_days'] ?? '90');
+    setBatteryInput(settings['battery_alert_pct'] ?? '20');
     setWebhookInput(settings['webhook_url'] ?? '');
     setGaInput(settings['ga_measurement_id'] ?? '');
     setCallmebotPhoneInput(settings['callmebot_phone'] ?? '');
@@ -125,6 +128,33 @@ export default function SettingsPage() {
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
               >
                 {saving === 'metrics_retention_days' ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+
+          {/* Alerta de batería baja */}
+          <div className="card p-6">
+            <h2 className="font-semibold mb-1">Alerta de batería baja</h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+              Se avisa (syslog + webhook + WhatsApp) cuando una tablet online baja de este nivel, para hablar con el taxista y que la enchufe. Se rearma cuando la batería sube {Number(batteryInput || 20) + 10}%.
+            </p>
+            <div className="flex gap-3 items-center">
+              <input
+                type="number"
+                min="5"
+                max="90"
+                className="input w-28"
+                value={batteryInput}
+                onChange={(e) => setBatteryInput(e.target.value)}
+                onWheel={(e) => e.currentTarget.blur()}
+              />
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>% de batería</span>
+              <button
+                onClick={() => save('battery_alert_pct', batteryInput)}
+                disabled={saving === 'battery_alert_pct' || batteryInput === batteryAlertPct}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
+              >
+                {saving === 'battery_alert_pct' ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>

@@ -67,6 +67,7 @@ export default function MonitorPage() {
   const alerts = entries.filter((e) => e.status === 'offline' && e.offlineMinutes > 120);
   const notPlaying = entries.filter((e) => e.health === 'no-reproduce');
   const blocked = entries.filter((e) => e.health === 'blocked');
+  const lowBattery = entries.filter((e) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20);
 
   const unblock = async (id: number) => {
     setUnblockingId(id);
@@ -154,6 +155,26 @@ export default function MonitorPage() {
                   {unblockingId === t.id ? 'Desbloqueando...' : 'Desbloquear'}
                 </button>
               </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Batería baja — hay que llamar al taxista para que la enchufe */}
+      {lowBattery.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800">
+          <p className="text-sm font-bold text-red-700 dark:text-red-400 mb-1">
+            🔋 {lowBattery.length} tablet{lowBattery.length > 1 ? 's' : ''} con batería baja — hablá con el taxista
+          </p>
+          <div className="flex flex-col gap-0.5">
+            {lowBattery.map((t) => (
+              <p key={t.id} className="text-xs text-red-600 dark:text-red-400">
+                <Link href={`/tablets/${t.id}`} className="font-semibold hover:underline">{t.name}</Link>
+                {' '}· {t.batteryLevel}%
+                {t.zone ? ` · ${t.zone}` : ''}
+                {t.driverName ? ` · ${t.driverName}` : ''}
+                {t.licensePlate ? ` · ${t.licensePlate}` : ''}
+              </p>
             ))}
           </div>
         </div>

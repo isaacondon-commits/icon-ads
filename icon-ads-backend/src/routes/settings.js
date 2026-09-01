@@ -11,6 +11,7 @@ const ALLOWED_KEYS = [
   'ga_measurement_id',
   'callmebot_phone', 'callmebot_apikey',
   'auto_archive_expired',
+  'battery_alert_pct',
 ];
 
 // GET /api/settings — all system config values

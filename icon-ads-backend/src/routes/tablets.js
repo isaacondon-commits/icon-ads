@@ -81,6 +81,8 @@ router.get('/monitor', async (req, res, next) => {
         status: online ? 'online' : 'offline',
         health,
         manualStatus: t.manualStatus ?? 'activa',
+        driverName: t.driverName ?? null,
+        licensePlate: t.licensePlate ?? null,
         offlineMinutes: Math.floor(diffMin),
         lastSync: t.lastSync,
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,

@@ -293,12 +293,14 @@ app.use((err, req, res, next) => {
 // Alerta: tablet ONLINE pero que NO está reproduciendo publicidad. Es el caso
 // crítico ("un taxi sin publicidad y no me entero"). Chequeo cada 5 minutos.
 const notPlayingAlerted = new Set();
-const notifyChannels = async (title, body) => {
-  syslog.addEvent('TABLET_NOT_PLAYING', 'tablet', null, body);
+const notifyChannels = async (title, body, opts = {}) => {
+  const eventType = opts.eventType || 'TABLET_NOT_PLAYING';
+  const webhookEvent = opts.webhookEvent || 'tablet_not_playing';
+  syslog.addEvent(eventType, 'tablet', null, body);
   try {
     const cfg = await prisma.systemConfig.findUnique({ where: { key: 'webhook_url' } });
     if (cfg?.value) {
-      fetch(cfg.value, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'tablet_not_playing', message: body }) })
+      fetch(cfg.value, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: webhookEvent, message: body }) })
         .catch((e) => console.warn('[webhook]', e.message));
     }
   } catch { /* non-fatal */ }
@@ -339,6 +341,41 @@ setInterval(async () => {
     }
   } catch (err) { console.warn('[not-playing-check]', err.message); }
 }, 5 * 60 * 1000);
+
+// Alerta: batería baja. El objetivo es hablar con el taxista antes de que la
+// tablet se apague. Umbral configurable (systemConfig battery_alert_pct, 20 por
+// defecto); se rearma cuando la batería sube > umbral+10 (o sea, cuando el
+// taxista la enchufó). Chequeo cada 10 minutos, sólo tablets que sincronizaron
+// hace poco (si está offline el % es viejo).
+const lowBatteryAlerted = new Set();
+setInterval(async () => {
+  try {
+    const cfgRow = await prisma.systemConfig.findUnique({ where: { key: 'battery_alert_pct' } });
+    const threshold = Math.min(Math.max(parseInt(cfgRow?.value) || 20, 5), 90);
+    const clearAt = threshold + 10;
+    const tablets = await prisma.tablet.findMany({
+      select: { id: true, name: true, zone: true, driverName: true, licensePlate: true, batteryLevel: true, lastSync: true, manualStatus: true },
+    });
+    const fifteenMinAgo = Date.now() - 15 * 60 * 1000;
+    for (const t of tablets) {
+      const online = t.lastSync && new Date(t.lastSync).getTime() > fifteenMinAgo;
+      const bat = t.batteryLevel;
+      const low = online && bat != null && bat <= threshold;
+      if (low && !lowBatteryAlerted.has(t.id)) {
+        lowBatteryAlerted.add(t.id);
+        const quien = t.driverName ? `Taxista: ${t.driverName}.` : '';
+        const matricula = t.licensePlate ? ` Matrícula ${t.licensePlate}.` : '';
+        await notifyChannels('Batería baja',
+          `La tablet "${t.name}"${t.zone ? ` (zona ${t.zone})` : ''} está al ${bat}% de batería. ` +
+          `Hablá con el taxista para que la enchufe. ${quien}${matricula}`.trim(),
+          { eventType: 'TABLET_LOW_BATTERY', webhookEvent: 'tablet_low_battery' });
+      } else if (lowBatteryAlerted.has(t.id) && (bat == null || bat >= clearAt || !online)) {
+        lowBatteryAlerted.delete(t.id);
+        if (bat != null && bat >= clearAt) syslog.addEvent('TABLET_BATTERY_OK', 'tablet', t.id, `${t.name} recuperó batería (${bat}%)`);
+      }
+    }
+  } catch (err) { console.warn('[low-battery-check]', err.message); }
+}, 10 * 60 * 1000);
 
 // #7 — Offline tablet alert check every 30 minutes
 const alertedTablets = new Set();

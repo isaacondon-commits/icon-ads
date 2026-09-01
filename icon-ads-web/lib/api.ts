@@ -589,6 +589,8 @@ export interface TabletMonitorEntry {
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
   health?: 'ok' | 'offline' | 'no-reproduce' | 'blocked';
   manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
+  driverName?: string | null;
+  licensePlate?: string | null;
   playlist: { id: number; name: string } | null; todayPlays: number;
   batteryLevel: number | null;
   brightness: number | null;
