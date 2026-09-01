@@ -353,19 +353,24 @@ class PlayerActivity : AppCompatActivity() {
 
     // Mostrar el player por encima del bloqueo y encender la pantalla cuando
     // el PowerController lo trae al frente (llega la corriente del taxi).
+    // Se usan LOS DOS mecanismos: las APIs nuevas (setShowWhenLocked/
+    // setTurnScreenOn) y los flags de ventana clásicos — en ROMs de OEM
+    // (Unisoc/Chuwi acá) los flags suelen ser más confiables para encender la
+    // pantalla desde segundo plano, y sostienen el KEEP_SCREEN_ON cuando el
+    // wake lock del PowerController se suelta.
     private fun setupShowWhenLocked() {
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
             (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager)
                 .requestDismissKeyguard(this, null)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-            )
         }
     }
 
@@ -405,7 +410,13 @@ class PlayerActivity : AppCompatActivity() {
         Log.i(TAG, "Modo dormido: frenando reproducción y apagando pantalla")
         exoPlayer.stop()
         imageHandler.removeCallbacksAndMessages(null)
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        @Suppress("DEPRECATION")
+        window.clearFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        )
         window.attributes = window.attributes.apply { screenBrightness = 0.004f }
         // Dejar de mostrarse por encima del bloqueo: si alguien enciende la
         // pantalla con la tablet estacionada, tiene que aparecer el PIN, no el
@@ -413,13 +424,6 @@ class PlayerActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(false)
             setTurnScreenOn(false)
-        } else {
-            @Suppress("DEPRECATION")
-            window.clearFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-            )
         }
         try { stopLockTask() } catch (_: Exception) {}
     }
