@@ -55,13 +55,26 @@ class PowerController : Service() {
     private var lastAccelMag = SensorManager.GRAVITY_EARTH
     private var appClosed = false
     private var pendingPowerOff: Runnable? = null
+    private var lastPlugged: Boolean? = null
+    private var screenLock: android.os.PowerManager.WakeLock? = null
 
+    // En las tablets Unisoc/Chuwi el broadcast ACTION_POWER_CONNECTED no llega
+    // al receiver (el DISCONNECTED sí). Por eso el mecanismo principal es este
+    // poll cada 3 s; el receiver queda como refuerzo. Ambos pasan por
+    // evaluatePlugged(), que sólo actúa en los flancos.
     private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_POWER_CONNECTED -> onPowerConnected()
-                Intent.ACTION_POWER_DISCONNECTED -> onPowerDisconnected()
+                Intent.ACTION_POWER_CONNECTED -> evaluatePlugged(true)
+                Intent.ACTION_POWER_DISCONNECTED -> evaluatePlugged(false)
             }
+        }
+    }
+
+    private val powerPoll = object : Runnable {
+        override fun run() {
+            evaluatePlugged(isPlugged())
+            handler.postDelayed(this, POWER_POLL_MS)
         }
     }
 
@@ -111,6 +124,8 @@ class PowerController : Service() {
         accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         sigMotion = sensorManager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
 
+        // ACTION_POWER_* son broadcasts protegidos del sistema: RECEIVER_EXPORTED
+        // es lo correcto (sólo el sistema puede enviarlos).
         ContextCompat.registerReceiver(
             this,
             powerReceiver,
@@ -118,15 +133,17 @@ class PowerController : Service() {
                 addAction(Intent.ACTION_POWER_CONNECTED)
                 addAction(Intent.ACTION_POWER_DISCONNECTED)
             },
-            ContextCompat.RECEIVER_NOT_EXPORTED,
+            ContextCompat.RECEIVER_EXPORTED,
         )
 
         KioskManager.applyPolicies(this)
 
         // Estado inicial al arrancar (boot / actualización de la app).
-        if (isPlugged()) onPowerConnected() else closeApp(byStillness = false)
+        lastPlugged = isPlugged()
+        if (lastPlugged == true) onPowerConnected() else closeApp(byStillness = false)
 
         handler.postDelayed(stillnessCheck, STILLNESS_POLL_MS)
+        handler.postDelayed(powerPoll, POWER_POLL_MS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -134,8 +151,53 @@ class PowerController : Service() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
+        releaseScreenLock()
         try { unregisterReceiver(powerReceiver) } catch (_: Exception) {}
         try { sensorManager.unregisterListener(accelListener) } catch (_: Exception) {}
+    }
+
+    /** Punto único de decisión de carga. Sólo actúa en los cambios de estado. */
+    private fun evaluatePlugged(plugged: Boolean) {
+        if (lastPlugged == plugged) return
+        Log.i(TAG, "Cambio de alimentación: ${if (plugged) "ENCHUFADA" else "DESENCHUFADA"}")
+        lastPlugged = plugged
+        if (plugged) onPowerConnected() else onPowerDisconnected()
+    }
+
+    // Mantiene la pantalla encendida mientras la tablet está alimentada. En esta
+    // ROM, startActivity + setTurnScreenOn no bastan para despertar desde
+    // pantalla apagada; este wake lock sí. Se libera al cerrar (sin corriente /
+    // 10 min quieta) para que la pantalla pueda apagarse.
+    private fun acquireScreenLock() {
+        try {
+            if (screenLock == null) {
+                val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                @Suppress("DEPRECATION")
+                screenLock = pm.newWakeLock(
+                    android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                        android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                        android.os.PowerManager.ON_AFTER_RELEASE,
+                    "iconads:screen",
+                ).apply { setReferenceCounted(false) }
+            }
+            if (screenLock?.isHeld != true) {
+                screenLock?.acquire()
+                Log.i(TAG, "screen wake lock adquirido")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "acquireScreenLock: ${e.message}")
+        }
+    }
+
+    private fun releaseScreenLock() {
+        try {
+            if (screenLock?.isHeld == true) {
+                screenLock?.release()
+                Log.i(TAG, "screen wake lock liberado")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "releaseScreenLock: ${e.message}")
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -174,7 +236,7 @@ class PowerController : Service() {
         accel?.let {
             sensorManager.registerListener(accelListener, it, SensorManager.SENSOR_DELAY_NORMAL)
         }
-        forceScreenOn()
+        acquireScreenLock()
         startActivity(
             Intent(this, PlayerActivity::class.java).addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -184,29 +246,9 @@ class PowerController : Service() {
         )
     }
 
-    // Con el equipo en Doze y pantalla apagada (tras lockNow), startActivity +
-    // setTurnScreenOn no encienden la pantalla: la ventana nunca llega a
-    // "visible" y FLAG_KEEP_SCREEN_ON queda inerte, así que se vuelve a dormir
-    // a los ~10 s. Un wake lock con ACQUIRE_CAUSES_WAKEUP fuerza el encendido;
-    // se suelta solo a los 5 s, para entonces la Activity ya está al frente y
-    // sostiene la pantalla con su propio FLAG_KEEP_SCREEN_ON.
-    private fun forceScreenOn() {
-        try {
-            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
-            @Suppress("DEPRECATION")
-            pm.newWakeLock(
-                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                    android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                    android.os.PowerManager.ON_AFTER_RELEASE,
-                "iconads:poweron",
-            ).apply { acquire(10_000L) }
-        } catch (e: Exception) {
-            Log.w(TAG, "forceScreenOn: ${e.message}")
-        }
-    }
-
     private fun closeApp(byStillness: Boolean) {
         appClosed = true
+        releaseScreenLock()
         try { sensorManager.unregisterListener(accelListener) } catch (_: Exception) {}
         sendBroadcast(Intent(ACTION_CLOSE_APP).setPackage(packageName))
         KioskManager.lockDown(this)
@@ -250,6 +292,9 @@ class PowerController : Service() {
 
         /** Colchón para el bajón de tensión al arrancar el motor. */
         private const val POWER_OFF_DEBOUNCE_MS = 4_000L
+
+        /** Cada cuánto se consulta el estado de carga (el broadcast no llega en esta ROM). */
+        private const val POWER_POLL_MS = 3_000L
 
         /** Sin movimiento por este tiempo (con corriente) -> se cierra la app. */
         private const val STILLNESS_TIMEOUT_MS = 10 * 60_000L
