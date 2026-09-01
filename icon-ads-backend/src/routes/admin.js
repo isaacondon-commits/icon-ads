@@ -141,7 +141,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
   try {
     const [tablets, playlists] = await Promise.all([
       prisma.tablet.findMany({
-        select: { id: true, name: true, playlistId: true, lastSync: true, appVersion: true, fcmToken: true, serial: true },
+        select: { id: true, name: true, playlistId: true, lastSync: true, appVersion: true, fcmToken: true, serial: true, manualStatus: true },
         orderBy: { id: 'asc' },
       }),
       prisma.playlist.findMany({
@@ -161,6 +161,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         && (!a.startsAt || new Date(a.startsAt) <= now) && (!a.endsAt || new Date(a.endsAt) >= now));
       return {
         id: t.id, name: t.name,
+        manualStatus: t.manualStatus,
         playlist: pl ? `${pl.name} (v${pl.version})` : null,
         adsEnPlaylist: ads.length,
         adsReproducibles: playable.length,

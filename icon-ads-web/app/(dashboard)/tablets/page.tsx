@@ -32,6 +32,7 @@ export default function TabletsPage() {
   });
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
+  const [togglingBlock, setTogglingBlock] = useState<number | null>(null);
   const [forcingSyncAll, setForcingSyncAll] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>(() =>
@@ -145,6 +146,18 @@ export default function TabletsPage() {
     } finally { setForcingSync(null); }
   };
 
+  const handleToggleBlock = async (t: Tablet) => {
+    const blocking = t.manualStatus !== 'bloqueada';
+    setTogglingBlock(t.id);
+    try {
+      await api.updateTablet(t.id, { manualStatus: blocking ? 'bloqueada' : 'activa' });
+      show(blocking ? `"${t.name}" bloqueada — deja de mostrar publicidad.` : `"${t.name}" desbloqueada — vuelve a mostrar publicidad.`);
+      load();
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al cambiar el estado', 'error');
+    } finally { setTogglingBlock(null); }
+  };
+
   const handleForceSyncAll = async () => {
     setForcingSyncAll(true);
     try {
@@ -256,9 +269,15 @@ export default function TabletsPage() {
                   </div>
                   {t.appVersion && <div className="flex justify-between"><span>APK</span><span className="font-mono">{t.appVersion}</span></div>}
                 </div>
-                <div className="flex gap-3 text-xs border-t pt-2" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex gap-3 text-xs border-t pt-2 items-center" style={{ borderColor: 'var(--border)' }}>
                   <button onClick={() => handleForceSync(t.id)} disabled={forcingSync === t.id} className="text-violet-600 hover:underline disabled:opacity-40">{forcingSync === t.id ? '...' : 'Sync'}</button>
                   <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline">Editar</button>
+                  {canManage && (
+                    <button onClick={() => handleToggleBlock(t)} disabled={togglingBlock === t.id}
+                      className={`hover:underline disabled:opacity-40 ${t.manualStatus === 'bloqueada' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {togglingBlock === t.id ? '...' : t.manualStatus === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}
+                    </button>
+                  )}
                   <button onClick={() => setDeleteTarget(t)} className="text-red-500 hover:underline ml-auto">✕</button>
                 </div>
               </div>
@@ -339,6 +358,13 @@ export default function TabletsPage() {
                           {forcingSync === t.id ? '...' : 'Sync'}
                         </button>
                         <button onClick={() => openEdit(t)} className="text-blue-600 hover:underline text-xs" title="Editar">Editar</button>
+                        {canManage && (
+                          <button onClick={() => handleToggleBlock(t)} disabled={togglingBlock === t.id}
+                            className={`hover:underline text-xs disabled:opacity-40 ${t.manualStatus === 'bloqueada' ? 'text-emerald-600' : 'text-amber-600'}`}
+                            title={t.manualStatus === 'bloqueada' ? 'Volver a mostrar publicidad' : 'Frenar la publicidad (kiosco sigue armado)'}>
+                            {togglingBlock === t.id ? '...' : t.manualStatus === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}
+                          </button>
+                        )}
                         <button onClick={() => setDeleteTarget(t)} className="text-red-500 hover:underline text-xs" title="Eliminar">✕</button>
                       </div>
                     </td>
