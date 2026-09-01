@@ -3,6 +3,7 @@ package com.iconads.player.fcm
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.iconads.player.power.PowerController
 import com.iconads.player.util.DevicePrefs
 import com.iconads.player.work.SyncWorker
 
@@ -18,9 +19,15 @@ class FcmService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["type"] == "force_sync") {
-            Log.i(TAG, "onMessageReceived: force_sync — encolando sync inmediato")
-            SyncWorker.scheduleImmediate(applicationContext)
+        when (message.data["type"]) {
+            "force_sync" -> {
+                Log.i(TAG, "onMessageReceived: force_sync — encolando sync inmediato")
+                SyncWorker.scheduleImmediate(applicationContext)
+            }
+            "wake" -> {
+                Log.i(TAG, "onMessageReceived: wake — encendiendo pantalla / player al frente")
+                PowerController.remoteWake(applicationContext)
+            }
         }
     }
 

@@ -289,6 +289,12 @@ export const api = {
     request<{ ok: boolean; message: string }>(`/api/admin/tablet/${tabletId}/request-screenshot`, { method: 'POST' }),
   resyncTablet: (tabletId: number) =>
     request<{ ok: boolean; hasPlaylist: boolean; message: string }>(`/api/admin/tablet/${tabletId}/resync`, { method: 'POST' }),
+  wakeTablet: (tabletId: number) =>
+    request<{ ok: boolean; message: string }>(`/api/admin/tablet/${tabletId}/wake`, { method: 'POST' }),
+  wakeAllTablets: () =>
+    request<{ ok: boolean; sent: number; delivered: number; message: string }>('/api/admin/wake-all', { method: 'POST' }),
+  blockTablet: (tabletId: number, on: boolean) =>
+    request<{ ok: boolean; manualStatus: string; message: string }>(`/api/admin/tablet/${tabletId}/block`, { method: 'POST', body: JSON.stringify({ on }) }),
   getScreenshot: (tabletId: number) =>
     request<{ image: string | null; at: string | null }>(`/api/admin/tablet/${tabletId}/screenshot`),
   forceUpdateApkAll: () =>

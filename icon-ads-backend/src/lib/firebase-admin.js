@@ -18,19 +18,27 @@ const isConfigured = app !== null;
 
 // Data-only push (no `notification` field) so it's delivered silently to
 // FcmService.onMessageReceived even while the app is in the foreground/kiosk mode,
-// without showing a system notification.
-async function sendSyncPush(tokens) {
+// without showing a system notification. `data` values must be strings.
+async function sendDataPush(tokens, data) {
   if (!app || tokens.length === 0) return { successCount: 0, failureCount: 0 };
   try {
     return await getMessaging(app).sendEachForMulticast({
       tokens,
-      data: { type: 'force_sync' },
+      data,
       android: { priority: 'high' },
     });
   } catch (err) {
-    console.warn('[firebase-admin] sendSyncPush failed:', err.message);
+    console.warn('[firebase-admin] sendDataPush failed:', err.message);
     return { successCount: 0, failureCount: tokens.length };
   }
 }
 
-module.exports = { isConfigured, sendSyncPush };
+// Encola un sync inmediato en la tablet (SyncWorker).
+const sendSyncPush = (tokens) => sendDataPush(tokens, { type: 'force_sync' });
+
+// Despierta la pantalla y trae el player al frente aunque la tablet esté
+// "apagada" (auto sin contacto): la app sigue viva en batería y el PowerController
+// la reabre al recibir esto.
+const sendWakePush = (tokens) => sendDataPush(tokens, { type: 'wake' });
+
+module.exports = { isConfigured, sendSyncPush, sendWakePush, sendDataPush };

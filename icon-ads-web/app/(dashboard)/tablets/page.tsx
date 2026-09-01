@@ -150,8 +150,8 @@ export default function TabletsPage() {
     const blocking = t.manualStatus !== 'bloqueada';
     setTogglingBlock(t.id);
     try {
-      await api.updateTablet(t.id, { manualStatus: blocking ? 'bloqueada' : 'activa' });
-      show(blocking ? `"${t.name}" bloqueada — deja de mostrar publicidad.` : `"${t.name}" desbloqueada — vuelve a mostrar publicidad.`);
+      const res = await api.blockTablet(t.id, blocking);
+      show(res.message);
       load();
     } catch (e) {
       show(e instanceof Error ? e.message : 'Error al cambiar el estado', 'error');

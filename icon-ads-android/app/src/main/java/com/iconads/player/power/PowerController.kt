@@ -60,6 +60,11 @@ class PowerController : Service() {
     private var lastPlugged: Boolean? = null
     private var screenLock: android.os.PowerManager.WakeLock? = null
 
+    // El panel mandó "prender a distancia": mantener la pantalla y el player
+    // por este tiempo aunque no haya corriente y sin importar la quietud.
+    private var manualWakeUntilMs = 0L
+    private fun manualWakeActive() = System.currentTimeMillis() < manualWakeUntilMs
+
     // En las tablets Unisoc/Chuwi el broadcast ACTION_POWER_CONNECTED no llega
     // al receiver (el DISCONNECTED sí). Por eso el mecanismo principal es este
     // poll cada 3 s; el receiver queda como refuerzo. Ambos pasan por
@@ -77,13 +82,22 @@ class PowerController : Service() {
         override fun run() {
             val plugged = isPlugged()
             evaluatePlugged(plugged)
+            // El encendido remoto venció y el auto sigue sin contacto: volver a
+            // cerrar/bloquear (si no, quedaría prendida gastando batería).
+            if (!plugged && !appClosed && !prefs.getTestMode() &&
+                manualWakeUntilMs > 0L && !manualWakeActive()
+            ) {
+                Log.i(TAG, "Encendido remoto venció sin corriente — cerrando")
+                manualWakeUntilMs = 0L
+                closeApp(byStillness = false)
+            }
             // Screen kicker: esta ROM (Unisoc/Chuwi) ignora el wake lock
             // sostenido y apaga la pantalla a los 10 s. Mientras esté enchufada
             // y el player deba verse, re-despertamos cada tick — cada kick da
             // ~10 s, así queda encendida de forma continua y la ventana llega
             // a dibujarse. En modo test NO kickeamos, así el botón de encendido
             // hace on/off manual.
-            if (plugged && !appClosed && !prefs.getTestMode()) kickScreen()
+            if ((plugged || manualWakeActive()) && !appClosed && !prefs.getTestMode()) kickScreen()
             handler.postDelayed(this, POWER_POLL_MS)
         }
     }
@@ -134,7 +148,7 @@ class PowerController : Service() {
 
     private val stillnessCheck = object : Runnable {
         override fun run() {
-            if (!appClosed && !prefs.getTestMode() && isPlugged() &&
+            if (!appClosed && !prefs.getTestMode() && isPlugged() && !manualWakeActive() &&
                 System.currentTimeMillis() - lastMotionMs > STILLNESS_TIMEOUT_MS
             ) {
                 Log.i(TAG, "10 min sin movimiento — cerrando app")
@@ -173,7 +187,16 @@ class PowerController : Service() {
         handler.postDelayed(powerPoll, POWER_POLL_MS)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_REMOTE_WAKE) {
+            Log.i(TAG, "Encendido remoto pedido desde el panel")
+            manualWakeUntilMs = System.currentTimeMillis() + MANUAL_WAKE_MS
+            pendingPowerOff?.let { handler.removeCallbacks(it) }
+            pendingPowerOff = null
+            openApp()
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -233,6 +256,7 @@ class PowerController : Service() {
 
     private fun onPowerConnected() {
         Log.i(TAG, "Corriente conectada — auto en contacto")
+        manualWakeUntilMs = 0L  // la corriente manda; el temporizador remoto ya no aplica
         pendingPowerOff?.let { handler.removeCallbacks(it) }
         pendingPowerOff = null
         openApp()
@@ -241,6 +265,10 @@ class PowerController : Service() {
     private fun onPowerDisconnected() {
         if (prefs.getTestMode()) {
             Log.i(TAG, "Corriente desconectada — MODO TEST: se ignora, el player sigue")
+            return
+        }
+        if (manualWakeActive()) {
+            Log.i(TAG, "Corriente desconectada — encendido remoto activo, no se cierra")
             return
         }
         Log.i(TAG, "Corriente desconectada — esperando confirmación (${POWER_OFF_DEBOUNCE_MS}ms)")
@@ -335,9 +363,23 @@ class PowerController : Service() {
         private const val MOTION_DELTA = 0.8f
 
         const val ACTION_CLOSE_APP = "com.iconads.player.CLOSE_APP"
+        const val ACTION_REMOTE_WAKE = "com.iconads.player.REMOTE_WAKE"
+
+        /** Cuánto se mantiene prendida tras un encendido remoto (sin corriente). */
+        private const val MANUAL_WAKE_MS = 15 * 60_000L
 
         fun start(context: Context) {
             val i = Intent(context, PowerController::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(i)
+            } else {
+                context.startService(i)
+            }
+        }
+
+        /** Encendido remoto: el panel manda un push "wake" -> FcmService llama acá. */
+        fun remoteWake(context: Context) {
+            val i = Intent(context, PowerController::class.java).setAction(ACTION_REMOTE_WAKE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(i)
             } else {

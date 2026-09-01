@@ -121,6 +121,38 @@ router.post('/tablet/:id/block', apiKeyOrAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/tablet/:id/wake — enciende la pantalla y trae el player al
+// frente aunque la tablet esté "apagada" (auto sin contacto). Requiere que la
+// tablet tenga datos móviles y token FCM — la app sigue viva en batería.
+router.post('/tablet/:id/wake', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true, fcmToken: true } });
+    if (!tablet) return res.status(404).json({ error: 'No existe' });
+    if (!tablet.fcmToken) {
+      return res.status(409).json({ error: `"${tablet.name}" no tiene token de notificaciones — no se puede despertar a distancia todavía.` });
+    }
+    const r = await firebaseAdmin.sendWakePush([tablet.fcmToken]);
+    await audit(req, 'TABLET_WAKE', 'tablet', id, tablet.name);
+    if (!r.successCount) {
+      return res.status(502).json({ error: `No se pudo entregar la orden a "${tablet.name}" (puede estar sin señal). Reintentá en un momento.` });
+    }
+    res.json({ ok: true, message: `Orden de encendido enviada a "${tablet.name}". Si tiene señal, prende en unos segundos.` });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/wake-all — despierta toda la flota.
+router.post('/wake-all', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const tablets = await prisma.tablet.findMany({ select: { fcmToken: true } });
+    const tokens = tablets.map((t) => t.fcmToken).filter(Boolean);
+    const r = await firebaseAdmin.sendWakePush(tokens);
+    await audit(req, 'FLEET_WAKE', 'system', null, `${tokens.length} tablets`);
+    res.json({ ok: true, sent: tokens.length, delivered: r.successCount,
+      message: `Orden de encendido enviada a ${tokens.length} tablet(s) — ${r.successCount} al instante.` });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.

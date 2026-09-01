@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api, TabletMonitorEntry } from '@/lib/api';
+import { useToast } from '@/lib/toast-context';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
 
 const POLL_INTERVAL = 30;
@@ -23,6 +24,9 @@ export default function MonitorPage() {
   const [countdown, setCountdown] = useState(POLL_INTERVAL);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [unblockingId, setUnblockingId] = useState<number | null>(null);
+  const [wakingId, setWakingId] = useState<number | null>(null);
+  const [wakingAll, setWakingAll] = useState(false);
+  const { show } = useToast();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = async () => {
@@ -67,9 +71,32 @@ export default function MonitorPage() {
   const unblock = async (id: number) => {
     setUnblockingId(id);
     try {
-      await api.updateTablet(id, { manualStatus: 'activa' });
+      const r = await api.blockTablet(id, false);
+      show(r.message);
       await fetchData();
-    } catch { /* el toast global de errores lo cubre */ } finally { setUnblockingId(null); }
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al desbloquear', 'error');
+    } finally { setUnblockingId(null); }
+  };
+
+  const wake = async (id: number) => {
+    setWakingId(id);
+    try {
+      const r = await api.wakeTablet(id);
+      show(r.message);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'No se pudo enviar la orden de encendido', 'error');
+    } finally { setWakingId(null); }
+  };
+
+  const wakeAll = async () => {
+    setWakingAll(true);
+    try {
+      const r = await api.wakeAllTablets();
+      show(r.message);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al encender la flota', 'error');
+    } finally { setWakingAll(false); }
   };
 
   return (
@@ -84,6 +111,11 @@ export default function MonitorPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={wakeAll} disabled={wakingAll}
+            title="Manda orden de encendido a toda la flota (las que tengan señal prenden en segundos)"
+            className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50">
+            {wakingAll ? 'Enviando...' : 'Prender todas'}
+          </button>
           <button onClick={() => { fetchData(); resetCountdown(); }} className="text-sm text-blue-600 hover:underline">
             Actualizar
           </button>
@@ -151,7 +183,9 @@ export default function MonitorPage() {
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay tablets registradas.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {entries.map((t) => <TabletCard key={t.id} entry={t} />)}
+          {entries.map((t) => (
+            <TabletCard key={t.id} entry={t} onWake={() => wake(t.id)} waking={wakingId === t.id} />
+          ))}
         </div>
       )}
     </div>
@@ -170,7 +204,7 @@ function SummaryCard({ label, value, color, dotColor }: { label: string; value: 
   );
 }
 
-function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
+function TabletCard({ entry, onWake, waking }: { entry: TabletMonitorEntry; onWake: () => void; waking: boolean }) {
   const isOnline = entry.status === 'online';
   const isLongOffline = !isOnline && entry.offlineMinutes > 120;
   const notPlaying = entry.health === 'no-reproduce';
@@ -219,10 +253,18 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
           </p>
         </div>
 
-        {/* Ver pantalla (fuera del Link) */}
-        <div className="pt-1 border-t" style={{ borderColor: 'var(--border)' }}
+        {/* Acciones (fuera del Link) */}
+        <div className="pt-1 border-t flex items-center gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
           <ScreenshotViewer tabletId={entry.id} tabletName={entry.name} />
+          <button
+            onClick={onWake}
+            disabled={waking}
+            title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)"
+            className="text-xs px-2.5 py-1 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50"
+          >
+            {waking ? '...' : 'Prender'}
+          </button>
         </div>
 
         {/* Salud del hardware */}

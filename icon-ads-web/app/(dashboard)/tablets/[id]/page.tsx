@@ -37,6 +37,7 @@ export default function TabletDetailPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
+  const [waking, setWaking] = useState(false);
 
   const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/tablets')).finally(() => setLoading(false));
   const refresh = async () => {
@@ -104,12 +105,23 @@ export default function TabletDetailPage() {
     const blocking = tablet.manualStatus !== 'bloqueada';
     setTogglingBlock(true);
     try {
-      await api.updateTablet(tablet.id, { manualStatus: blocking ? 'bloqueada' : 'activa' });
-      show(blocking ? 'Tablet bloqueada — deja de mostrar publicidad hasta que la desbloquees.' : 'Tablet desbloqueada — vuelve a mostrar publicidad.');
+      const res = await api.blockTablet(tablet.id, blocking);
+      show(res.message);
       await load();
     } catch (e) {
       show(e instanceof Error ? e.message : 'Error al cambiar el estado', 'error');
     } finally { setTogglingBlock(false); }
+  };
+
+  const handleWake = async () => {
+    if (!tablet) return;
+    setWaking(true);
+    try {
+      const res = await api.wakeTablet(tablet.id);
+      show(res.message);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'No se pudo enviar la orden de encendido', 'error');
+    } finally { setWaking(false); }
   };
 
   const handleRegenerateToken = async () => {
@@ -158,17 +170,32 @@ export default function TabletDetailPage() {
                 🔒 BLOQUEADA — no muestra publicidad
               </span>
             )}
+            {tablet.manualStatus === 'bloqueada' ? (
+              <button
+                onClick={handleToggleBlock}
+                disabled={togglingBlock}
+                title="Vuelve a mostrar publicidad ahora"
+                className="text-xs px-3 py-1.5 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {togglingBlock ? 'Desbloqueando...' : '🔓 DESBLOQUEAR'}
+              </button>
+            ) : (
+              <button
+                onClick={handleToggleBlock}
+                disabled={togglingBlock}
+                title="Frena la publicidad sin desarmar el kiosco"
+                className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300 disabled:opacity-50"
+              >
+                {togglingBlock ? 'Aplicando...' : 'Bloquear'}
+              </button>
+            )}
             <button
-              onClick={handleToggleBlock}
-              disabled={togglingBlock}
-              title={tablet.manualStatus === 'bloqueada' ? 'Vuelve a mostrar publicidad' : 'Frena la publicidad sin desarmar el kiosco'}
-              className={`text-xs px-3 py-1.5 rounded-lg border font-medium disabled:opacity-50 ${
-                tablet.manualStatus === 'bloqueada'
-                  ? 'hover:bg-emerald-50 dark:hover:bg-emerald-950 text-emerald-700 border-emerald-300'
-                  : 'hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300'
-              }`}
+              onClick={handleWake}
+              disabled={waking}
+              title="Enciende la pantalla y trae el player al frente aunque el auto esté sin contacto (necesita señal / datos móviles)"
+              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50"
             >
-              {togglingBlock ? 'Aplicando...' : tablet.manualStatus === 'bloqueada' ? 'Desbloquear' : 'Bloquear'}
+              {waking ? 'Enviando...' : 'Prender pantalla'}
             </button>
             {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && (
               <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
