@@ -92,12 +92,11 @@ router.post('/tablet/:id/request-screenshot', apiKeyOrAuth, async (req, res, nex
     const id = Number(req.params.id);
     const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, fcmToken: true } });
     if (!tablet) return res.status(404).json({ error: 'No existe' });
+    // NO se manda push FCM: el push despierta al SyncWorker, no a la Activity,
+    // y ésta es la única que puede sacar la captura. La Activity la agarra en
+    // su loop de sync (≤10s en modo test, ≤30s normal).
     screenshotFlags.add(id);
-    let pushed = 0;
-    try {
-      if (tablet.fcmToken) pushed = (await firebaseAdmin.sendSyncPush([tablet.fcmToken])).successCount || 0;
-    } catch { /* best-effort */ }
-    res.json({ ok: true, message: pushed > 0 ? 'Pedida — llega en unos segundos.' : 'Pedida — llega en el próximo sync (≤10s).' });
+    res.json({ ok: true, message: 'Pedida — la tablet la manda en su próximo sync (unos segundos).' });
   } catch (err) { next(err); }
 });
 

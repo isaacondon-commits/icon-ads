@@ -179,7 +179,11 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // número 0-255. Ausente => 'auto'. Se setea desde POST /api/admin/brightness.
     const brRow = await prisma.systemConfig.findUnique({ where: { key: 'screen_brightness' } });
     const brightnessPolicy = brRow?.value || 'auto';
-    const screenshotRequested = screenshotFlags.has(tablet.id);
+    // Sólo la Activity del player (que manda appVersion/playerOk) puede sacar
+    // la captura — el SyncWorker no. Así el flag no se "consume" en un sync
+    // del worker sin que nadie fotografíe.
+    const isPlayerSync = playerOk !== undefined || appVersion !== undefined;
+    const screenshotRequested = isPlayerSync && screenshotFlags.has(tablet.id);
     if (screenshotRequested) screenshotFlags.delete(tablet.id);
 
     if (!tablet.playlistId) {
