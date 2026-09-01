@@ -100,6 +100,30 @@ router.post('/tablet/:id/request-screenshot', apiKeyOrAuth, async (req, res, nex
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
+// playlist ya (ignora el check de versión). Para cuando una tablet quedó
+// mostrando el video de respaldo porque no bajó su playlist.
+router.post('/tablet/:id/resync', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, name: true, playlistId: true, fcmToken: true } });
+    if (!tablet) return res.status(404).json({ error: 'No existe' });
+    forceSyncFlags.add(id);
+    let pushed = 0;
+    if (tablet.fcmToken) {
+      try { const r = await firebaseAdmin.sendSyncPush([tablet.fcmToken]); pushed = r?.successCount || 0; } catch { /* best-effort */ }
+    }
+    await audit(req, 'TABLET_RESYNC', 'tablet', id, `${tablet.name} — resync forzado`);
+    res.json({
+      ok: true,
+      hasPlaylist: !!tablet.playlistId,
+      message: tablet.playlistId
+        ? `"${tablet.name}" va a re-descargar su playlist en el próximo sync${pushed ? ' (empujada por FCM)' : ''}.`
+        : `"${tablet.name}" NO tiene playlist asignada — asignale una primero.`,
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/admin/tablet/:id/screenshot — última captura + cuándo se tomó.
 router.get('/tablet/:id/screenshot', apiKeyOrAuth, async (req, res, next) => {
   try {

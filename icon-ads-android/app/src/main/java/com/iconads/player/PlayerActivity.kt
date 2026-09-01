@@ -699,6 +699,12 @@ class PlayerActivity : AppCompatActivity() {
         return if (ref > 0L) ((System.currentTimeMillis() - ref) / 1000).toInt() else null
     }
 
+    // true = la tablet está mostrando SOLO el video institucional de respaldo
+    // (no pudo cargar su playlist real). Los ads institucionales tienen
+    // campaignId < 0.
+    private fun onFallback(): Boolean =
+        ads.isNotEmpty() && ads.all { it.campaignId < 0 }
+
     // Captura la ventana del player (incluye el video, vía PixelCopy) y la sube.
     // Enciende la pantalla si está apagada. Usa su propio scope/handler — NO
     // imageHandler, que se limpia en cada cambio de anuncio.
@@ -795,6 +801,7 @@ class PlayerActivity : AppCompatActivity() {
                     serial = getSerial(),
                     playerOk = playerOk(),
                     lastAdAgoS = lastAdAgoS(),
+                    onFallback = onFallback(),
                 )
             }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")

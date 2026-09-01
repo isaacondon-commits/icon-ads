@@ -140,6 +140,8 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
   const isOnline = entry.status === 'online';
   const isLongOffline = !isOnline && entry.offlineMinutes > 120;
   const notPlaying = entry.health === 'no-reproduce';
+  const onFallback = notPlaying && entry.onFallback === true;
+  const notPlayingLabel = onFallback ? 'NO CARGÓ PLAYLIST' : 'NO REPRODUCE';
 
   return (
     <Link href={`/tablets/${entry.id}`} className="block">
@@ -153,7 +155,7 @@ function TabletCard({ entry }: { entry: TabletMonitorEntry }) {
             <span className={`w-2 h-2 rounded-full ${notPlaying ? 'bg-red-500 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
             <span className={`text-xs font-medium ${notPlaying ? 'text-red-600' : isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
               style={!isOnline && !isLongOffline && !notPlaying ? { color: 'var(--text-muted)' } : undefined}>
-              {notPlaying ? 'NO REPRODUCE' : isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
+              {notPlaying ? notPlayingLabel : isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
             </span>
           </div>
         </div>

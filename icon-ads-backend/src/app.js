@@ -316,16 +316,19 @@ const notifyChannels = async (title, body) => {
 setInterval(async () => {
   try {
     const tablets = await prisma.tablet.findMany({
-      select: { id: true, name: true, zone: true, lastSync: true, playlistId: true, playerOk: true, lastAdAgoS: true },
+      select: { id: true, name: true, zone: true, lastSync: true, playlistId: true, playerOk: true, onFallback: true, lastAdAgoS: true },
     });
     const tenMinAgo = Date.now() - 10 * 60 * 1000;
     for (const t of tablets) {
       const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
-      const notPlaying = online && t.playlistId && t.playerOk === false;
+      const notPlaying = online && t.playlistId && (t.playerOk === false || t.onFallback === true);
       if (notPlaying && !notPlayingAlerted.has(t.id)) {
         notPlayingAlerted.add(t.id);
+        const motivo = t.onFallback === true
+          ? ' (está mostrando el video institucional de respaldo — no descargó su playlist)'
+          : '';
         await notifyChannels('Tablet sin publicidad',
-          `La tablet "${t.name}"${t.zone ? ` (zona ${t.zone})` : ''} está ONLINE pero NO está mostrando publicidad` +
+          `La tablet "${t.name}"${t.zone ? ` (zona ${t.zone})` : ''} está ONLINE pero NO está mostrando publicidad${motivo}` +
           `${t.lastAdAgoS != null ? ` (último anuncio hace ${Math.round(t.lastAdAgoS / 60)} min)` : ''}. Revisar.`);
       } else if (!notPlaying && notPlayingAlerted.has(t.id)) {
         notPlayingAlerted.delete(t.id);

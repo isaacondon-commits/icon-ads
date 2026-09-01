@@ -287,6 +287,8 @@ export const api = {
   getApkStatus: () => request<ApkStatus>('/api/admin/apk'),
   requestScreenshot: (tabletId: number) =>
     request<{ ok: boolean; message: string }>(`/api/admin/tablet/${tabletId}/request-screenshot`, { method: 'POST' }),
+  resyncTablet: (tabletId: number) =>
+    request<{ ok: boolean; hasPlaylist: boolean; message: string }>(`/api/admin/tablet/${tabletId}/resync`, { method: 'POST' }),
   getScreenshot: (tabletId: number) =>
     request<{ image: string | null; at: string | null }>(`/api/admin/tablet/${tabletId}/screenshot`),
   forceUpdateApkAll: () =>
@@ -547,7 +549,7 @@ export interface Tablet {
   spotPrice?: number | null; batteryLevel?: number | null; temperatureC?: number | null; appVersion?: string | null; lastIp?: string | null;
   osVersion?: string | null; deviceModel?: string | null;
   brightness?: number | null; brightnessAuto?: boolean | null; serial?: string | null;
-  playerOk?: boolean | null; lastAdAgoS?: number | null; lastScreenshotAt?: string | null;
+  playerOk?: boolean | null; onFallback?: boolean | null; lastAdAgoS?: number | null; lastScreenshotAt?: string | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
@@ -586,6 +588,7 @@ export interface TabletMonitorEntry {
   serial: string | null;
   appVersion: string | null;
   playerOk?: boolean | null;
+  onFallback?: boolean | null;
   lastAdAgoS?: number | null;
   hasScreenshot?: boolean;
   lastScreenshotAt?: string | null;

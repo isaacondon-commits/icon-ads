@@ -69,7 +69,7 @@ router.get('/monitor', async (req, res, next) => {
       // playlist y el player reporta que NO está mostrando anuncios; 'ok' si no.
       let health = 'ok';
       if (!online) health = 'offline';
-      else if (t.playlistId && t.playerOk === false) health = 'no-reproduce';
+      else if (t.playlistId && (t.playerOk === false || t.onFallback === true)) health = 'no-reproduce';
       return {
         id: t.id,
         name: t.name,
@@ -88,6 +88,7 @@ router.get('/monitor', async (req, res, next) => {
         serial: t.serial ?? null,
         appVersion: t.appVersion ?? null,
         playerOk: t.playerOk ?? null,
+        onFallback: t.onFallback ?? null,
         lastAdAgoS: t.lastAdAgoS ?? null,
         hasScreenshot: !!t.lastScreenshotAt,
         lastScreenshotAt: t.lastScreenshotAt ?? null,

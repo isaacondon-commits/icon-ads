@@ -35,6 +35,7 @@ export default function TabletDetailPage() {
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
 
   const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/tablets')).finally(() => setLoading(false));
   const refresh = async () => {
@@ -86,6 +87,17 @@ export default function TabletDetailPage() {
     } finally { setSendingMsg(false); }
   };
 
+  const handleResync = async () => {
+    if (!tablet) return;
+    setResyncing(true);
+    try {
+      const res = await api.resyncTablet(tablet.id);
+      show(res.message, res.hasPlaylist ? 'success' : 'error');
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al forzar la re-descarga', 'error');
+    } finally { setResyncing(false); }
+  };
+
   const handleRegenerateToken = async () => {
     if (!tablet) return;
     setRegenerating(true);
@@ -127,10 +139,22 @@ export default function TabletDetailPage() {
             <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{tablet.deviceId}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {isOnline && tablet.playerOk === false && (
+            {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && (
               <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
-                NO REPRODUCE{tablet.lastAdAgoS != null ? ` (hace ${Math.round(tablet.lastAdAgoS / 60)} min)` : ''}
+                {tablet.onFallback === true
+                  ? 'NO CARGÓ SU PLAYLIST (mostrando respaldo)'
+                  : `NO REPRODUCE${tablet.lastAdAgoS != null ? ` (hace ${Math.round(tablet.lastAdAgoS / 60)} min)` : ''}`}
               </span>
+            )}
+            {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && tablet.playlistId && (
+              <button
+                onClick={handleResync}
+                disabled={resyncing}
+                title="Fuerza a la tablet a volver a descargar su playlist ahora"
+                className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300 disabled:opacity-50"
+              >
+                {resyncing ? 'Forzando...' : 'Forzar re-descarga'}
+              </button>
             )}
             <span className={`text-xs px-2 py-1 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
               {isOnline ? 'online' : 'offline'}

@@ -205,6 +205,7 @@ model Tablet {
   brightnessAuto   Boolean?        @map("brightness_auto")
   serial           String?
   playerOk         Boolean?        @map("player_ok")
+  onFallback       Boolean?        @map("on_fallback")
   lastAdAgoS       Int?            @map("last_ad_ago_s")
   lastScreenshot   String?         @map("last_screenshot")
   lastScreenshotAt DateTime?       @map("last_screenshot_at")

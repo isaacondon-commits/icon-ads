@@ -138,6 +138,9 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const serial = req.query.serial || undefined;
     const playerOk = req.query.playerOk !== undefined ? req.query.playerOk === 'true' : undefined;
     const lastAdAgoS = req.query.lastAdAgoS !== undefined ? parseInt(req.query.lastAdAgoS) : undefined;
+    // onFallback: la app está mostrando SÓLO el video institucional de respaldo
+    // (campaignId < 0) => no logró cargar/descargar su playlist real.
+    const onFallback = req.query.onFallback !== undefined ? req.query.onFallback === 'true' : undefined;
     const tablet = req.tablet;
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
@@ -158,6 +161,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
         ...(serial !== undefined ? { serial } : {}),
         ...(playerOk !== undefined ? { playerOk } : {}),
         ...(Number.isFinite(lastAdAgoS) ? { lastAdAgoS } : {}),
+        ...(onFallback !== undefined ? { onFallback } : {}),
       },
     });
 

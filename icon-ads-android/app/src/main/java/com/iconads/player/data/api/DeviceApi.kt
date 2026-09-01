@@ -23,6 +23,7 @@ interface DeviceApi {
         @Query("serial") serial: String? = null,
         @Query("playerOk") playerOk: Boolean? = null,
         @Query("lastAdAgoS") lastAdAgoS: Int? = null,
+        @Query("onFallback") onFallback: Boolean? = null,
     ): SyncResponse
 
     @POST("api/device/screenshot")
