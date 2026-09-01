@@ -501,6 +501,10 @@ class PlayerActivity : AppCompatActivity() {
         Log.i(TAG, "Bloqueada desde el panel: frenando reproducción")
         exoPlayer.pause()
         imageHandler.removeCallbacksAndMessages(null)
+        // Pantalla neutra: ocultar el anuncio congelado y dejar el fondo negro
+        // con el cartel arriba, para que se vea claro que NO está pasando nada.
+        binding.playerView.visibility = View.GONE
+        binding.imageView.visibility = View.GONE
         binding.messageOverlay.visibility = View.VISIBLE
         binding.messageText.text = "⏸ Tablet bloqueada desde el panel"
     }
