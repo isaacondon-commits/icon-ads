@@ -13,6 +13,7 @@ const supabaseStorage = require('../lib/supabase-storage');
 const firebaseAdmin = require('../lib/firebase-admin');
 const forceApkFlags = require('../lib/forceApkFlags');
 const forceSyncFlags = require('../lib/forceSyncFlags');
+const screenshotFlags = require('../lib/screenshotFlags');
 
 const apkUpload = multer({
   storage: multer.memoryStorage(),
@@ -81,6 +82,34 @@ router.post('/rename-tablets', apiKeyOrAuth, async (req, res, next) => {
     }
     await audit(req, 'RENAME_TABLETS', 'tablet', null, `${mapping.length} renombradas a "${prefix} NN"`);
     res.json({ ok: true, renamed: mapping.length, mapping });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/tablet/:id/request-screenshot — pide una captura ya.
+// La tablet la sube en su próximo /sync (≤10s en modo test, o instantáneo con FCM).
+router.post('/tablet/:id/request-screenshot', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, fcmToken: true } });
+    if (!tablet) return res.status(404).json({ error: 'No existe' });
+    screenshotFlags.add(id);
+    let pushed = 0;
+    try {
+      if (tablet.fcmToken) pushed = (await firebaseAdmin.sendSyncPush([tablet.fcmToken])).successCount || 0;
+    } catch { /* best-effort */ }
+    res.json({ ok: true, message: pushed > 0 ? 'Pedida — llega en unos segundos.' : 'Pedida — llega en el próximo sync (≤10s).' });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/tablet/:id/screenshot — última captura + cuándo se tomó.
+router.get('/tablet/:id/screenshot', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const t = await prisma.tablet.findUnique({
+      where: { id }, select: { lastScreenshot: true, lastScreenshotAt: true },
+    });
+    if (!t) return res.status(404).json({ error: 'No existe' });
+    res.json({ image: t.lastScreenshot || null, at: t.lastScreenshotAt || null });
   } catch (err) { next(err); }
 });
 

@@ -113,7 +113,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes, probá de nuevo en un minuto.' },
 });
 app.use('/api', apiLimiter);
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // 1mb para permitir capturas de pantalla en base64
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -289,6 +289,51 @@ app.use((err, req, res, next) => {
     : 'Internal server error';
   res.status(status).json({ error: message });
 });
+
+// Alerta: tablet ONLINE pero que NO está reproduciendo publicidad. Es el caso
+// crítico ("un taxi sin publicidad y no me entero"). Chequeo cada 5 minutos.
+const notPlayingAlerted = new Set();
+const notifyChannels = async (title, body) => {
+  syslog.addEvent('TABLET_NOT_PLAYING', 'tablet', null, body);
+  try {
+    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'webhook_url' } });
+    if (cfg?.value) {
+      fetch(cfg.value, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'tablet_not_playing', message: body }) })
+        .catch((e) => console.warn('[webhook]', e.message));
+    }
+  } catch { /* non-fatal */ }
+  try {
+    const [phoneCfg, apikeyCfg] = await Promise.all([
+      prisma.systemConfig.findUnique({ where: { key: 'callmebot_phone' } }),
+      prisma.systemConfig.findUnique({ where: { key: 'callmebot_apikey' } }),
+    ]);
+    if (phoneCfg?.value && apikeyCfg?.value) {
+      fetch(`https://api.callmebot.com/whatsapp.php?phone=${phoneCfg.value}&text=${encodeURIComponent(`ICON ADS: ${body}`)}&apikey=${apikeyCfg.value}`)
+        .catch((e) => console.warn('[callmebot]', e.message));
+    }
+  } catch { /* non-fatal */ }
+};
+setInterval(async () => {
+  try {
+    const tablets = await prisma.tablet.findMany({
+      select: { id: true, name: true, zone: true, lastSync: true, playlistId: true, playerOk: true, lastAdAgoS: true },
+    });
+    const tenMinAgo = Date.now() - 10 * 60 * 1000;
+    for (const t of tablets) {
+      const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
+      const notPlaying = online && t.playlistId && t.playerOk === false;
+      if (notPlaying && !notPlayingAlerted.has(t.id)) {
+        notPlayingAlerted.add(t.id);
+        await notifyChannels('Tablet sin publicidad',
+          `La tablet "${t.name}"${t.zone ? ` (zona ${t.zone})` : ''} está ONLINE pero NO está mostrando publicidad` +
+          `${t.lastAdAgoS != null ? ` (último anuncio hace ${Math.round(t.lastAdAgoS / 60)} min)` : ''}. Revisar.`);
+      } else if (!notPlaying && notPlayingAlerted.has(t.id)) {
+        notPlayingAlerted.delete(t.id);
+        syslog.addEvent('TABLET_PLAYING_AGAIN', 'tablet', t.id, `${t.name} volvió a reproducir`);
+      }
+    }
+  } catch (err) { console.warn('[not-playing-check]', err.message); }
+}, 5 * 60 * 1000);
 
 // #7 — Offline tablet alert check every 30 minutes
 const alertedTablets = new Set();

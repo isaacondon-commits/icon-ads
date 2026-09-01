@@ -64,13 +64,20 @@ router.get('/monitor', async (req, res, next) => {
     const now = Date.now();
     const result = tablets.map((t) => {
       const diffMin = t.lastSync ? (now - new Date(t.lastSync).getTime()) / 60000 : Infinity;
+      const online = diffMin < 10;
+      // Salud: 'offline' si no sincroniza; 'no-reproduce' si está online, tiene
+      // playlist y el player reporta que NO está mostrando anuncios; 'ok' si no.
+      let health = 'ok';
+      if (!online) health = 'offline';
+      else if (t.playlistId && t.playerOk === false) health = 'no-reproduce';
       return {
         id: t.id,
         name: t.name,
         deviceId: t.deviceId,
         zone: t.zone,
         timezone: t.timezone,
-        status: diffMin < 10 ? 'online' : 'offline',
+        status: online ? 'online' : 'offline',
+        health,
         offlineMinutes: Math.floor(diffMin),
         lastSync: t.lastSync,
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
@@ -80,6 +87,10 @@ router.get('/monitor', async (req, res, next) => {
         brightnessAuto: t.brightnessAuto ?? null,
         serial: t.serial ?? null,
         appVersion: t.appVersion ?? null,
+        playerOk: t.playerOk ?? null,
+        lastAdAgoS: t.lastAdAgoS ?? null,
+        hasScreenshot: !!t.lastScreenshotAt,
+        lastScreenshotAt: t.lastScreenshotAt ?? null,
       };
     });
     res.json(result);

@@ -204,6 +204,10 @@ model Tablet {
   brightness       Int?
   brightnessAuto   Boolean?        @map("brightness_auto")
   serial           String?
+  playerOk         Boolean?        @map("player_ok")
+  lastAdAgoS       Int?            @map("last_ad_ago_s")
+  lastScreenshot   String?         @map("last_screenshot")
+  lastScreenshotAt DateTime?       @map("last_screenshot_at")
   lastLat          Float?          @map("last_lat")
   lastLng          Float?          @map("last_lng")
   manualStatus     String          @default("activa") @map("manual_status")

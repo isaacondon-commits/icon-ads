@@ -10,6 +10,7 @@ const { requireDevice } = require('../middleware/deviceAuth');
 const { audit } = require('../lib/auditLog');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const forceApkFlags = require('../lib/forceApkFlags');
+const screenshotFlags = require('../lib/screenshotFlags');
 
 // Registration re-issues the existing token for a known deviceId with no further
 // proof of possession (deviceId — Android's ANDROID_ID — isn't a secret). Keying
@@ -135,6 +136,8 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const brightness = req.query.brightness !== undefined ? parseInt(req.query.brightness) : undefined;
     const brightnessAuto = req.query.brightnessAuto !== undefined ? req.query.brightnessAuto === 'true' : undefined;
     const serial = req.query.serial || undefined;
+    const playerOk = req.query.playerOk !== undefined ? req.query.playerOk === 'true' : undefined;
+    const lastAdAgoS = req.query.lastAdAgoS !== undefined ? parseInt(req.query.lastAdAgoS) : undefined;
     const tablet = req.tablet;
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
@@ -153,6 +156,8 @@ router.get('/sync', requireDevice, async (req, res, next) => {
         ...(Number.isFinite(brightness) ? { brightness } : {}),
         ...(brightnessAuto !== undefined ? { brightnessAuto } : {}),
         ...(serial !== undefined ? { serial } : {}),
+        ...(playerOk !== undefined ? { playerOk } : {}),
+        ...(Number.isFinite(lastAdAgoS) ? { lastAdAgoS } : {}),
       },
     });
 
@@ -174,16 +179,18 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // número 0-255. Ausente => 'auto'. Se setea desde POST /api/admin/brightness.
     const brRow = await prisma.systemConfig.findUnique({ where: { key: 'screen_brightness' } });
     const brightnessPolicy = brRow?.value || 'auto';
+    const screenshotRequested = screenshotFlags.has(tablet.id);
+    if (screenshotRequested) screenshotFlags.delete(tablet.id);
 
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy });
+      return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested });
     }
 
     // #48 — if admin forced a sync, override version check
@@ -192,7 +199,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!forced && playlist.version <= currentVersion) {
       console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested });
     }
 
     console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
@@ -204,6 +211,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       forceApkCheck,
       testMode,
       brightnessPolicy,
+      screenshotRequested,
     });
   } catch (err) {
     next(err);
@@ -369,6 +377,22 @@ router.get('/messages', requireDevice, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// POST /api/device/screenshot — la tablet sube una captura de su pantalla
+// cuando el panel la pidió (data URI JPEG base64). Sólo se guarda la última.
+router.post('/screenshot', requireDevice, async (req, res, next) => {
+  try {
+    const image = String(req.body?.image || '');
+    if (!image.startsWith('data:image/') || image.length > 600_000) {
+      return res.status(400).json({ error: 'Imagen inválida o demasiado grande' });
+    }
+    await prisma.tablet.update({
+      where: { id: req.tablet.id },
+      data: { lastScreenshot: image, lastScreenshotAt: new Date() },
+    });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 // POST /api/device/location — GPS position upload

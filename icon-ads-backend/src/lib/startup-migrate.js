@@ -97,6 +97,11 @@ const MIGRATIONS = [
   { name: 'tablets.brightness',        sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS brightness INT` },
   { name: 'tablets.brightness_auto',   sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS brightness_auto BOOLEAN` },
   { name: 'tablets.serial',            sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS serial TEXT` },
+  // v25 — salud del player + captura de pantalla on-demand
+  { name: 'tablets.player_ok',         sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS player_ok BOOLEAN` },
+  { name: 'tablets.last_ad_ago_s',     sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_ad_ago_s INT` },
+  { name: 'tablets.last_screenshot',   sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_screenshot TEXT` },
+  { name: 'tablets.last_screenshot_at', sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_screenshot_at TIMESTAMPTZ` },
   // v23 — multiple clients per campaign (billing client stays campaigns.client_id;
   // this table holds additional clients associated with the campaign)
   { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },
