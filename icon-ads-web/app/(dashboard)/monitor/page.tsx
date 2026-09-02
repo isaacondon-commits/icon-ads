@@ -107,7 +107,7 @@ export default function MonitorPage() {
   const offline = entries.length - online;
   const totalPlays = entries.reduce((s, e) => s + e.todayPlays, 0);
   const alerts = entries.filter((e) => e.status === 'offline' && e.offlineMinutes > 120);
-  const notPlaying = entries.filter((e) => e.health === 'no-reproduce');
+  const notPlaying = entries.filter((e) => e.health === 'no-reproduce' || e.health === 'sin-playlist');
   const blocked = entries.filter((e) => e.health === 'blocked');
   const lowBattery = entries.filter((e) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20);
   const allBlocked = entries.length > 0 && blocked.length === entries.length;
@@ -357,10 +357,11 @@ function SummaryCard({ label, value, color, dotColor }: { label: string; value: 
 function TabletCard({ entry, onWake, waking }: { entry: TabletMonitorEntry; onWake: () => void; waking: boolean }) {
   const isOnline = entry.status === 'online';
   const isLongOffline = !isOnline && entry.offlineMinutes > 120;
-  const notPlaying = entry.health === 'no-reproduce';
+  const noPlaylist = entry.health === 'sin-playlist';
+  const notPlaying = entry.health === 'no-reproduce' || noPlaylist;
   const isBlocked = entry.health === 'blocked';
-  const onFallback = notPlaying && entry.onFallback === true;
-  const notPlayingLabel = onFallback ? 'NO CARGÓ PLAYLIST' : 'NO REPRODUCE';
+  const onFallback = entry.health === 'no-reproduce' && entry.onFallback === true;
+  const notPlayingLabel = noPlaylist ? 'SIN PLAYLIST' : onFallback ? 'NO CARGÓ PLAYLIST' : 'NO REPRODUCE';
 
   return (
     <Link href={`/tablets/${entry.id}`} className="block">

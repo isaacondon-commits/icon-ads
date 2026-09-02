@@ -618,7 +618,7 @@ export interface OccupancyEntry {
 export interface TabletMonitorEntry {
   id: number; name: string; deviceId: string; zone: string | null; timezone: string | null;
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
-  health?: 'ok' | 'offline' | 'no-reproduce' | 'blocked';
+  health?: 'ok' | 'offline' | 'no-reproduce' | 'blocked' | 'sin-playlist';
   manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
   driverName?: string | null;
   licensePlate?: string | null;

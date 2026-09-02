@@ -92,7 +92,8 @@ router.get('/monitor', async (req, res, next) => {
       let health = 'ok';
       if (t.manualStatus === 'bloqueada') health = 'blocked';
       else if (!online) health = 'offline';
-      else if (t.playlistId && (t.playerOk === false || t.onFallback === true)) health = 'no-reproduce';
+      else if (!t.playlistId) health = 'sin-playlist';
+      else if (t.playerOk === false || t.onFallback === true) health = 'no-reproduce';
       return {
         id: t.id,
         name: t.name,
