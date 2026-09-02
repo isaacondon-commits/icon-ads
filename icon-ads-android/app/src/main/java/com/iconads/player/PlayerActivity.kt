@@ -251,6 +251,7 @@ class PlayerActivity : AppCompatActivity() {
             while (true) {
                 delay(if (prefs.getTestMode()) 10_000L else 30_000L)
                 Log.d(TAG, "ciclo periódico")
+                KioskManager.muteAllStreams(this@PlayerActivity)  // reasegurar silencio
                 if (prefs.getToken() == null) registerNow()  // retry si el registro falló al arrancar
                 syncNow()
                 uploadMetricsNow()
@@ -330,6 +331,7 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUI()
+        KioskManager.muteAllStreams(this)
         if (!dormant && !blockedByPanel && ads.isNotEmpty()) exoPlayer.play()
         if (!dormant && prefs.getBrightnessPolicy() == "auto") adaptiveBrightness.resume(window)
     }
@@ -359,11 +361,28 @@ class PlayerActivity : AppCompatActivity() {
     // Kiosco: consumir HOME y RECENTS para evitar salida accidental.
     // En modo test se dejan pasar, para poder salir a Ajustes.
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // Los botones de volumen se consumen SIEMPRE (incluso en modo test): la
+        // tablet nunca debe sonar. Se re-mutea por las dudas.
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
+        ) {
+            KioskManager.muteAllStreams(this)
+            return true
+        }
         if (prefs.getTestMode()) return super.onKeyDown(keyCode, event)
         return when (keyCode) {
             KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_APP_SWITCH, KeyEvent.KEYCODE_MENU -> true
             else -> super.onKeyDown(keyCode, event)
         }
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_DOWN ||
+            keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
+        ) return true
+        return super.onKeyUp(keyCode, event)
     }
 
     // ── Configuración ────────────────────────────────────────────────────────
@@ -384,6 +403,7 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyKioskState()
+        KioskManager.enforceSilence(this)
         adaptiveBrightness.applySchedule(prefs.getBrightnessSchedule())
         applyBrightness(prefs.getBrightnessPolicy())
     }
@@ -547,6 +567,7 @@ class PlayerActivity : AppCompatActivity() {
             binding.playerView.player = it
             binding.playerView.useController = false
             it.setVideoScalingMode(androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+            it.volume = 0f  // la tablet nunca hace ruido
         }
         exoPlayer.addListener(object : Player.Listener {
             override fun onRenderedFirstFrame() {

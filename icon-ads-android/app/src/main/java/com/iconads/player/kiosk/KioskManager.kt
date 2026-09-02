@@ -6,6 +6,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.UserManager
 import android.util.Log
@@ -84,10 +85,14 @@ object KioskManager {
             // Brillo según la política remota (auto / fijo).
             applyBrightnessPolicy(context, DevicePrefs(context).getBrightnessPolicy())
 
+            // Silencio total: la tablet en el taxi nunca hace ruido.
+            enforceSilence(context)
+
             for (restriction in listOf(
                 UserManager.DISALLOW_SAFE_BOOT,
                 UserManager.DISALLOW_ADD_USER,
                 UserManager.DISALLOW_CREATE_WINDOWS,
+                UserManager.DISALLOW_ADJUST_VOLUME,
             )) {
                 try { dpm.addUserRestriction(admin, restriction) } catch (e: Exception) {
                     Log.w(TAG, "restriction $restriction: ${e.message}")
@@ -193,6 +198,40 @@ object KioskManager {
             Log.i(TAG, "brillo → $policy")
         } catch (e: Exception) {
             Log.w(TAG, "applyBrightnessPolicy: ${e.message}")
+        }
+    }
+
+    /**
+     * Silencio total. La tablet en el taxi nunca debe sonar. Combina:
+     *  - master mute vía Device Owner (si aplica),
+     *  - todos los streams de audio a 0 (funciona con o sin Device Owner).
+     * Idempotente y barato — se puede llamar seguido para reasegurar.
+     */
+    fun enforceSilence(context: Context) {
+        if (isDeviceOwner(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                dpm(context).setMasterVolumeMuted(AdminReceiver.component(context), true)
+            } catch (e: Exception) {
+                Log.w(TAG, "setMasterVolumeMuted: ${e.message}")
+            }
+        }
+        muteAllStreams(context)
+    }
+
+    fun muteAllStreams(context: Context) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val streams = intArrayOf(
+            AudioManager.STREAM_MUSIC,
+            AudioManager.STREAM_SYSTEM,
+            AudioManager.STREAM_RING,
+            AudioManager.STREAM_NOTIFICATION,
+            AudioManager.STREAM_ALARM,
+            AudioManager.STREAM_VOICE_CALL,
+            AudioManager.STREAM_DTMF,
+        )
+        for (s in streams) {
+            try { am.setStreamVolume(s, 0, 0) } catch (_: Exception) {}
+            try { am.adjustStreamVolume(s, AudioManager.ADJUST_MUTE, 0) } catch (_: Exception) {}
         }
     }
 
