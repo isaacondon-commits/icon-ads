@@ -243,7 +243,6 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             registerNow()
             syncNow()
-            uploadMetricsNow()
         }
         // Ciclo periódico — 30 s normal, 10 s en modo test (para que los
         // force-sync se apliquen más rápido durante las pruebas).
@@ -253,6 +252,17 @@ class PlayerActivity : AppCompatActivity() {
                 Log.d(TAG, "ciclo periódico")
                 if (prefs.getToken() == null) registerNow()  // retry si el registro falló al arrancar
                 syncNow()
+            }
+        }
+        // Subida de métricas con cadencia propia de 2 min. Antes iba pegada a
+        // cada sync (cada 10 s en modo test); con un timeout de red de por medio
+        // las subidas se solapaban y el server insertaba el mismo lote varias
+        // veces -> filas multiplicadas.
+        lifecycleScope.launch {
+            delay(20_000L)
+            uploadMetricsNow()
+            while (true) {
+                delay(120_000L)
                 uploadMetricsNow()
             }
         }

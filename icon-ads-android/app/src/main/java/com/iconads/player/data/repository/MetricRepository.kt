@@ -6,6 +6,8 @@ import com.iconads.player.data.model.MetricRecord
 import com.iconads.player.data.model.MetricUpload
 import com.iconads.player.data.storage.MetricStorage
 import com.iconads.player.util.DevicePrefs
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -35,10 +37,15 @@ class MetricRepository(context: Context) {
         )
     }
 
-    suspend fun uploadPending(): Int {
-        val token = prefs.getToken() ?: return 0
-        val pending = storage.readAll()
-        if (pending.isEmpty()) return 0
+    suspend fun uploadPending(): Int = uploadLock.withLock {
+        val token = prefs.getToken() ?: return@withLock 0
+        // Trabajar con entidades (traen el id) y borrar SOLO lo subido: el ciclo
+        // periódico y el MetricUploadWorker pueden llamar en paralelo, y si la
+        // subida se cae después de que el server insertó, no se borra nada y se
+        // reintenta el mismo lote -> el server ahora lo deduplica por clave
+        // natural, pero igual no hay que multiplicar el trabajo.
+        val pending = storage.readEntities()
+        if (pending.isEmpty()) return@withLock 0
 
         val api = NetworkModule.provideDeviceApi(token)
         val payload = pending.map { m ->
@@ -55,7 +62,12 @@ class MetricRepository(context: Context) {
         }
 
         api.uploadMetrics(payload)
-        storage.clear()
-        return pending.size
+        storage.deleteByIds(pending.map { it.id })
+        pending.size
+    }
+
+    companion object {
+        // Proceso-wide: evita que dos subidas concurrentes lean el mismo lote.
+        private val uploadLock = Mutex()
     }
 }

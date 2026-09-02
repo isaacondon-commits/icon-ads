@@ -141,6 +141,14 @@ const MIGRATIONS = [
   { name: 'tablet_messages.rls',       sql: `ALTER TABLE tablet_messages ENABLE ROW LEVEL SECURITY` },
   { name: 'tablets.rls',               sql: `ALTER TABLE tablets ENABLE ROW LEVEL SECURITY` },
   { name: 'zones.rls',                 sql: `ALTER TABLE zones ENABLE ROW LEVEL SECURITY` },
+  // v26 — métricas duplicadas. La app reenviaba lotes sin confirmar (sin
+  // idempotencia entre el reintento del cliente y la inserción del server) y
+  // createMany no descartaba nada, así que la tabla metrics se infló ~150x en
+  // las horas pico. Se limpian los duplicados (queda el id más bajo por clave
+  // natural) y se agrega un índice único para que de ahora en más
+  // ON CONFLICT DO NOTHING (skipDuplicates) los rechace.
+  { name: 'metrics.dedupe',      sql: `DELETE FROM metrics WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY tablet_id, ad_id, played_at ORDER BY id) AS rn FROM metrics) t WHERE t.rn > 1)` },
+  { name: 'metrics.natural_key', sql: `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)` },
 ];
 
 async function runStartupMigrations() {

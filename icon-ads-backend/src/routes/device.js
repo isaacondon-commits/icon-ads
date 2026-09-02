@@ -457,36 +457,81 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 // POST /api/device/metrics — batch upload playback metrics
 router.post('/metrics', requireDevice, async (req, res, next) => {
   try {
-    const metrics = metricsSchema.parse(req.body);
+    const parsed = metricsSchema.parse(req.body);
     const tabletId = req.tablet.id;
 
-    await prisma.metric.createMany({
-      data: metrics.map((m) => ({
-        tabletId,
-        adId: m.adId,
-        campaignId: m.campaignId,
-        playedAt: new Date(m.playedAt),
-        durationPlayedS: m.durationPlayedS,
-        completed: m.completed,
-        error: m.error,
-      })),
-    });
+    // Idempotencia: la app reenvía el mismo lote si no llega a confirmar la
+    // subida (timeout, corte). Se deduplica dentro del lote y contra lo que ya
+    // está en la DB antes de insertar. La clave natural es
+    // (tablet_id, ad_id, played_at) — dos reproducciones reales del mismo
+    // anuncio en la misma tablet en el mismo milisegundo no existen.
+    const seen = new Set();
+    const metrics = [];
+    for (const m of parsed) {
+      const key = `${m.adId}|${new Date(m.playedAt).getTime()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      metrics.push(m);
+    }
 
-    // Auto-pause campaigns that reached max_impressions (#7)
-    const uniqueCampaignIds = [...new Set(metrics.map((m) => m.campaignId))];
-    for (const campaignId of uniqueCampaignIds) {
+    let saved = 0;
+    if (metrics.length) {
+      const timesMs = metrics.map((m) => new Date(m.playedAt).getTime());
+      const existing = await prisma.metric.findMany({
+        where: {
+          tabletId,
+          playedAt: { gte: new Date(Math.min(...timesMs)), lte: new Date(Math.max(...timesMs)) },
+        },
+        select: { adId: true, playedAt: true },
+      });
+      const existingKeys = new Set(existing.map((e) => `${e.adId}|${e.playedAt.getTime()}`));
+      const fresh = metrics.filter((m) => !existingKeys.has(`${m.adId}|${new Date(m.playedAt).getTime()}`));
+
+      if (fresh.length) {
+        const result = await prisma.metric.createMany({
+          data: fresh.map((m) => ({
+            tabletId,
+            adId: m.adId,
+            campaignId: m.campaignId,
+            playedAt: new Date(m.playedAt),
+            durationPlayedS: m.durationPlayedS,
+            completed: m.completed,
+            error: m.error,
+          })),
+          skipDuplicates: true,
+        });
+        saved = result.count;
+      }
+    }
+
+    // Auto-pausa por max_impressions (#7) — una query agrupada, y sólo si
+    // alguna campaña del lote tiene tope configurado (antes eran N COUNT(*)
+    // secuenciales que se volvían lentos y hacían solapar las subidas).
+    const campaignIds = [...new Set(parsed.map((m) => m.campaignId))];
+    if (campaignIds.length) {
       try {
-        const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { maxImpressions: true, active: true } });
-        if (!campaign?.maxImpressions || !campaign.active) continue;
-        const total = await prisma.metric.count({ where: { campaignId } });
-        if (total >= campaign.maxImpressions) {
-          await prisma.campaign.update({ where: { id: campaignId }, data: { active: false } });
-          console.log(`[metrics] Campaña ${campaignId} autopausada: ${total}/${campaign.maxImpressions} impresiones`);
+        const capped = await prisma.campaign.findMany({
+          where: { id: { in: campaignIds }, active: true, maxImpressions: { not: null } },
+          select: { id: true, maxImpressions: true },
+        });
+        if (capped.length) {
+          const counts = await prisma.metric.groupBy({
+            by: ['campaignId'],
+            where: { campaignId: { in: capped.map((c) => c.id) } },
+            _count: { _all: true },
+          });
+          const countMap = Object.fromEntries(counts.map((c) => [c.campaignId, c._count._all]));
+          for (const c of capped) {
+            if ((countMap[c.id] ?? 0) >= c.maxImpressions) {
+              await prisma.campaign.update({ where: { id: c.id }, data: { active: false } }).catch(() => {});
+              console.log(`[metrics] Campaña ${c.id} autopausada: ${countMap[c.id]}/${c.maxImpressions}`);
+            }
+          }
         }
       } catch { /* non-fatal */ }
     }
 
-    res.json({ saved: metrics.length });
+    res.json({ saved });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);

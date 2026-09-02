@@ -13,6 +13,9 @@ interface MetricDao {
     @Query("SELECT * FROM metrics ORDER BY id ASC")
     fun getAll(): List<MetricEntity>
 
+    @Query("DELETE FROM metrics WHERE id IN (:ids)")
+    fun deleteByIds(ids: List<Int>)
+
     @Query("DELETE FROM metrics")
     fun deleteAll()
 }
