@@ -91,6 +91,10 @@ class PlayerActivity : AppCompatActivity() {
     // bloqueo/apagado real lo hace KioskManager si la app es Device Owner.
     private var dormant = false
 
+    // Evita bajar el paquete dos veces a la vez (la descarga corre detached del
+    // loop de sync para no bloquear el heartbeat).
+    private var packageDownloadInProgress = false
+
     // El operador bloqueó la tablet desde el panel (manualStatus="bloqueada").
     // A diferencia de `dormant` (apagado por energía/quietud), acá el kiosco
     // sigue armado y la pantalla prendida — sólo se frena la reproducción.
@@ -895,20 +899,18 @@ class PlayerActivity : AppCompatActivity() {
             }
             if (!syncResp.needsUpdate) return
 
+            // La descarga del paquete (puede ser >100 MB, minutos con señal débil)
+            // va en su PROPIA corrutina — si se hiciera acá, bloquearía el loop de
+            // heartbeat y la tablet se caería del monitor mientras baja.
             val packageUrl = syncResp.packageUrl ?: "api/device/package/${syncResp.version}"
-            Log.i(TAG, "syncNow: descargando $packageUrl")
-            val dlResp = withContext(Dispatchers.IO) { api.downloadPackage(packageUrl) }
-            if (!dlResp.isSuccessful) {
-                Log.e(TAG, "syncNow: HTTP ${dlResp.code()} descargando paquete")
-                return
+            if (!packageDownloadInProgress) {
+                packageDownloadInProgress = true
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try { downloadAndInstallPackage(token, syncResp.version, packageUrl) }
+                    catch (e: Exception) { Log.e(TAG, "descarga de paquete falló: ${e.message}") }
+                    finally { packageDownloadInProgress = false }
+                }
             }
-            val body = dlResp.body() ?: run { Log.e(TAG, "syncNow: body vacío"); return }
-            val hash = dlResp.headers()["X-Playlist-Hash"] ?: ""
-            Log.i(TAG, "syncNow: instalando v${syncResp.version} hash=${hash.take(8)}")
-            withContext(Dispatchers.IO) { playlistRepo.installPackage(body, syncResp.version, hash) }
-            prefs.setPlaylistVersion(syncResp.version)
-            Log.i(TAG, "syncNow: instalación OK — difundiendo actualización")
-            sendBroadcast(Intent(SyncWorker.ACTION_PLAYLIST_UPDATED).apply { setPackage(packageName) })
         } catch (e: retrofit2.HttpException) {
             if (e.code() == 401) {
                 // Token rechazado — probablemente revocado desde el panel admin.
@@ -920,6 +922,25 @@ class PlayerActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "syncNow: FALLÓ ${e.javaClass.simpleName}: ${e.message}", e)
+        }
+    }
+
+    private suspend fun downloadAndInstallPackage(token: String, version: Int, packageUrl: String) {
+        val api = NetworkModule.provideDeviceApi(token)
+        Log.i(TAG, "descargando paquete v$version: $packageUrl")
+        val dlResp = api.downloadPackage(packageUrl)
+        if (!dlResp.isSuccessful) {
+            Log.e(TAG, "HTTP ${dlResp.code()} descargando paquete v$version — se reintenta en el próximo sync")
+            return
+        }
+        val body = dlResp.body() ?: run { Log.e(TAG, "body vacío descargando paquete"); return }
+        val hash = dlResp.headers()["X-Playlist-Hash"] ?: ""
+        Log.i(TAG, "instalando paquete v$version hash=${hash.take(8)}")
+        playlistRepo.installPackage(body, version, hash)
+        prefs.setPlaylistVersion(version)
+        Log.i(TAG, "paquete v$version instalado — difundiendo actualización")
+        withContext(Dispatchers.Main) {
+            sendBroadcast(Intent(SyncWorker.ACTION_PLAYLIST_UPDATED).apply { setPackage(packageName) })
         }
     }
 

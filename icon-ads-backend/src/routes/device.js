@@ -301,28 +301,36 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       uniqueByFilename.push(ad);
     }
 
-    const mediaEntries = [];
-    for (const ad of uniqueByFilename) {
+    // Resolver la media EN PARALELO con timeout por archivo. Nunca hacer fetch
+    // secuencial sin timeout: si un archivo de Supabase se cuelga, todo /package
+    // se cuelga, y con él el syncNow() de la tablet — se cae del monitor.
+    const FETCH_TIMEOUT_MS = 20000;
+    const resolveOne = async (ad) => {
       const filePath = path.join(uploadDir, ad.filename);
-      if (fs.existsSync(filePath)) {
-        mediaEntries.push({ name: `media/${ad.filename}`, filePath });
-        continue;
-      }
+      if (fs.existsSync(filePath)) return { name: `media/${ad.filename}`, filePath };
       if (ad.fileUrl && /^https?:\/\//.test(ad.fileUrl)) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
         try {
-          const remote = await fetch(ad.fileUrl);
+          const remote = await fetch(ad.fileUrl, { signal: ctrl.signal });
           if (!remote.ok) throw new Error(`HTTP ${remote.status}`);
           const buf = Buffer.from(await remote.arrayBuffer());
           if (buf.length === 0) throw new Error('archivo vacío');
-          mediaEntries.push({ name: `media/${ad.filename}`, buffer: buf });
-          continue;
-        } catch (fetchErr) {
-          console.warn(`[package] media faltante ${ad.filename} (${ad.fileUrl}): ${fetchErr.message} — abortando paquete`);
-          return res.status(503).json({ error: `Media incompleta (${ad.filename}). Reintentar.` });
+          return { name: `media/${ad.filename}`, buffer: buf };
+        } finally {
+          clearTimeout(timer);
         }
       }
-      console.warn(`[package] media faltante ${ad.filename} (sin archivo ni URL) — abortando paquete`);
-      return res.status(503).json({ error: `Media incompleta (${ad.filename}). Reintentar.` });
+      throw new Error('sin archivo ni URL');
+    };
+
+    let mediaEntries;
+    try {
+      mediaEntries = await Promise.all(uniqueByFilename.map((ad) =>
+        resolveOne(ad).catch((e) => { throw new Error(`${ad.filename}: ${e.message}`); })));
+    } catch (e) {
+      console.warn(`[package] media incompleta — abortando: ${e.message}`);
+      return res.status(503).json({ error: `Media incompleta (${e.message}). Reintentar.` });
     }
 
     console.log(`[package] generando ZIP (${mediaEntries.length} archivos)…`);
