@@ -70,6 +70,7 @@ type BatchItem = {
   name: string;
   type: 'video' | 'image';
   durationS: number;
+  videoLen?: number;
   thumbnail: Blob | null;
   status: 'pending' | 'uploading' | 'done' | 'error';
   pct: number;
@@ -93,6 +94,7 @@ export default function AdsPage() {
   // Subida múltiple: cuando se eligen 2+ archivos, cada uno se sube por
   // separado heredando campaña / prioridad / URL / tags del formulario.
   const [batch, setBatch] = useState<BatchItem[]>([]);
+  const [batchDurAll, setBatchDurAll] = useState('');
   const [uploadPct, setUploadPct] = useState(0);                 // #3
   const [saving, setSaving] = useState(false);
   const [fileError, setFileError] = useState('');
@@ -138,6 +140,7 @@ export default function AdsPage() {
     setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
     setFile(null);
     setBatch([]);
+    setBatchDurAll('');
     setPreview(null);
     setThumbnailBlob(null);
     setUploadPct(0);
@@ -159,6 +162,7 @@ export default function AdsPage() {
     });
     setFile(null);
     setBatch([]);
+    setBatchDurAll('');
     setPreview(null);
     setThumbnailBlob(null);
     setFileError('');
@@ -266,15 +270,17 @@ export default function AdsPage() {
       if (!ALLOWED_EXT.test(f.name) && !ALLOWED_TYPES.includes(f.type)) invalid = 'Formato no permitido';
       else if (f.size > MAX_SIZE_MB * 1024 * 1024) invalid = `Supera ${MAX_SIZE_MB} MB`;
       let durationS = 10;
+      let videoLen: number | undefined;
       if (!invalid && isVideo) {
         const d = await readVideoDuration(f);
-        if (d != null) durationS = Math.max(1, Math.ceil(d));
+        if (d != null) { videoLen = d; durationS = Math.max(1, Math.ceil(d)); }
       }
       return {
         file: f,
         name: f.name.replace(/\.[^.]+$/, ''),
         type: isVideo ? 'video' : 'image',
         durationS,
+        videoLen,
         thumbnail: null,
         status: invalid ? 'error' : 'pending',
         pct: 0,
@@ -290,12 +296,31 @@ export default function AdsPage() {
     });
   };
 
+  const setBatchDuration = (i: number, v: string) =>
+    setBatch((prev) => prev.map((b, idx) => (idx === i
+      ? { ...b, durationS: v === '' ? 0 : Math.max(0, Math.floor(Number(v) || 0)) }
+      : b)));
+
+  const applyDurationToAll = () => {
+    const n = Math.max(1, Math.floor(Number(batchDurAll) || 0));
+    if (!n) return;
+    setBatch((prev) => prev.map((b) => (b.invalid ? b : { ...b, durationS: n })));
+  };
+
+  // ¿Alguna fila a subir tiene duración inválida (0 o menor que el video)?
+  const durTooShort = (b: BatchItem) => b.videoLen != null && b.durationS < Math.ceil(b.videoLen);
+  const batchDurError = batch.some((b) => !b.invalid && b.status !== 'done' && (!b.durationS || durTooShort(b)));
+
   const handleBatchUpload = async () => {
     if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
     const queue = batch
       .map((b, i) => ({ b, i }))
       .filter(({ b }) => !b.invalid && b.status !== 'done');
     if (queue.length === 0) { setError('No hay archivos válidos para subir'); return; }
+    if (queue.some(({ b }) => !b.durationS || durTooShort(b))) {
+      setError('Revisá la duración: no puede ser 0 ni menor que la del video.');
+      return;
+    }
     setSaving(true);
     setError('');
     let ok = 0;
@@ -706,37 +731,75 @@ export default function AdsPage() {
               </div>
               )}
 
-              {/* Subida múltiple — lista de archivos con estado por archivo */}
+              {/* Subida múltiple — lista de archivos con estado y duración por archivo */}
               {!editing && batch.length > 0 && (
-                <div className="space-y-1.5 max-h-56 overflow-y-auto border border-gray-100 rounded-lg p-2">
-                  {batch.map((b, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="shrink-0">{b.type === 'video' ? '🎬' : '🖼️'}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-gray-700">{b.name}</p>
-                        {b.status === 'uploading' && (
-                          <div className="w-full bg-gray-100 rounded-full h-1 mt-0.5">
-                            <div className="bg-blue-600 h-1 rounded-full transition-all duration-200" style={{ width: `${b.pct}%` }} />
-                          </div>
-                        )}
-                        {b.error && <p className="text-red-500">{b.error}</p>}
-                      </div>
-                      <span className="shrink-0 tabular-nums text-gray-400">
-                        {b.invalid ? '—'
-                          : b.status === 'done' ? '✓'
-                          : b.status === 'uploading' ? `${b.pct}%`
-                          : b.status === 'error' ? '⚠'
-                          : `${b.durationS}s`}
-                      </span>
-                      {!saving && (
-                        <button
-                          onClick={() => setBatch((prev) => prev.filter((_, idx) => idx !== i))}
-                          className="shrink-0 text-gray-300 hover:text-gray-600 text-sm leading-none"
-                          title="Quitar"
-                        >×</button>
-                      )}
+                <div>
+                  {!saving && (
+                    <div className="flex items-center gap-2 mb-1.5 text-xs text-gray-500">
+                      <span>Duración para todos:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        className="input !py-0.5 !px-1.5 w-16 text-xs"
+                        value={batchDurAll}
+                        onChange={(e) => setBatchDurAll(e.target.value)}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        placeholder="s"
+                      />
+                      <button
+                        onClick={applyDurationToAll}
+                        className="px-2 py-0.5 rounded border border-gray-200 hover:bg-gray-50 font-medium"
+                      >Aplicar</button>
                     </div>
-                  ))}
+                  )}
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto border border-gray-100 rounded-lg p-2">
+                    {batch.map((b, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className="shrink-0">{b.type === 'video' ? '🎬' : '🖼️'}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-gray-700">{b.name}</p>
+                          {b.status === 'uploading' && (
+                            <div className="w-full bg-gray-100 rounded-full h-1 mt-0.5">
+                              <div className="bg-blue-600 h-1 rounded-full transition-all duration-200" style={{ width: `${b.pct}%` }} />
+                            </div>
+                          )}
+                          {b.error && <p className="text-red-500">{b.error}</p>}
+                          {!b.invalid && b.videoLen != null && (
+                            <p className={durTooShort(b) ? 'text-red-500 font-medium' : 'text-gray-400'}>
+                              El video dura {b.videoLen.toFixed(1)}s
+                              {durTooShort(b) && ' — la duración no puede ser menor'}
+                            </p>
+                          )}
+                        </div>
+                        {b.invalid ? (
+                          <span className="shrink-0 tabular-nums text-gray-400">—</span>
+                        ) : b.status === 'done' ? (
+                          <span className="shrink-0 tabular-nums text-green-600">✓</span>
+                        ) : b.status === 'uploading' ? (
+                          <span className="shrink-0 tabular-nums text-gray-400">{b.pct}%</span>
+                        ) : (
+                          <span className="shrink-0 inline-flex items-center gap-0.5">
+                            <input
+                              type="number"
+                              min="1"
+                              className={`input !py-0.5 !px-1 w-14 text-xs text-right ${durTooShort(b) || !b.durationS ? 'border-red-400' : ''}`}
+                              value={b.durationS || ''}
+                              onChange={(e) => setBatchDuration(i, e.target.value)}
+                              onWheel={(e) => e.currentTarget.blur()}
+                            />
+                            <span className="text-gray-400">s</span>
+                          </span>
+                        )}
+                        {!saving && (
+                          <button
+                            onClick={() => setBatch((prev) => prev.filter((_, idx) => idx !== i))}
+                            className="shrink-0 text-gray-300 hover:text-gray-600 text-sm leading-none"
+                            title="Quitar"
+                          >×</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -782,8 +845,8 @@ export default function AdsPage() {
               </div>
               {batch.length > 0 ? (
                 <p className="text-xs text-gray-500">
-                  Cada archivo se sube como un anuncio aparte. El nombre sale del archivo, el tipo y la duración
-                  se detectan solos; comparten campaña, prioridad, URL destino y tags.
+                  Cada archivo se sube como un anuncio aparte. El nombre y el tipo salen del archivo; la duración
+                  se detecta en los videos y podés ajustarla arriba. Comparten campaña, prioridad, URL destino y tags.
                 </p>
               ) : (
               <>
@@ -831,7 +894,7 @@ export default function AdsPage() {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={editing ? handleUpdate : (batch.length > 0 ? handleBatchUpload : handleUpload)}
-                  disabled={saving || !!fileError || (batch.length > 0 && batch.every((b) => b.invalid || b.status === 'done'))}
+                  disabled={saving || !!fileError || (batch.length > 0 && (batchDurError || batch.every((b) => b.invalid || b.status === 'done')))}
                   className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium"
                 >
                   {editing
