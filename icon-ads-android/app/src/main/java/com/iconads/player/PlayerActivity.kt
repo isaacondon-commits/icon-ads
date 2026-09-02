@@ -945,6 +945,17 @@ class PlayerActivity : AppCompatActivity() {
                 Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")
                 SyncWorker.scheduleImmediate(this@PlayerActivity)
             }
+            // El panel dejó la tablet sin playlist: borrar el paquete local y
+            // pasar al institucional en vez de seguir loopeando el último.
+            if (syncResp.noPlaylist) {
+                if (playlistRepo.hasLocalPlaylist()) {
+                    Log.i(TAG, "syncNow: sin playlist asignada → limpiando local, paso a institucional")
+                    withContext(Dispatchers.IO) { playlistRepo.clearPlaylist() }
+                    prefs.setPlaylistVersion(0)
+                    withContext(Dispatchers.Main) { loadAndPlay() }
+                }
+                return
+            }
             if (!syncResp.needsUpdate) return
 
             // La descarga del paquete (puede ser >100 MB, minutos con señal débil)

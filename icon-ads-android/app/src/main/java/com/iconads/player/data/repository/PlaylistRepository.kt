@@ -92,6 +92,18 @@ class PlaylistRepository(private val context: Context) {
         else gson.fromJson(f.readText(), PlaylistJson::class.java)?.playlistId ?: -1
     } catch (_: Exception) { -1 }
 
+    /** ¿Hay algún paquete local (current o backup)? */
+    fun hasLocalPlaylist(): Boolean =
+        File(currentDir, "playlist.json").exists() || File(backupDir, "playlist.json").exists()
+
+    /** Borra la playlist local (current + backup) → loadAds() cae a institucional.
+     *  Se usa cuando el panel dejó a la tablet sin playlist asignada. */
+    fun clearPlaylist() {
+        currentDir.deleteRecursively()
+        backupDir.deleteRecursively()
+        Log.i(TAG, "Playlist local borrada (sin asignación en el panel)")
+    }
+
     suspend fun installPackage(body: ResponseBody, version: Int, expectedHash: String): PlaylistJson =
         withContext(Dispatchers.IO) {
             val tempZip = File(context.cacheDir, "playlist_v$version.zip")

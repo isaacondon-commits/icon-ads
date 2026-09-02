@@ -33,6 +33,9 @@ data class SyncResponse(
     // El operador bloqueó esta tablet desde el panel: frenar reproducción y
     // mostrar una pantalla neutra hasta que se desbloquee (sigue sincronizando).
     val blocked: Boolean = false,
+    // La tablet quedó SIN playlist asignada en el panel: borrar la playlist
+    // local y pasar al institucional (no seguir loopeando el último paquete).
+    val noPlaylist: Boolean = false,
 )
 
 data class ScreenshotUpload(
