@@ -14,10 +14,10 @@ const forceApkFlags = require('../lib/forceApkFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
 const { resolveScheduleJson } = require('../lib/brightnessSchedule');
 
-// Cuántos ZIP de playlist se pueden ARMAR a la vez. Armar un paquete baja los
-// videos de Supabase y los mete al ZIP; hacerlo para 12 tablets en paralelo
-// reventaba la RAM de Render. El resto recibe 503 y reintenta (o pega el cache).
-const MAX_PACKAGE_BUILDS = 2;
+// Cuántos ZIP de playlist se pueden ARMAR a la vez. Ahora el armado es 100%
+// streaming (no bufferiza los videos), así que la RAM ya no es el límite; el
+// cuello es el ancho de banda a Supabase. 8 cubre la flota entera sin ahogarse.
+const MAX_PACKAGE_BUILDS = 8;
 let activePackageBuilds = 0;
 
 // Registration re-issues the existing token for a known deviceId with no further
