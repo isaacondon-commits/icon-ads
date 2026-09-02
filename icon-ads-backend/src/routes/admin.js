@@ -243,6 +243,36 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/rotate-api-key — TEMPORAL. Genera una API key nueva, desactiva
+// TODAS las demás filas de api_keys, y avisa si la key usada venía del env
+// PUBLISH_API_KEY (esa hay que cambiarla a mano en Render).
+router.post('/rotate-api-key', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const authViaBefore = req.apiKeyAuth || (req.user ? 'jwt' : 'unknown');
+    const newKey = 'ICADS-' + crypto.randomBytes(24).toString('hex').toUpperCase();
+    const created = await prisma.apiKey.create({
+      data: { name: `panel-rotada-${new Date().toISOString().slice(0, 10)}`, key: newKey },
+    });
+    const deact = await prisma.apiKey.updateMany({
+      where: { id: { not: created.id }, active: true },
+      data: { active: false },
+    });
+    const allRows = await prisma.apiKey.findMany({
+      select: { id: true, name: true, active: true, createdAt: true, lastUsed: true },
+      orderBy: { id: 'asc' },
+    });
+    res.json({
+      ok: true,
+      authViaBefore,
+      publishEnvSet: !!process.env.PUBLISH_API_KEY,
+      newKey,
+      newKeyId: created.id,
+      deactivatedRows: deact.count,
+      allRows,
+    });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.
