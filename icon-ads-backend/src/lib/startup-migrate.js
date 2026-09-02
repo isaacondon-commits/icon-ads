@@ -141,17 +141,33 @@ const MIGRATIONS = [
   { name: 'tablet_messages.rls',       sql: `ALTER TABLE tablet_messages ENABLE ROW LEVEL SECURITY` },
   { name: 'tablets.rls',               sql: `ALTER TABLE tablets ENABLE ROW LEVEL SECURITY` },
   { name: 'zones.rls',                 sql: `ALTER TABLE zones ENABLE ROW LEVEL SECURITY` },
-  // v26 — métricas duplicadas. La app reenviaba lotes sin confirmar (sin
-  // idempotencia entre el reintento del cliente y la inserción del server) y
-  // createMany no descartaba nada, así que la tabla metrics se infló ~150x en
-  // las horas pico. Se limpian los duplicados (queda el id más bajo por clave
-  // natural) y se agrega un índice único para que de ahora en más
-  // ON CONFLICT DO NOTHING (skipDuplicates) los rechace.
-  { name: 'metrics.dedupe',      sql: `DELETE FROM metrics WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY tablet_id, ad_id, played_at ORDER BY id) AS rn FROM metrics) t WHERE t.rn > 1)` },
+  // v26 — la app vieja reenviaba lotes de métricas sin idempotencia y el server
+  // los insertaba duplicados: la tabla se infló ~150x. El índice único hace que
+  // de ahora en más skipDuplicates (ON CONFLICT DO NOTHING) los rechace. La
+  // limpieza del histórico se hace en cleanMetricsOnce() abajo (una sola vez).
   { name: 'metrics.natural_key', sql: `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)` },
 ];
 
+// One-shot: vacía metrics si todavía no tiene el índice único. Data de prueba,
+// inflada ~150x por reenvíos duplicados y sin forma barata de separar real de
+// duplicado en las horas pico. El candado es el propio índice: una vez creado
+// (sobre la tabla ya vacía), esto no vuelve a tocar nada en deploys futuros.
+// NO afecta playlists, anuncios, campañas ni tablets — sólo el log de plays.
+async function cleanMetricsOnce() {
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT 1 FROM pg_indexes WHERE indexname = 'metrics_natural_key' LIMIT 1`,
+    );
+    if (Array.isArray(rows) && rows.length > 0) return; // ya limpio + indexado
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE metrics`);
+    console.log('[migrate] metrics — TRUNCATE (una sola vez) OK');
+  } catch (err) {
+    console.error(`[migrate] metrics TRUNCATE — FAILED: ${err.message}`);
+  }
+}
+
 async function runStartupMigrations() {
+  await cleanMetricsOnce();
   for (const m of MIGRATIONS) {
     try {
       await prisma.$executeRawUnsafe(m.sql);
