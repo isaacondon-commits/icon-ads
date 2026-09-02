@@ -142,10 +142,10 @@ const MIGRATIONS = [
   { name: 'tablets.rls',               sql: `ALTER TABLE tablets ENABLE ROW LEVEL SECURITY` },
   { name: 'zones.rls',                 sql: `ALTER TABLE zones ENABLE ROW LEVEL SECURITY` },
   // v26 — la app vieja reenviaba lotes de métricas sin idempotencia y el server
-  // los insertaba duplicados: la tabla se infló ~150x. El índice único hace que
-  // de ahora en más skipDuplicates (ON CONFLICT DO NOTHING) los rechace. La
-  // limpieza del histórico se hace en cleanMetricsOnce() abajo (una sola vez).
-  { name: 'metrics.natural_key', sql: `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)` },
+  // los insertaba duplicados: la tabla se infló ~150x. La limpieza del
+  // histórico + la creación del índice único metrics_natural_key (que hace que
+  // skipDuplicates / ON CONFLICT DO NOTHING rechace los reenvíos) se hacen en
+  // cleanMetricsOnce() abajo — una sola vez, en segundo plano.
 ];
 
 // One-shot: vacía metrics si todavía no tiene el índice único. Data de prueba,
@@ -153,21 +153,47 @@ const MIGRATIONS = [
 // duplicado en las horas pico. El candado es el propio índice: una vez creado
 // (sobre la tabla ya vacía), esto no vuelve a tocar nada en deploys futuros.
 // NO afecta playlists, anuncios, campañas ni tablets — sólo el log de plays.
+//
+// Se borra por tandas (DELETE ... LIMIT) en vez de TRUNCATE: las 12 tablets
+// insertan cada 10 s y TRUNCATE necesita un ACCESS EXCLUSIVE lock que no llega
+// a conseguir -> se abortaba y el índice nunca se creaba. El DELETE por lotes
+// toma locks de fila, no choca con los INSERT, y cada lote es rápido.
 async function cleanMetricsOnce() {
   try {
-    const rows = await prisma.$queryRawUnsafe(
+    const idx = await prisma.$queryRawUnsafe(
       `SELECT 1 FROM pg_indexes WHERE indexname = 'metrics_natural_key' LIMIT 1`,
     );
-    if (Array.isArray(rows) && rows.length > 0) return; // ya limpio + indexado
-    await prisma.$executeRawUnsafe(`TRUNCATE TABLE metrics`);
-    console.log('[migrate] metrics — TRUNCATE (una sola vez) OK');
+    if (Array.isArray(idx) && idx.length > 0) return; // ya limpio + indexado
+
+    // 1) Achicar el grueso por tandas. Corta cuando lo que queda es chico
+    //    (sólo filas reales recientes + algún duplicado nuevo suelto).
+    let total = 0;
+    for (let i = 0; i < 5000; i++) {
+      const n = Number(await prisma.$executeRawUnsafe(
+        `DELETE FROM metrics WHERE id IN (SELECT id FROM metrics LIMIT 50000)`,
+      ));
+      total += n;
+      if (n < 5000) break;
+    }
+    // 2) Dedup puntual sobre el remanente (ya es una tabla chica).
+    const deduped = Number(await prisma.$executeRawUnsafe(
+      `DELETE FROM metrics a USING metrics b
+       WHERE a.id > b.id AND a.tablet_id = b.tablet_id
+         AND a.ad_id = b.ad_id AND a.played_at = b.played_at`,
+    ));
+    console.log(`[migrate] metrics — limpieza one-shot: ${total} borradas por tanda + ${deduped} duplicados del remanente`);
+
+    // 3) El candado: con la tabla ya sin duplicados, crear el índice único.
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)`,
+    );
+    console.log('[migrate] metrics_natural_key — creado tras la limpieza');
   } catch (err) {
-    console.error(`[migrate] metrics TRUNCATE — FAILED: ${err.message}`);
+    console.error(`[migrate] metrics limpieza one-shot — FAILED: ${err.message}`);
   }
 }
 
 async function runStartupMigrations() {
-  await cleanMetricsOnce();
   for (const m of MIGRATIONS) {
     try {
       await prisma.$executeRawUnsafe(m.sql);
@@ -176,6 +202,11 @@ async function runStartupMigrations() {
       console.error(`[migrate] ${m.name} — FAILED: ${err.message}`);
     }
   }
+  // Limpieza pesada del histórico de metrics: en segundo plano para no
+  // demorar el arranque del server (Render marca el deploy como fallido si
+  // tarda mucho en abrir el puerto). Se reintenta en cada deploy hasta que
+  // exista el índice único.
+  cleanMetricsOnce().catch((e) => console.error('[migrate] cleanMetricsOnce:', e.message));
 }
 
 module.exports = runStartupMigrations;
