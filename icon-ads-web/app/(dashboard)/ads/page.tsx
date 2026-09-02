@@ -64,6 +64,19 @@ function generateVideoThumbnail(file: File): Promise<Blob | null> {
   });
 }
 
+// Un archivo dentro de una subida múltiple, con su propio estado/progreso.
+type BatchItem = {
+  file: File;
+  name: string;
+  type: 'video' | 'image';
+  durationS: number;
+  thumbnail: Blob | null;
+  status: 'pending' | 'uploading' | 'done' | 'error';
+  pct: number;
+  error?: string;
+  invalid?: boolean;
+};
+
 export default function AdsPage() {
   const [ads, setAds] = useState<Ad[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -77,6 +90,9 @@ export default function AdsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);  // #1
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
+  // Subida múltiple: cuando se eligen 2+ archivos, cada uno se sube por
+  // separado heredando campaña / prioridad / URL / tags del formulario.
+  const [batch, setBatch] = useState<BatchItem[]>([]);
   const [uploadPct, setUploadPct] = useState(0);                 // #3
   const [saving, setSaving] = useState(false);
   const [fileError, setFileError] = useState('');
@@ -121,6 +137,7 @@ export default function AdsPage() {
     setEditing(null);
     setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
     setFile(null);
+    setBatch([]);
     setPreview(null);
     setThumbnailBlob(null);
     setUploadPct(0);
@@ -141,6 +158,7 @@ export default function AdsPage() {
       tags: (ad.tags ?? []).join(', '),
     });
     setFile(null);
+    setBatch([]);
     setPreview(null);
     setThumbnailBlob(null);
     setFileError('');
@@ -230,6 +248,88 @@ export default function AdsPage() {
     } finally {
       setSaving(false);
       setUploadPct(0);
+    }
+  };
+
+  // Arma la lista de la subida múltiple: valida cada archivo y, para los
+  // videos, resuelve la duración real antes de habilitar el envío.
+  const buildBatch = async (files: File[]) => {
+    setError('');
+    setFileError('');
+    setFile(null);
+    setPreview(null);
+    setThumbnailBlob(null);
+    setVideoDuration(null);
+    const items = await Promise.all(files.map(async (f): Promise<BatchItem> => {
+      const isVideo = /\.mp4$/i.test(f.name) || f.type === 'video/mp4';
+      let invalid: string | undefined;
+      if (!ALLOWED_EXT.test(f.name) && !ALLOWED_TYPES.includes(f.type)) invalid = 'Formato no permitido';
+      else if (f.size > MAX_SIZE_MB * 1024 * 1024) invalid = `Supera ${MAX_SIZE_MB} MB`;
+      let durationS = 10;
+      if (!invalid && isVideo) {
+        const d = await readVideoDuration(f);
+        if (d != null) durationS = Math.max(1, Math.ceil(d));
+      }
+      return {
+        file: f,
+        name: f.name.replace(/\.[^.]+$/, ''),
+        type: isVideo ? 'video' : 'image',
+        durationS,
+        thumbnail: null,
+        status: invalid ? 'error' : 'pending',
+        pct: 0,
+        error: invalid,
+        invalid: !!invalid,
+      };
+    }));
+    setBatch(items);
+    items.forEach((item, i) => {
+      if (item.invalid || item.type !== 'video') return;
+      generateVideoThumbnail(item.file).then((blob) =>
+        setBatch((prev) => prev.map((b, idx) => (idx === i ? { ...b, thumbnail: blob } : b))));
+    });
+  };
+
+  const handleBatchUpload = async () => {
+    if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
+    const queue = batch
+      .map((b, i) => ({ b, i }))
+      .filter(({ b }) => !b.invalid && b.status !== 'done');
+    if (queue.length === 0) { setError('No hay archivos válidos para subir'); return; }
+    setSaving(true);
+    setError('');
+    let ok = 0;
+    let failed = 0;
+    for (const { b, i } of queue) {
+      setBatch((prev) => prev.map((x, idx) => (idx === i ? { ...x, status: 'uploading', pct: 0, error: undefined } : x)));
+      try {
+        const fd = new FormData();
+        fd.append('file', b.file);
+        fd.append('campaignId', form.campaignId);
+        fd.append('name', b.name || b.file.name);
+        fd.append('type', b.type);
+        fd.append('durationS', String(b.durationS));
+        fd.append('priority', form.priority || '0');
+        if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
+        if (form.tags) fd.append('tags', form.tags);
+        if (b.thumbnail) fd.append('thumbnail', b.thumbnail, 'thumb.jpg');
+        await api.uploadAdWithProgress(fd, (p) =>
+          setBatch((prev) => prev.map((x, idx) => (idx === i ? { ...x, pct: p } : x))));
+        setBatch((prev) => prev.map((x, idx) => (idx === i ? { ...x, status: 'done', pct: 100 } : x)));
+        ok++;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Error al subir';
+        setBatch((prev) => prev.map((x, idx) => (idx === i ? { ...x, status: 'error', error: msg } : x)));
+        failed++;
+      }
+    }
+    setSaving(false);
+    load();
+    if (failed === 0) {
+      setShowModal(false);
+      setBatch([]);
+    } else {
+      setError(`${ok} subido(s), ${failed} con error. Podés reintentar los que fallaron.`);
     }
   };
 
@@ -576,27 +676,68 @@ export default function AdsPage() {
               {!editing && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Archivo <span className="text-gray-400 font-normal">(mp4, jpg, png, webp · máx {MAX_SIZE_MB}MB · recomendado 1280×720)</span>
+                  Archivo(s) <span className="text-gray-400 font-normal">(mp4, jpg, png, webp · máx {MAX_SIZE_MB}MB · podés elegir varios)</span>
                 </label>
                 <div
                   onClick={() => fileRef.current?.click()}
                   className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition-colors"
                 >
-                  {file ? (
+                  {batch.length > 0 ? (
+                    <p className="text-sm text-gray-700 font-medium">{batch.length} archivos seleccionados</p>
+                  ) : file ? (
                     <p className="text-sm text-gray-700 font-medium">{file.name}</p>
                   ) : (
-                    <p className="text-sm text-gray-400">Clic o arrastrá para seleccionar</p>
+                    <p className="text-sm text-gray-400">Clic o arrastrá para seleccionar (uno o varios)</p>
                   )}
                 </div>
                 <input
                   ref={fileRef}
                   type="file"
+                  multiple
                   accept=".mp4,.jpg,.jpeg,.png,.webp"
                   className="hidden"
-                  onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length <= 1) { setBatch([]); handleFileChange(files[0] ?? null); }
+                    else buildBatch(files);
+                  }}
                 />
                 {fileError && <p className="text-red-500 text-xs mt-1">{fileError}</p>}
               </div>
+              )}
+
+              {/* Subida múltiple — lista de archivos con estado por archivo */}
+              {!editing && batch.length > 0 && (
+                <div className="space-y-1.5 max-h-56 overflow-y-auto border border-gray-100 rounded-lg p-2">
+                  {batch.map((b, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className="shrink-0">{b.type === 'video' ? '🎬' : '🖼️'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-700">{b.name}</p>
+                        {b.status === 'uploading' && (
+                          <div className="w-full bg-gray-100 rounded-full h-1 mt-0.5">
+                            <div className="bg-blue-600 h-1 rounded-full transition-all duration-200" style={{ width: `${b.pct}%` }} />
+                          </div>
+                        )}
+                        {b.error && <p className="text-red-500">{b.error}</p>}
+                      </div>
+                      <span className="shrink-0 tabular-nums text-gray-400">
+                        {b.invalid ? '—'
+                          : b.status === 'done' ? '✓'
+                          : b.status === 'uploading' ? `${b.pct}%`
+                          : b.status === 'error' ? '⚠'
+                          : `${b.durationS}s`}
+                      </span>
+                      {!saving && (
+                        <button
+                          onClick={() => setBatch((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="shrink-0 text-gray-300 hover:text-gray-600 text-sm leading-none"
+                          title="Quitar"
+                        >×</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
 
               {/* #1 — preview */}
@@ -610,8 +751,8 @@ export default function AdsPage() {
                 </div>
               )}
 
-              {/* #3 — progress bar */}
-              {!editing && saving && (
+              {/* #3 — progress bar (subida simple) */}
+              {!editing && batch.length === 0 && saving && (
                 <div>
                   <div className="flex justify-between text-xs text-gray-500 mb-1">
                     <span>Subiendo...</span>
@@ -639,6 +780,13 @@ export default function AdsPage() {
                   </select>
                 )}
               </div>
+              {batch.length > 0 ? (
+                <p className="text-xs text-gray-500">
+                  Cada archivo se sube como un anuncio aparte. El nombre sale del archivo, el tipo y la duración
+                  se detectan solos; comparten campaña, prioridad, URL destino y tags.
+                </p>
+              ) : (
+              <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
                 <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del anuncio" />
@@ -662,6 +810,8 @@ export default function AdsPage() {
                   )}
                 </div>
               </div>
+              </>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Prioridad <span className="text-gray-400 font-normal">(0 = normal)</span></label>
@@ -679,8 +829,16 @@ export default function AdsPage() {
               </div>
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <div className="flex gap-2 pt-2">
-                <button onClick={editing ? handleUpdate : handleUpload} disabled={saving || !!fileError} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
-                  {editing ? (saving ? 'Guardando...' : 'Guardar') : (saving ? `Subiendo ${uploadPct}%` : 'Subir')}
+                <button
+                  onClick={editing ? handleUpdate : (batch.length > 0 ? handleBatchUpload : handleUpload)}
+                  disabled={saving || !!fileError || (batch.length > 0 && batch.every((b) => b.invalid || b.status === 'done'))}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium"
+                >
+                  {editing
+                    ? (saving ? 'Guardando...' : 'Guardar')
+                    : batch.length > 0
+                      ? (saving ? 'Subiendo...' : `Subir ${batch.filter((b) => !b.invalid && b.status !== 'done').length} anuncios`)
+                      : (saving ? `Subiendo ${uploadPct}%` : 'Subir')}
                 </button>
                 <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 hover:bg-gray-50 py-2 rounded-lg text-sm">
                   Cancelar
