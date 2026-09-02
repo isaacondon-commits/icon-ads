@@ -65,9 +65,9 @@ router.get('/', async (req, res, next) => {
         prisma.campaign.count({ where: { active: true, deletedAt: null } }),
         prisma.ad.count({ where: { active: true, deletedAt: null } }),
         prisma.$queryRaw`
-          SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
+          SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
           FROM metrics WHERE played_at >= ${sevenDaysAgo}
-          GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
+          GROUP BY 1 ORDER BY 1 ASC
         `,
         prisma.$queryRaw`
           SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
@@ -190,10 +190,10 @@ router.get('/daily', async (req, res, next) => {
     const campaignId = intParam(req.query.campaignId);
     const tabletId = intParam(req.query.tabletId);
     const rows = await prisma.$queryRaw(Prisma.sql`
-      SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
+      SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
       FROM metrics
       WHERE played_at BETWEEN ${from} AND ${to} ${metricFilter('', campaignId, tabletId)}
-      GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
+      GROUP BY 1 ORDER BY 1 ASC
     `);
     res.json(zeroFillDaily(rows, from, to));
   } catch (err) {
@@ -220,9 +220,9 @@ router.get('/range', async (req, res, next) => {
         FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
       `),
       prisma.$queryRaw(Prisma.sql`
-        SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
+        SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
         FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
-        GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
+        GROUP BY 1 ORDER BY 1 ASC
       `),
       prisma.$queryRaw(Prisma.sql`
         SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
@@ -314,13 +314,13 @@ router.get('/heatmap-by-day', async (req, res, next) => {
   try {
     const { from, to } = mvdRange(req.query.from, req.query.to);
     const rows = await prisma.$queryRaw(Prisma.sql`
-      SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date,
+      SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date,
              EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour,
              COUNT(*)::int AS count
       FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
       ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
-      GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo'), hour
-      ORDER BY date ASC, hour ASC
+      GROUP BY 1, 2
+      ORDER BY 1 ASC, 2 ASC
     `);
     res.json(rows.map((r) => ({ date: String(r.date).slice(0, 10), hour: Number(r.hour), count: Number(r.count) })));
   } catch (err) {
