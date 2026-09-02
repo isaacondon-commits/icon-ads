@@ -377,7 +377,10 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     // Sin recompresión: los videos/imágenes ya vienen comprimidos.
     // Se escribe a un .tmp en disco EN STREAMING (no se junta el ZIP en RAM) y
     // recién al terminar OK se renombra al cache y se marca el contentHash.
-    const archive = archiver('zip', { store: true });
+    // DEFLATE nivel 1 (rápido). NO 'store: true' — el ZipInputStream del ROM
+    // Unisoc de estas tablets extrae mal las entradas STORED (videos negros); con
+    // DEFLATE anda, igual que el código viejo (que usaba nivel 6).
+    const archive = archiver('zip', { zlib: { level: 1 } });
     const tmpZip = `${cachedZip}.tmp.${process.pid}.${Date.now()}`;
     const diskOut = fs.createWriteStream(tmpZip);
     let failed = false;
