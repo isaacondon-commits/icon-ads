@@ -11,7 +11,7 @@ router.get('/', async (req, res, next) => {
     const inSevenDays = new Date(today); inSevenDays.setDate(inSevenDays.getDate() + 7);
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
-    const [pendingAds, expiringCampaigns, offlineTablets] = await Promise.all([
+    const [pendingAds, expiringCampaigns, offlineTablets, allTablets] = await Promise.all([
       prisma.ad.count({ where: { approvalStatus: 'pending', deletedAt: null } }),
       prisma.campaign.findMany({
         where: { active: true, deletedAt: null, endDate: { lte: inSevenDays, gte: today } },
@@ -22,11 +22,28 @@ router.get('/', async (req, res, next) => {
         where: { lastSync: { lt: twoHoursAgo } },
         select: { id: true, name: true, lastSync: true },
       }),
+      prisma.tablet.findMany({
+        select: { id: true, lastSync: true, playlistId: true, playerOk: true, onFallback: true, manualStatus: true, batteryLevel: true },
+      }),
     ]);
+
+    // Contador para el badge de "Monitor": tablets que necesitan atención ahora.
+    const tenMinAgo = Date.now() - 10 * 60 * 1000;
+    let monitorAlerts = 0;
+    for (const t of allTablets) {
+      const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
+      const problem =
+        !online ||
+        t.manualStatus === 'bloqueada' ||
+        (online && t.playlistId && (t.playerOk === false || t.onFallback === true)) ||
+        (online && t.batteryLevel != null && t.batteryLevel <= 20);
+      if (problem) monitorAlerts++;
+    }
 
     res.json({
       total: pendingAds + expiringCampaigns.length + offlineTablets.length,
       pendingAds,
+      monitorAlerts,
       expiringCampaigns: expiringCampaigns.map((c) => ({
         id: c.id,
         name: c.name,

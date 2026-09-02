@@ -153,6 +153,12 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // sensor de luz (si no lo tiene, el brillo auto no puede adaptar).
     const lux = req.query.lux !== undefined ? parseFloat(req.query.lux) : undefined;
     const lightSensor = req.query.lightSensor !== undefined ? req.query.lightSensor === 'true' : undefined;
+    // Qué playlist tiene instalada la tablet (APK >= 1.40). Sirve para NO
+    // re-descargar cuando la playlist asignada es la misma que ya está
+    // reproduciendo — sólo baja si le asignaron OTRA, o si esa misma playlist
+    // tuvo una edición real (sube de versión).
+    const installedPlaylistId = req.query.installedPlaylistId !== undefined
+      ? parseInt(req.query.installedPlaylistId) : undefined;
     const tablet = req.tablet;
 
     console.log(`[sync] tablet=${tablet.id} (${tablet.name}) versión local=${currentVersion} battery=${batteryLevel ?? '?'}% temp=${temperatureC ?? '?'}°C`);
@@ -223,16 +229,27 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       return res.json({ needsUpdate: false, version: 0, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
     }
 
-    // #48 — if admin forced a sync, override version check
+    // #48 — el admin forzó un sync desde el panel: baja sí o sí.
     const forced = forceSyncFlags.has(tablet.id);
     if (forced) forceSyncFlags.delete(tablet.id);
 
-    if (!forced && playlist.version <= currentVersion) {
-      console.log(`[sync] tablet=${tablet.id} → ya en v${playlist.version}, sin cambios`);
+    // Cuándo re-descargar:
+    //  - APK nuevo (manda installedPlaylistId): baja si le asignaron OTRA
+    //    playlist, o si es LA MISMA pero subió de versión (edición real). Si la
+    //    playlist asignada es la que ya está reproduciendo y no cambió → NO baja.
+    //  - APK viejo (no manda installedPlaylistId): lógica por versión de siempre.
+    const knowsInstalledPlaylist = Number.isInteger(installedPlaylistId);
+    const differentPlaylist = knowsInstalledPlaylist && installedPlaylistId !== tablet.playlistId;
+    const newerVersion = playlist.version > currentVersion;
+    const needsUpdate = forced || differentPlaylist || newerVersion;
+
+    if (!needsUpdate) {
+      console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} v${playlist.version} sin cambios`);
       return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
     }
 
-    console.log(`[sync] tablet=${tablet.id} → actualización disponible v${currentVersion}→v${playlist.version}`);
+    const motivo = forced ? 'forzado' : differentPlaylist ? `otra playlist (${installedPlaylistId}→${tablet.playlistId})` : `v${currentVersion}→v${playlist.version}`;
+    console.log(`[sync] tablet=${tablet.id} → descarga: ${motivo}`);
     res.json({
       needsUpdate: true,
       version: playlist.version,
@@ -354,7 +371,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     res.setHeader('X-Playlist-Hash', hash);
 
     const playlistJson = JSON.stringify(
-      { version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
+      { playlistId: playlist.id, playlistName: playlist.name, version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
     );
 
     // Sin recompresión: los videos/imágenes ya vienen comprimidos.

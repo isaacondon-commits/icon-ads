@@ -665,7 +665,7 @@ export interface AdNoPlays {
 }
 
 export interface Notifications {
-  total: number; pendingAds: number;
+  total: number; pendingAds: number; monitorAlerts?: number;
   expiringCampaigns: { id: number; name: string; daysLeft: number }[];
   offlineTablets: { id: number; name: string; offlineMinutes: number | null }[];
 }

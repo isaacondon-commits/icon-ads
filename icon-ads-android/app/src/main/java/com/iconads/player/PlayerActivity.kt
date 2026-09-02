@@ -883,6 +883,7 @@ class PlayerActivity : AppCompatActivity() {
                     onFallback = onFallback(),
                     lux = if (autoBrightness) adaptiveBrightness.lastLux else null,
                     lightSensor = if (autoBrightness) adaptiveBrightness.hasSensor else null,
+                    installedPlaylistId = playlistRepo.installedPlaylistId(),
                 )
             }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")

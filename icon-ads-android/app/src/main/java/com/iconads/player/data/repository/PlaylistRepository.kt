@@ -85,7 +85,14 @@ class PlaylistRepository(private val context: Context) {
 
     // ── Descarga e instalación del ZIP ───────────────────────────────────────
 
-    suspend fun installPackage(body: ResponseBody, version: Int, expectedHash: String) =
+    /** playlistId del paquete instalado ahora (o -1 si no hay / paquete viejo). */
+    fun installedPlaylistId(): Int = try {
+        val f = File(currentDir, "playlist.json")
+        if (!f.exists()) -1
+        else gson.fromJson(f.readText(), PlaylistJson::class.java)?.playlistId ?: -1
+    } catch (_: Exception) { -1 }
+
+    suspend fun installPackage(body: ResponseBody, version: Int, expectedHash: String): PlaylistJson =
         withContext(Dispatchers.IO) {
             val tempZip = File(context.cacheDir, "playlist_v$version.zip")
             body.byteStream().use { input ->
@@ -108,7 +115,8 @@ class PlaylistRepository(private val context: Context) {
                 if (expectedHash.isNotBlank() && expectedHash != playlistJson.hash) {
                     throw SecurityException("Hash inválido: esperado=$expectedHash recibido=${playlistJson.hash}")
                 }
-                Log.i(TAG, "Playlist v$version instalada (${playlistJson.ads.size} ads)")
+                Log.i(TAG, "Playlist ${playlistJson.playlistId} v$version instalada (${playlistJson.ads.size} ads)")
+                playlistJson
             } catch (e: Exception) {
                 // Restore backup so the player keeps working
                 Log.w(TAG, "Error instalando v$version — restaurando backup", e)

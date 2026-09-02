@@ -3,6 +3,8 @@ package com.iconads.player.data.model
 import com.google.gson.annotations.SerializedName
 
 data class PlaylistJson(
+    val playlistId: Int = -1,       // paquetes viejos no lo traen
+    val playlistName: String? = null,
     val version: Int,
     val hash: String,
     val generatedAt: String,

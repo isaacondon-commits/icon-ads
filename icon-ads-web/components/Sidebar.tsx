@@ -148,7 +148,11 @@ export default function Sidebar() {
                 <div className="space-y-0.5 mt-0.5">
                   {group.links.map((link) => {
                     const active = isLinkActive(link.href);
-                    const badge = link.href === '/ads' && pendingAds > 0 ? pendingAds : null;
+                    const monitorAlerts = notifications?.monitorAlerts ?? 0;
+                    const badge =
+                      link.href === '/ads' && pendingAds > 0 ? pendingAds
+                        : link.href === '/monitor' && monitorAlerts > 0 ? monitorAlerts
+                          : null;
                     return (
                       <Link
                         key={link.href}

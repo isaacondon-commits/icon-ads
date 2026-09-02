@@ -26,6 +26,7 @@ interface DeviceApi {
         @Query("onFallback") onFallback: Boolean? = null,
         @Query("lux") lux: Float? = null,
         @Query("lightSensor") lightSensor: Boolean? = null,
+        @Query("installedPlaylistId") installedPlaylistId: Int? = null,
     ): SyncResponse
 
     @POST("api/device/screenshot")
