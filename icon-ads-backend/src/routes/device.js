@@ -393,6 +393,9 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     });
     archive.on('close', releaseSlot);
 
+    // Guard duro: si armar el ZIP entero tarda demasiado, se aborta (evita
+    // requests colgados y que la tablet quede esperando la descarga).
+    const buildDeadline = setTimeout(() => fail('timeout total armando ZIP'), 90_000);
     try {
       archive.append(playlistJson, { name: 'playlist.json' });
       for (const s of sources) {
@@ -400,7 +403,11 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
         if (s.filePath) {
           archive.file(s.filePath, { name: s.name });
         } else {
-          const remote = await fetch(s.url);
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 30_000);
+          let remote;
+          try { remote = await fetch(s.url, { signal: ctrl.signal }); }
+          finally { clearTimeout(t); }
           if (!remote.ok || !remote.body) { fail(`${s.name}: HTTP ${remote.status}`); break; }
           // Stream del body directo al ZIP — nunca se bufferiza el archivo entero.
           archive.append(Readable.fromWeb(remote.body), { name: s.name });
@@ -409,8 +416,8 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       if (!failed) archive.finalize();
     } catch (e) {
       fail(e.message);
-      fs.unlink(tmpZip, () => {});
-      releaseSlot();
+    } finally {
+      clearTimeout(buildDeadline);
     }
   } catch (err) {
     next(err);

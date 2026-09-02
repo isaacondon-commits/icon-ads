@@ -178,8 +178,12 @@ router.post('/playlist/:id/rebuild', apiKeyOrAuth, async (req, res, next) => {
     const id = Number(req.params.id);
     const pl = await prisma.playlist.findUnique({ where: { id }, select: { id: true, name: true, version: true } });
     if (!pl) return res.status(404).json({ error: 'No existe' });
+    // Opcional { version: N } — para FIJAR una versión (ej. bajarla para que las
+    // tablets dejen de intentar bajar el paquete). Sin eso, sube +1.
+    const explicit = Number(req.body?.version);
+    const newVersion = Number.isInteger(explicit) && explicit > 0 ? explicit : pl.version + 1;
     const updated = await prisma.playlist.update({
-      where: { id }, data: { version: pl.version + 1, contentHash: null },
+      where: { id }, data: { version: newVersion, contentHash: null },
     });
     try {
       const cacheDir = path.join(__dirname, '../../cache');
