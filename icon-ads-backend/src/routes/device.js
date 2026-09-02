@@ -366,79 +366,44 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const releaseSlot = () => { if (!doneAccounting) { doneAccounting = true; activePackageBuilds--; } };
 
     console.log(`[package] generando ZIP (${sources.length} archivos) [${activePackageBuilds} activos]…`);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
-    res.setHeader('X-Playlist-Hash', hash);
 
     const playlistJson = JSON.stringify(
       { playlistId: playlist.id, playlistName: playlist.name, version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
     );
 
-    // Sin recompresión: los videos/imágenes ya vienen comprimidos.
-    // Se escribe a un .tmp en disco EN STREAMING (no se junta el ZIP en RAM) y
-    // recién al terminar OK se renombra al cache y se marca el contentHash.
-    // DEFLATE nivel 1 (rápido). NO 'store: true' — el ZipInputStream del ROM
-    // Unisoc de estas tablets extrae mal las entradas STORED (videos negros); con
-    // DEFLATE anda, igual que el código viejo (que usaba nivel 6).
-    const archive = archiver('zip', { zlib: { level: 1 } });
-    const tmpZip = `${cachedZip}.tmp.${process.pid}.${Date.now()}`;
-    const diskOut = fs.createWriteStream(tmpZip);
-    let failed = false;
-    const fail = (why) => {
-      if (failed) return;
-      failed = true;
-      console.error(`[package] fallo armando ZIP: ${why}`);
-      releaseSlot();
-      try { archive.abort(); } catch { /* ignore */ }
-      try { fs.unlink(tmpZip, () => {}); } catch { /* ignore */ }
-      if (!res.writableEnded) res.destroy();
-    };
-    archive.on('error', (err) => fail(err.message));
-    diskOut.on('error', (err) => fail(`disco: ${err.message}`));
-    res.on('error', () => fail('res error'));
-    res.on('close', () => { if (!res.writableEnded) fail('cliente cortó'); });
-    archive.pipe(res);
-    archive.pipe(diskOut);
-
-    archive.on('end', () => {
-      releaseSlot();
-      if (failed) { fs.unlink(tmpZip, () => {}); return; }
-      fs.rename(tmpZip, cachedZip, async (renErr) => {
-        if (renErr) { console.warn('[package] no se pudo cachear:', renErr.message); return; }
-        try {
-          await prisma.playlist.update({ where: { id: playlist.id }, data: { contentHash: hash } });
-          console.log('[package] cache guardado');
-        } catch { /* non-fatal */ }
-      });
-    });
-    archive.on('close', releaseSlot);
-
-    // Guard duro: si armar el ZIP entero tarda demasiado, se aborta (evita
-    // requests colgados y que la tablet quede esperando la descarga).
-    const buildDeadline = setTimeout(() => fail('timeout total armando ZIP'), 90_000);
-    // Archivos remotos: se bajan a un temp en disco y se meten al ZIP con
-    // archive.file() (tamaño conocido, headers de ZIP correctos). Con streams de
-    // largo desconocido, archiver armaba entradas que el ZipInputStream del ROM
-    // Unisoc extraía CORRUPTAS → videos negros. Disco, no RAM.
+    // El ZIP se arma ENTERO a un .tmp en disco (NO se hace tee a res + disco a la
+    // vez: eso mandaba un ZIP con bytes perdidos a la tablet → videos negros).
+    // Recién cuando está completo y OK se renombra al cache y se le manda al
+    // dispositivo con createReadStream. DEFLATE nivel 1 (rápido; STORED lo
+    // extraía mal el ROM Unisoc).
     const tmpMedia = [];
-    const cleanupTmp = () => { for (const p of tmpMedia) fs.unlink(p, () => {}); };
-    archive.on('end', cleanupTmp);
-    archive.on('close', cleanupTmp);
+    const cleanupTmp = () => { for (const p of tmpMedia) fs.unlink(p, () => {}); tmpMedia.length = 0; };
+    const tmpZip = `${cachedZip}.tmp.${process.pid}.${Date.now()}`;
+
+    let slotReleased = false;
+    const done = (err) => {
+      if (!slotReleased) { slotReleased = true; releaseSlot(); }
+      cleanupTmp();
+      fs.unlink(tmpZip, () => {});
+      if (err) {
+        console.error(`[package] fallo: ${err}`);
+        if (!res.headersSent) res.status(503).json({ error: `No se pudo armar el paquete (${err}). Reintentar.` });
+        else if (!res.writableEnded) res.destroy();
+      }
+    };
+
     try {
-      archive.append(playlistJson, { name: 'playlist.json' });
+      // 1) bajar los archivos remotos a temp en disco (secuencial, sin RAM).
+      const zipEntries = [];
       for (const s of sources) {
-        if (failed) break;
-        if (s.filePath) {
-          archive.file(s.filePath, { name: s.name });
-          continue;
-        }
-        const dl = path.join(cacheDir, `dl_${process.pid}_${Date.now()}_${path.basename(s.name)}`);
+        if (s.filePath) { zipEntries.push({ name: s.name, path: s.filePath }); continue; }
+        const dl = path.join(cacheDir, `dl_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2)}`);
         tmpMedia.push(dl);
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 45_000);
         try {
           const remote = await fetch(s.url, { signal: ctrl.signal });
-          if (!remote.ok || !remote.body) { fail(`${s.name}: HTTP ${remote.status}`); break; }
+          if (!remote.ok || !remote.body) throw new Error(`${s.name}: HTTP ${remote.status}`);
           await new Promise((resolve, reject) => {
             const ws = fs.createWriteStream(dl);
             ws.on('error', reject);
@@ -446,16 +411,43 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
             Readable.fromWeb(remote.body).on('error', reject).pipe(ws);
           });
         } finally { clearTimeout(t); }
-        const sz = fs.existsSync(dl) ? fs.statSync(dl).size : 0;
-        if (sz === 0) { fail(`${s.name}: descarga vacía`); break; }
-        archive.file(dl, { name: s.name });
+        if (!fs.existsSync(dl) || fs.statSync(dl).size === 0) throw new Error(`${s.name}: descarga vacía`);
+        zipEntries.push({ name: s.name, path: dl });
       }
-      if (!failed) archive.finalize();
-    } catch (e) {
-      fail(e.message);
+
+      // 2) armar el ZIP a tmpZip y esperar a que termine del todo.
+      await new Promise((resolve, reject) => {
+        const archive = archiver('zip', { zlib: { level: 1 } });
+        const out = fs.createWriteStream(tmpZip);
+        archive.on('error', reject);
+        out.on('error', reject);
+        out.on('close', resolve);
+        archive.pipe(out);
+        archive.append(playlistJson, { name: 'playlist.json' });
+        for (const e of zipEntries) archive.file(e.path, { name: e.name });
+        archive.finalize();
+      });
+
+      const zipSize = fs.statSync(tmpZip).size;
+      // 3) mover al cache + marcar contentHash + servir el archivo ya completo.
+      try {
+        fs.renameSync(tmpZip, cachedZip);
+        prisma.playlist.update({ where: { id: playlist.id }, data: { contentHash: hash } }).catch(() => {});
+      } catch (e) {
+        console.warn('[package] no se pudo cachear:', e.message);
+        fs.copyFileSync(tmpZip, cachedZip); // fallback
+      }
       cleanupTmp();
-    } finally {
-      clearTimeout(buildDeadline);
+      if (!slotReleased) { slotReleased = true; releaseSlot(); }
+
+      console.log(`[package] ZIP listo — ${(zipSize / 1024).toFixed(0)} KB`);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Length', zipSize);
+      res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
+      res.setHeader('X-Playlist-Hash', hash);
+      fs.createReadStream(cachedZip).on('error', () => { if (!res.writableEnded) res.destroy(); }).pipe(res);
+    } catch (e) {
+      done(e.message);
     }
   } catch (err) {
     next(err);
