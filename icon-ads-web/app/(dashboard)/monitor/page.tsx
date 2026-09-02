@@ -6,6 +6,11 @@ import { api, TabletMonitorEntry } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import FilterBar from '@/components/FilterBar';
+import { applyFilter, type Filter } from '@/lib/filterEngine';
+import { monitorFilterConfig } from '@/lib/monitorFilters';
+
+const LS_MONITOR_FILTERS = 'monitor_filters_v1';
 
 const POLL_INTERVAL = 30;
 
@@ -32,6 +37,11 @@ export default function MonitorPage() {
   const [brightAuto, setBrightAuto] = useState(true);
   const [brightPct, setBrightPct] = useState(90);
   const [savingBright, setSavingBright] = useState(false);
+  const [mFilters, setMFilters] = useState<Filter[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { return JSON.parse(localStorage.getItem(LS_MONITOR_FILTERS) ?? '[]'); } catch { return []; }
+  });
+  const [mSearch, setMSearch] = useState('');
   const { show } = useToast();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -84,6 +94,14 @@ export default function MonitorPage() {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
+
+  // eslint-disable-next-line react-hooks/purity -- online / last-sync checks read wall-clock; no compiler/SSR here
+  const now = Date.now();
+  const searchFn = (e: TabletMonitorEntry) => {
+    const q = mSearch.toLowerCase();
+    return !q || e.name.toLowerCase().includes(q) || e.deviceId.toLowerCase().includes(q) || (e.zone ?? '').toLowerCase().includes(q);
+  };
+  const filteredEntries = entries.filter((e) => searchFn(e) && mFilters.every((f) => applyFilter(monitorFilterConfig, f, e, now)));
 
   const online = entries.filter((e) => e.status === 'online').length;
   const offline = entries.length - online;
@@ -281,15 +299,29 @@ export default function MonitorPage() {
         <SummaryCard label="Reproducciones hoy" value={totalPlays} color="text-blue-600" dotColor="bg-blue-500" />
       </div>
 
+      <FilterBar
+        config={monitorFilterConfig}
+        rows={entries}
+        filters={mFilters}
+        onChange={setMFilters}
+        storageKey={LS_MONITOR_FILTERS}
+        search={mSearch}
+        onSearch={setMSearch}
+        filteredCount={filteredEntries.length}
+        total={entries.length}
+      />
+
       {loading ? (
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : error ? (
         <p className="text-sm text-red-500">{error}</p>
       ) : entries.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No hay tablets registradas.</p>
+      ) : filteredEntries.length === 0 ? (
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin resultados con esos filtros.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {entries.map((t) => (
+          {filteredEntries.map((t) => (
             <TabletCard key={t.id} entry={t} onWake={() => wake(t.id)} waking={wakingId === t.id} />
           ))}
         </div>

@@ -7,10 +7,9 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import { useToast } from '@/lib/toast-context';
 import { useRole } from '@/lib/roles';
-import {
-  FILTER_FIELDS, OPS_BY_TYPE, enumOptions, applyFilter, describeFilter, fieldDef,
-  type TabletFilter,
-} from '@/lib/tabletFilters';
+import FilterBar from '@/components/FilterBar';
+import { applyFilter, type Filter } from '@/lib/filterEngine';
+import { tabletFilterConfig } from '@/lib/tabletFilters';
 
 const PAGE_SIZE = 10;
 const TIMEZONES = ['America/Montevideo', 'America/Argentina/Buenos_Aires', 'America/Sao_Paulo', 'UTC'];
@@ -29,19 +28,10 @@ export default function TabletsPage() {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
   const [search, setSearch] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem(LS_SEARCH) ?? '') : '');
-  const [filters, setFilters] = useState<TabletFilter[]>(() => {
+  const [filters, setFilters] = useState<Filter[]>(() => {
     if (typeof window === 'undefined') return [];
     try { return JSON.parse(localStorage.getItem(LS_FILTERS) ?? '[]'); } catch { return []; }
   });
-  const [addingFilter, setAddingFilter] = useState(false);
-  const [draft, setDraft] = useState<{ field: string; op: string; value: string }>({ field: 'name', op: 'contains', value: '' });
-
-  const saveFilters = (next: TabletFilter[]) => {
-    setFilters(next);
-    try { localStorage.setItem(LS_FILTERS, JSON.stringify(next)); } catch { /* ignore */ }
-    setPage(1);
-  };
-  const removeFilter = (id: string) => saveFilters(filters.filter((f) => f.id !== id));
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
   const [togglingBlock, setTogglingBlock] = useState<number | null>(null);
@@ -83,7 +73,7 @@ export default function TabletsPage() {
   const filtered = tablets.filter((t) => {
     const q = search.toLowerCase();
     const matchSearch = !q || t.name.toLowerCase().includes(q) || t.deviceId.toLowerCase().includes(q) || (t.zone ?? '').toLowerCase().includes(q);
-    return matchSearch && filters.every((f) => applyFilter(f, t, now));
+    return matchSearch && filters.every((f) => applyFilter(tabletFilterConfig, f, t, now));
   });
 
   // Cuántas tablets hay por playlist (sobre TODAS, no las filtradas).
@@ -201,22 +191,12 @@ export default function TabletsPage() {
     window.open(api.getTabletsCsvUrl(), '_blank');
   };
 
-  const draftType = fieldDef(draft.field)?.type ?? 'text';
-  const draftNeedsValue = !['empty', 'nempty', 'never'].includes(draft.op);
-  const setDraftField = (field: string) => {
-    const type = fieldDef(field)?.type ?? 'text';
-    setDraft({ field, op: OPS_BY_TYPE[type][0].value, value: '' });
-  };
-  const commitDraft = () => {
-    if (draftNeedsValue && draft.value.trim() === '') return;
-    saveFilters([...filters, { id: crypto.randomUUID(), ...draft }]);
-    setDraft({ field: 'name', op: 'contains', value: '' });
-    setAddingFilter(false);
-  };
+  const setFiltersPersist = (next: Filter[]) => { setFilters(next); setPage(1); };
   const addQuickFilter = (field: string, op: string, value: string) => {
-    // evitar duplicado exacto
     if (filters.some((f) => f.field === field && f.op === op && f.value === value)) return;
-    saveFilters([...filters, { id: crypto.randomUUID(), field, op, value }]);
+    const next = [...filters, { id: crypto.randomUUID(), field, op, value }];
+    setFiltersPersist(next);
+    try { localStorage.setItem(LS_FILTERS, JSON.stringify(next)); } catch { /* ignore */ }
   };
 
   return (
@@ -275,69 +255,18 @@ export default function TabletsPage() {
         </div>
       )}
 
-      {/* Barra de filtros componibles */}
-      <div className="flex flex-wrap gap-2 mb-2 items-center">
-        <input className="input w-56" placeholder="Buscar (nombre / ID / zona)…" value={search}
-          onChange={(e) => { setSearch(e.target.value); localStorage.setItem(LS_SEARCH, e.target.value); setPage(1); }} />
-
-        {filters.map((f) => (
-          <span key={f.id} className="inline-flex items-center gap-1 text-xs pl-2.5 pr-1 py-1 rounded-full bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
-            <span className="font-medium">{describeFilter(f)}</span>
-            <button onClick={() => removeFilter(f.id)} className="w-4 h-4 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 leading-none" title="Quitar">×</button>
-          </span>
-        ))}
-
-        {!addingFilter ? (
-          <button onClick={() => setAddingFilter(true)}
-            className="text-xs px-2.5 py-1.5 rounded-lg border font-medium border-dashed hover:bg-gray-50 dark:hover:bg-gray-800"
-            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
-            + Agregar filtro
-          </button>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-lg border" style={{ borderColor: 'var(--border-md)', background: 'var(--bg)' }}>
-            <select className="input !py-1 text-xs w-36" value={draft.field} onChange={(e) => setDraftField(e.target.value)}>
-              {FILTER_FIELDS.map((fd) => <option key={fd.key} value={fd.key}>{fd.label}</option>)}
-            </select>
-            <select className="input !py-1 text-xs w-auto" value={draft.op} onChange={(e) => setDraft({ ...draft, op: e.target.value })}>
-              {OPS_BY_TYPE[draftType].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            {draftNeedsValue && (
-              draftType === 'enum' ? (
-                <select className="input !py-1 text-xs w-40" value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })}>
-                  <option value="">— elegí —</option>
-                  {enumOptions(draft.field, tablets, playlists).map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              ) : (
-                <input
-                  className="input !py-1 text-xs w-28"
-                  type={draftType === 'number' || draftType === 'sync' ? 'number' : 'text'}
-                  placeholder={draftType === 'sync' ? 'minutos' : ''}
-                  value={draft.value}
-                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
-                  onKeyDown={(e) => { if (e.key === 'Enter') commitDraft(); }}
-                  onWheel={(e) => e.currentTarget.blur()}
-                  autoFocus
-                />
-              )
-            )}
-            <button onClick={commitDraft} className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium">Agregar</button>
-            <button onClick={() => setAddingFilter(false)} className="text-xs px-2 py-1" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
-          </div>
-        )}
-
-        {filtersActive && (
-          <button
-            onClick={() => { setSearch(''); saveFilters([]); localStorage.setItem(LS_SEARCH, ''); }}
-            className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
-            style={{ color: 'var(--text-muted)' }}>
-            Limpiar todo
-          </button>
-        )}
-        <span className="text-xs ml-auto whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-          {filtered.length} de {tablets.length}
-        </span>
-      </div>
-      <div className="mb-4" />
+      <FilterBar
+        config={tabletFilterConfig}
+        rows={tablets}
+        filters={filters}
+        onChange={setFiltersPersist}
+        storageKey={LS_FILTERS}
+        search={search}
+        onSearch={(v) => { setSearch(v); localStorage.setItem(LS_SEARCH, v); setPage(1); }}
+        filteredCount={filtered.length}
+        total={tablets.length}
+        extraEnum={{ playlist: playlists.map((p) => p.name) }}
+      />
 
       {loading ? (
         <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}</div>
