@@ -243,6 +243,59 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/metrics/dedupe — mantenimiento manual: borra duplicados del
+// histórico de metrics en tandas y crea el índice único. Devuelve detalle
+// (incluido el error si algo falla) para poder diagnosticar sin logs de Render.
+// Body opcional: { batch?: number, maxBatches?: number, index?: boolean }
+router.post('/metrics/dedupe', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const batch = Math.min(200000, Math.max(1000, Number(req.body?.batch) || 50000));
+    const maxBatches = Math.min(500, Math.max(1, Number(req.body?.maxBatches) || 40));
+    const doIndex = req.body?.index !== false;
+
+    const before = await prisma.metric.count();
+    const steps = [];
+    let deletedByExists = 0;
+    let stoppedBecause = 'maxBatches';
+    for (let i = 0; i < maxBatches; i++) {
+      let n;
+      try {
+        n = Number(await prisma.$executeRawUnsafe(
+          `DELETE FROM metrics WHERE id IN (
+             SELECT m.id FROM metrics m
+             WHERE EXISTS (
+               SELECT 1 FROM metrics d
+               WHERE d.tablet_id = m.tablet_id AND d.ad_id = m.ad_id
+                 AND d.played_at = m.played_at AND d.id < m.id
+             )
+             LIMIT ${batch}
+           )`,
+        ));
+      } catch (e) {
+        return res.json({ ok: false, phase: 'delete', batchIndex: i, before, deletedByExists, error: e.message });
+      }
+      deletedByExists += n;
+      steps.push(n);
+      if (n === 0) { stoppedBecause = 'done'; break; }
+    }
+
+    let indexResult = 'skipped';
+    if (doIndex) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)`,
+        );
+        indexResult = 'ok';
+      } catch (e) {
+        indexResult = `error: ${e.message}`;
+      }
+    }
+
+    const after = await prisma.metric.count();
+    res.json({ ok: true, before, after, deletedByExists, stoppedBecause, batches: steps.length, steps, indexResult });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.
