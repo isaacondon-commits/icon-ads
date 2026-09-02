@@ -413,26 +413,44 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     // Guard duro: si armar el ZIP entero tarda demasiado, se aborta (evita
     // requests colgados y que la tablet quede esperando la descarga).
     const buildDeadline = setTimeout(() => fail('timeout total armando ZIP'), 90_000);
+    // Archivos remotos: se bajan a un temp en disco y se meten al ZIP con
+    // archive.file() (tamaño conocido, headers de ZIP correctos). Con streams de
+    // largo desconocido, archiver armaba entradas que el ZipInputStream del ROM
+    // Unisoc extraía CORRUPTAS → videos negros. Disco, no RAM.
+    const tmpMedia = [];
+    const cleanupTmp = () => { for (const p of tmpMedia) fs.unlink(p, () => {}); };
+    archive.on('end', cleanupTmp);
+    archive.on('close', cleanupTmp);
     try {
       archive.append(playlistJson, { name: 'playlist.json' });
       for (const s of sources) {
         if (failed) break;
         if (s.filePath) {
           archive.file(s.filePath, { name: s.name });
-        } else {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 30_000);
-          let remote;
-          try { remote = await fetch(s.url, { signal: ctrl.signal }); }
-          finally { clearTimeout(t); }
-          if (!remote.ok || !remote.body) { fail(`${s.name}: HTTP ${remote.status}`); break; }
-          // Stream del body directo al ZIP — nunca se bufferiza el archivo entero.
-          archive.append(Readable.fromWeb(remote.body), { name: s.name });
+          continue;
         }
+        const dl = path.join(cacheDir, `dl_${process.pid}_${Date.now()}_${path.basename(s.name)}`);
+        tmpMedia.push(dl);
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 45_000);
+        try {
+          const remote = await fetch(s.url, { signal: ctrl.signal });
+          if (!remote.ok || !remote.body) { fail(`${s.name}: HTTP ${remote.status}`); break; }
+          await new Promise((resolve, reject) => {
+            const ws = fs.createWriteStream(dl);
+            ws.on('error', reject);
+            ws.on('finish', resolve);
+            Readable.fromWeb(remote.body).on('error', reject).pipe(ws);
+          });
+        } finally { clearTimeout(t); }
+        const sz = fs.existsSync(dl) ? fs.statSync(dl).size : 0;
+        if (sz === 0) { fail(`${s.name}: descarga vacía`); break; }
+        archive.file(dl, { name: s.name });
       }
       if (!failed) archive.finalize();
     } catch (e) {
       fail(e.message);
+      cleanupTmp();
     } finally {
       clearTimeout(buildDeadline);
     }
