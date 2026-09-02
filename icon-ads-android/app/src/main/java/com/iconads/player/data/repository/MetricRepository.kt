@@ -39,34 +39,42 @@ class MetricRepository(context: Context) {
 
     suspend fun uploadPending(): Int = uploadLock.withLock {
         val token = prefs.getToken() ?: return@withLock 0
-        // Trabajar con entidades (traen el id) y borrar SOLO lo subido: el ciclo
-        // periódico y el MetricUploadWorker pueden llamar en paralelo, y si la
-        // subida se cae después de que el server insertó, no se borra nada y se
-        // reintenta el mismo lote -> el server ahora lo deduplica por clave
-        // natural, pero igual no hay que multiplicar el trabajo.
-        val pending = storage.readEntities()
-        if (pending.isEmpty()) return@withLock 0
-
         val api = NetworkModule.provideDeviceApi(token)
-        val payload = pending.map { m ->
-            MetricUpload(
-                adId = m.adId,
-                campaignId = m.campaignId,
-                playedAt = Instant.ofEpochMilli(m.playedAt)
-                    .atOffset(ZoneOffset.UTC)
-                    .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                durationPlayedS = m.durationPlayedS,
-                completed = m.completed,
-                error = m.error,
-            )
-        }
 
-        api.uploadMetrics(payload)
-        storage.deleteByIds(pending.map { it.id })
-        pending.size
+        // De a SLICE: acota el POST y, sobre todo, el DELETE ... IN (SQLite
+        // topea en 999 variables — un backlog grande hacía explotar deleteByIds
+        // y la cola quedaba trabada para siempre: la tablet reproducía pero no
+        // registraba nada). Se borra cada slice recién cuando su POST confirma.
+        var uploaded = 0
+        repeat(MAX_SLICES_PER_RUN) {
+            val slice = storage.readBatch(SLICE)
+            if (slice.isEmpty()) return@withLock uploaded
+
+            val payload = slice.map { m ->
+                MetricUpload(
+                    adId = m.adId,
+                    campaignId = m.campaignId,
+                    playedAt = Instant.ofEpochMilli(m.playedAt)
+                        .atOffset(ZoneOffset.UTC)
+                        .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                    durationPlayedS = m.durationPlayedS,
+                    completed = m.completed,
+                    error = m.error,
+                )
+            }
+            api.uploadMetrics(payload)                 // throws -> corta, se reintenta luego
+            storage.deleteByIds(slice.map { it.id })
+            uploaded += slice.size
+        }
+        // Si quedó backlog enorme tras el tope de slices, recortar lo más viejo.
+        storage.trimTo(MAX_QUEUE)
+        uploaded
     }
 
     companion object {
+        private const val SLICE = 400
+        private const val MAX_SLICES_PER_RUN = 40      // hasta 16k por corrida
+        private const val MAX_QUEUE = 20000
         // Proceso-wide: evita que dos subidas concurrentes lean el mismo lote.
         private val uploadLock = Mutex()
     }

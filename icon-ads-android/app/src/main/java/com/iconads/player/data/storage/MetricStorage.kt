@@ -40,8 +40,19 @@ class MetricStorage(context: Context) {
 
     fun readEntities(): List<MetricEntity> = dao.getAll()
 
+    fun readBatch(limit: Int): List<MetricEntity> = dao.getBatch(limit)
+
+    fun count(): Int = dao.count()
+
     fun deleteByIds(ids: List<Int>) {
         if (ids.isNotEmpty()) dao.deleteByIds(ids)
+    }
+
+    // Descarta las más viejas si la cola se descontroló (subida caída mucho
+    // tiempo). Evita que el archivo crezca sin límite.
+    fun trimTo(max: Int) {
+        val n = dao.count() - max
+        if (n > 0) dao.deleteOldest(n)
     }
 
     fun clear() {
