@@ -243,56 +243,57 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
-// POST /api/admin/metrics/dedupe — mantenimiento manual: borra duplicados del
-// histórico de metrics en tandas y crea el índice único. Devuelve detalle
-// (incluido el error si algo falla) para poder diagnosticar sin logs de Render.
-// Body opcional: { batch?: number, maxBatches?: number, index?: boolean }
+// POST /api/admin/metrics/dedupe — mantenimiento manual del histórico de metrics.
+// Body: { batch?, maxBatches?, all?: boolean }
+//   all=false (default): borra sólo duplicados por (tablet_id, ad_id, played_at).
+//   all=true: borra TODAS las filas en tandas (para el reset por basura de test).
+// Devuelve detalle + error si algo falla (para diagnosticar sin logs de Render).
 router.post('/metrics/dedupe', apiKeyOrAuth, async (req, res, next) => {
   try {
     const batch = Math.min(200000, Math.max(1000, Number(req.body?.batch) || 50000));
-    const maxBatches = Math.min(500, Math.max(1, Number(req.body?.maxBatches) || 40));
-    const doIndex = req.body?.index !== false;
+    const maxBatches = Math.min(2000, Math.max(1, Number(req.body?.maxBatches) || 40));
+    const all = req.body?.all === true;
 
     const before = await prisma.metric.count();
+    const delSql = all
+      ? `DELETE FROM metrics WHERE id IN (SELECT id FROM metrics LIMIT ${batch})`
+      : `DELETE FROM metrics WHERE id IN (
+           SELECT m.id FROM metrics m
+           WHERE EXISTS (
+             SELECT 1 FROM metrics d
+             WHERE d.tablet_id = m.tablet_id AND d.ad_id = m.ad_id
+               AND d.played_at = m.played_at AND d.id < m.id
+           )
+           LIMIT ${batch}
+         )`;
+
     const steps = [];
-    let deletedByExists = 0;
+    let deleted = 0;
     let stoppedBecause = 'maxBatches';
     for (let i = 0; i < maxBatches; i++) {
       let n;
       try {
-        n = Number(await prisma.$executeRawUnsafe(
-          `DELETE FROM metrics WHERE id IN (
-             SELECT m.id FROM metrics m
-             WHERE EXISTS (
-               SELECT 1 FROM metrics d
-               WHERE d.tablet_id = m.tablet_id AND d.ad_id = m.ad_id
-                 AND d.played_at = m.played_at AND d.id < m.id
-             )
-             LIMIT ${batch}
-           )`,
-        ));
+        n = Number(await prisma.$executeRawUnsafe(delSql));
       } catch (e) {
-        return res.json({ ok: false, phase: 'delete', batchIndex: i, before, deletedByExists, error: e.message });
+        return res.json({ ok: false, phase: 'delete', batchIndex: i, before, deleted, error: e.message });
       }
-      deletedByExists += n;
+      deleted += n;
       steps.push(n);
       if (n === 0) { stoppedBecause = 'done'; break; }
     }
 
     let indexResult = 'skipped';
-    if (doIndex) {
-      try {
-        await prisma.$executeRawUnsafe(
-          `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)`,
-        );
-        indexResult = 'ok';
-      } catch (e) {
-        indexResult = `error: ${e.message}`;
-      }
+    try {
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)`,
+      );
+      indexResult = 'ok';
+    } catch (e) {
+      indexResult = `error: ${e.message}`;
     }
 
     const after = await prisma.metric.count();
-    res.json({ ok: true, before, after, deletedByExists, stoppedBecause, batches: steps.length, steps, indexResult });
+    res.json({ ok: true, all, before, after, deleted, stoppedBecause, batches: steps.length, steps, indexResult });
   } catch (err) { next(err); }
 });
 
