@@ -216,7 +216,14 @@ export const api = {
 
   // Stats
   getStats: () => request<SystemStats>('/api/stats'),
-  getWeeklyStats: (weeks?: number) => request<WeeklyEntry[]>(`/api/stats/weekly${weeks ? `?weeks=${weeks}` : ''}`),
+  getWeeklyStats: (weeks?: number, opts?: StatsFilter) => {
+    const p = new URLSearchParams();
+    if (weeks) p.set('weeks', String(weeks));
+    if (opts?.campaignId) p.set('campaignId', String(opts.campaignId));
+    if (opts?.tabletId) p.set('tabletId', String(opts.tabletId));
+    const qs = p.toString();
+    return request<WeeklyEntry[]>(`/api/stats/weekly${qs ? `?${qs}` : ''}`);
+  },
   getRangeStats: (from: string, to: string, opts?: StatsFilter) =>
     request<RangeStats>(`/api/stats/range?${statsQs(from, to, opts)}`),
   getDailyStats: (from: string, to: string, opts?: StatsFilter) =>
@@ -238,12 +245,12 @@ export const api = {
     request<HourlyCount[]>(`/api/stats/heatmap${from ? `?${statsQs(from, to!, opts)}` : ''}`),
   getHeatmapByDay: (from?: string, to?: string, opts?: StatsFilter) =>
     request<DayHourCount[]>(`/api/stats/heatmap-by-day${from ? `?${statsQs(from, to!, opts)}` : ''}`),
-  getCompletionRate: (from?: string, to?: string) =>
-    request<CompletionRate[]>(`/api/stats/completion${from ? `?from=${from}&to=${to}` : ''}`),
+  getCompletionRate: (from?: string, to?: string, opts?: StatsFilter) =>
+    request<CompletionRate[]>(`/api/stats/completion${from ? `?${statsQs(from, to!, opts)}` : ''}`),
   getPlaylistStats: (from?: string, to?: string) =>
     request<PlaylistStat[]>(`/api/stats/playlists${from ? `?from=${from}&to=${to}` : ''}`),
-  getPlaysByTabletAd: (from?: string, to?: string) =>
-    request<TabletAdPlay[]>(`/api/stats/by-tablet-ad${from ? `?from=${from}&to=${to}` : ''}`),
+  getPlaysByTabletAd: (from?: string, to?: string, opts?: StatsFilter) =>
+    request<TabletAdPlay[]>(`/api/stats/by-tablet-ad${from ? `?${statsQs(from, to!, opts)}` : ''}`),
 
   // Notifications
   getNotifications: () => request<Notifications>('/api/notifications'),
@@ -396,7 +403,13 @@ export const api = {
   getBackupUrl: () => `${BASE}/api/admin/backup`,
 
   // Monthly seasonality (#38)
-  getMonthlyStats: () => request<MonthlyEntry[]>('/api/stats/monthly'),
+  getMonthlyStats: (opts?: StatsFilter) => {
+    const p = new URLSearchParams();
+    if (opts?.campaignId) p.set('campaignId', String(opts.campaignId));
+    if (opts?.tabletId) p.set('tabletId', String(opts.tabletId));
+    const qs = p.toString();
+    return request<MonthlyEntry[]>(`/api/stats/monthly${qs ? `?${qs}` : ''}`);
+  },
 
   // Multi-sheet Excel export URL (#64)
   getExcelUrl: () => `${BASE}/api/admin/export/excel`,
@@ -638,6 +651,10 @@ export interface WeeklyEntry { week: string; from: string; to: string; count: nu
 export interface DailyEntry { date: string; count: number; }
 export interface RangeStats {
   from: string; to: string; totalPlays: number;
+  completedPlays: number;
+  distinctCampaigns: number;
+  distinctTablets: number;
+  distinctAds: number;
   dailyPlays: { date: string; count: number }[];
   playsByCampaign: { campaignId: number; campaignName: string; count: number }[];
   playsByTablet: { tabletId: number; tabletName: string; count: number }[];

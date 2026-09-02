@@ -67,10 +67,12 @@ export default function StatsPage() {
       api.getDailyStats(f, t, opts),
       api.getHeatmap(f, t, opts),
       api.getHeatmapByDay(f, t, opts),
-      api.getCompletionRate(f, t),
+      api.getCompletionRate(f, t, opts),
       api.getPlaylistStats(f, t),
-      api.getPlaysByTabletAd(f, t),
-    ]).then(([r, d, h, hd, c, p, ta]) => {
+      api.getPlaysByTabletAd(f, t, opts),
+      api.getWeeklyStats(8, opts),
+      api.getMonthlyStats(opts),
+    ]).then(([r, d, h, hd, c, p, ta, wk, mo]) => {
       if (r.status === 'fulfilled') setRange(r.value);
       if (d.status === 'fulfilled') setDaily(d.value);
       if (h.status === 'fulfilled') setHeatmap(h.value);
@@ -78,14 +80,14 @@ export default function StatsPage() {
       if (c.status === 'fulfilled') setCompletion(c.value);
       if (p.status === 'fulfilled') setPlaylists(p.value);
       if (ta.status === 'fulfilled') setTabletAdPlays(ta.value);
+      if (wk.status === 'fulfilled') setWeekly(wk.value);
+      if (mo.status === 'fulfilled') setMonthly(mo.value);
     }).finally(() => setLoadingRange(false));
   };
 
   const loadStatic = () => {
     api.getCampaigns().then(setCampaigns).catch(() => {});
     api.getTablets().then(setTablets).catch(() => {});
-    api.getWeeklyStats(8).then(setWeekly).catch(() => {});
-    api.getMonthlyStats().then(setMonthly).catch(() => {});
     api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
     api.getZoneStats().then(setZoneStats).catch(() => {});
     api.getSyncIntervals().then(setSyncIntervals).catch(() => {});
@@ -144,9 +146,11 @@ export default function StatsPage() {
   const rangeDays = daysBetween(from, to);
   const totalImpr = range?.totalPlays ?? 0;
   const avgDaily = Math.round(totalImpr / rangeDays);
-  const complTotal = completion.reduce((s, c) => s + c.totalPlays, 0);
-  const complDone = completion.reduce((s, c) => s + c.completedPlays, 0);
-  const completionPct = complTotal > 0 ? Math.round((complDone / complTotal) * 100) : null;
+  // Tasa de finalización sobre TODAS las reproducciones del rango (respeta los
+  // filtros), no sobre el top-15 de la tabla de detalle.
+  const completionPct = range && range.totalPlays > 0
+    ? Math.round((range.completedPlays / range.totalPlays) * 100)
+    : null;
   const avgCoverage = slaStats.length ? Math.round(slaStats.reduce((s, x) => s + x.coveragePct, 0) / slaStats.length) : null;
 
   const fleetTotal = monitor.length;
@@ -251,11 +255,11 @@ export default function StatsPage() {
             tip={<>Cada vez que un anuncio se mostró en una tablet dentro del rango{filterLabel ? ` y filtros (${filterLabel})` : ''}. <b>Fuente:</b> tabla <code>metrics</code> (una fila por reproducción), <code>/api/stats/range</code>.</>} />
           <Kpi label={`Promedio / día`} value={nf(avgDaily)}
             tip={<>Impresiones ÷ días del rango. Base para proyectar volumen.</>} />
-          <Kpi label="Campañas con actividad" value={range?.playsByCampaign.length ?? 0}
-            tip={<>Campañas con al menos una impresión en el rango.</>} />
+          <Kpi label="Campañas con actividad" value={range?.distinctCampaigns ?? 0}
+            tip={<>Campañas distintas con al menos una impresión en el rango{filterLabel ? ` y filtros (${filterLabel})` : ''}. <b>Fuente:</b> <code>COUNT(DISTINCT campaign_id)</code> sobre <code>metrics</code> — no está topeado, a diferencia del ranking de abajo (top 10).</>} />
           <Kpi label="Tasa de finalización" value={completionPct == null ? '—' : `${completionPct}%`}
             good={completionPct != null && completionPct >= 80}
-            tip={<>% de reproducciones que llegaron al final. <b>Fuente:</b> campo <code>completed</code> de <code>metrics</code>. No filtra por campaña/tablet.</>} />
+            tip={<>% de <b>todas</b> las reproducciones del rango que llegaron al final (respeta los filtros). <b>Fuente:</b> campo <code>completed</code> de <code>metrics</code>, vía <code>/api/stats/range</code>.</>} />
           <Kpi label="Cobertura de flota (30d)" value={avgCoverage == null ? '—' : `${avgCoverage}%`}
             good={avgCoverage != null && avgCoverage >= 85}
             tip={<>Promedio de % de días del último mes en que cada tablet sincronizó. <b>Fuente:</b> <code>sync_logs</code>, <code>/api/stats/sla</code>.</>} />
@@ -268,8 +272,9 @@ export default function StatsPage() {
           <h2 className="font-semibold">
             Reproducciones — tendencia
             <InfoTip>
-              <b>Día:</b> reproducciones por día del mes actual (respeta los filtros de campaña/tablet).{' '}
-              <b>Semana:</b> últimas 8 semanas. <b>Mes:</b> últimos 12 meses. Semana y mes son totales de toda la flota.{' '}
+              <b>Día:</b> reproducciones por día del <b>rango elegido arriba</b> (con días en 0 incluidos).{' '}
+              <b>Semana:</b> últimas 8 semanas móviles. <b>Mes:</b> últimos 12 meses.{' '}
+              Las tres respetan los filtros de campaña/tablet; <b>Semana y Mes ignoran el rango de fechas</b> (son ventanas fijas).{' '}
               <b>Fuente:</b> <code>metrics.played_at</code> agrupado por fecha local (America/Montevideo).
             </InfoTip>
           </h2>
@@ -295,8 +300,11 @@ export default function StatsPage() {
           )}
         </div>
 
-        {trendMode !== 'day' && filterLabel && (
-          <p className="text-[11px] mb-2 text-amber-500">La vista {trendUnit === 'semana' ? 'semanal' : 'mensual'} no filtra por campaña/tablet.</p>
+        {trendMode !== 'day' && (
+          <p className="text-[11px] mb-2 text-amber-500">
+            La vista {trendUnit === 'semana' ? 'semanal (8 semanas móviles)' : 'mensual (12 meses)'} no usa el rango de fechas de arriba —
+            por eso su total no coincide con el de la vista Día. Los filtros de campaña/tablet sí se aplican.
+          </p>
         )}
 
         <BarChart data={trend} loading={loadingRange && trendMode === 'day'} />
@@ -381,9 +389,9 @@ export default function StatsPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               {[
                 { label: 'Total reproducciones', value: nf(range.totalPlays) },
-                { label: 'Campañas', value: range.playsByCampaign.length },
-                { label: 'Tablets', value: range.playsByTablet.length },
-                { label: 'Días con actividad', value: range.dailyPlays.filter((d) => d.count > 0).length },
+                { label: 'Campañas', value: range.distinctCampaigns },
+                { label: 'Tablets', value: range.distinctTablets },
+                { label: 'Días con actividad', value: `${range.dailyPlays.filter((d) => d.count > 0).length} / ${range.dailyPlays.length}` },
               ].map((s) => (
                 <div key={s.label} className="rounded-lg p-4" style={{ background: 'var(--bg)' }}>
                   <p className="text-2xl font-bold tabular-nums">{s.value}</p>
@@ -717,7 +725,7 @@ function BarChart({ data, loading }: { data: { key: string; label: string; value
 function HeatmapDayHour({ rows, loading, from, to, filterLabel }: {
   rows: DayHourCount[]; loading: boolean; from: string; to: string; filterLabel: string;
 }) {
-  const days = useMemo(() => [...new Set(rows.map((r) => r.date))].sort().slice(-45), [rows]);
+  const days = useMemo(() => [...new Set(rows.map((r) => r.date))].sort().slice(-92), [rows]);
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const lookup = useMemo(() => new Map(rows.map((r) => [`${r.date}:${r.hour}`, r.count])), [rows]);
   const max = Math.max(...rows.map((r) => r.count), 1);

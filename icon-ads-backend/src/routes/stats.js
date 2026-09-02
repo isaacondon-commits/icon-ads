@@ -17,6 +17,35 @@ function metricFilter(prefix, campaignId, tabletId) {
 }
 const intParam = (v) => (v !== undefined && v !== '' && Number.isFinite(parseInt(v)) ? parseInt(v) : undefined);
 
+// Montevideo es UTC-3 todo el año (sin horario de verano). Un 'YYYY-MM-DD' del
+// panel representa un día LOCAL: arranca a las 03:00 UTC y termina a las
+// 02:59:59.999 UTC del día siguiente. Alinear el filtro por rango con esto
+// evita que el último día del rango pierda sus horas de la tarde y que
+// aparezca un día parcial de más al principio (el agrupado usa
+// DATE(played_at AT TIME ZONE 'America/Montevideo')).
+const MVD_OFFSET_MS = 3 * 60 * 60 * 1000;
+function mvdRange(fromStr, toStr) {
+  const from = fromStr
+    ? new Date(Date.parse(`${String(fromStr).slice(0, 10)}T00:00:00Z`) + MVD_OFFSET_MS)
+    : new Date(Date.now() - 30 * 86400000);
+  const to = toStr
+    ? new Date(Date.parse(`${String(toStr).slice(0, 10)}T00:00:00Z`) + MVD_OFFSET_MS + 86400000 - 1)
+    : new Date();
+  return { from, to };
+}
+
+// Completa con 0 los días locales sin reproducciones, para que el promedio por
+// día y los gráficos no salteen fechas.
+function zeroFillDaily(rows, from, to) {
+  const map = new Map(rows.map((r) => [String(r.date).slice(0, 10), Number(r.count)]));
+  const out = [];
+  for (let t = from.getTime(); t <= to.getTime(); t += 86400000) {
+    const key = new Date(t - MVD_OFFSET_MS).toISOString().slice(0, 10);
+    out.push({ date: key, count: map.get(key) ?? 0 });
+  }
+  return out;
+}
+
 // GET /api/stats — global stats + chart data (#35 enhanced)
 router.get('/', async (req, res, next) => {
   try {
@@ -127,6 +156,12 @@ router.get('/roi', async (req, res, next) => {
 router.get('/weekly', async (req, res, next) => {
   try {
     const weeks = Math.min(8, parseInt(req.query.weeks) || 4);
+    const campaignId = intParam(req.query.campaignId);
+    const tabletId = intParam(req.query.tabletId);
+    const extra = {
+      ...(Number.isFinite(campaignId) ? { campaignId } : {}),
+      ...(Number.isFinite(tabletId) ? { tabletId } : {}),
+    };
     const result = [];
     for (let w = weeks - 1; w >= 0; w--) {
       const from = new Date();
@@ -134,7 +169,7 @@ router.get('/weekly', async (req, res, next) => {
       from.setHours(0, 0, 0, 0);
       const to = new Date(from);
       to.setDate(to.getDate() + 7);
-      const count = await prisma.metric.count({ where: { playedAt: { gte: from, lt: to } } });
+      const count = await prisma.metric.count({ where: { playedAt: { gte: from, lt: to }, ...extra } });
       result.push({
         week: `Sem -${w}`,
         from: from.toISOString().slice(0, 10),
@@ -151,9 +186,7 @@ router.get('/weekly', async (req, res, next) => {
 // GET /api/stats/daily?from=&to=&campaignId=&tabletId= — reproducciones por día
 router.get('/daily', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = mvdRange(req.query.from, req.query.to);
     const campaignId = intParam(req.query.campaignId);
     const tabletId = intParam(req.query.tabletId);
     const rows = await prisma.$queryRaw(Prisma.sql`
@@ -162,7 +195,7 @@ router.get('/daily', async (req, res, next) => {
       WHERE played_at BETWEEN ${from} AND ${to} ${metricFilter('', campaignId, tabletId)}
       GROUP BY DATE(played_at AT TIME ZONE 'America/Montevideo') ORDER BY date ASC
     `);
-    res.json(rows.map((r) => ({ date: String(r.date).slice(0, 10), count: Number(r.count) })));
+    res.json(zeroFillDaily(rows, from, to));
   } catch (err) {
     next(err);
   }
@@ -171,14 +204,21 @@ router.get('/daily', async (req, res, next) => {
 // GET /api/stats/range?from=&to=&campaignId=&tabletId= — plays filtered by date range (#13)
 router.get('/range', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = mvdRange(req.query.from, req.query.to);
     const campaignId = intParam(req.query.campaignId);
     const tabletId = intParam(req.query.tabletId);
     const f = (p) => metricFilter(p, campaignId, tabletId);
 
-    const [dailyRows, campaignRows, tabletRows, adRows] = await Promise.all([
+    const [aggRows, dailyRows, campaignRows, tabletRows, adRows] = await Promise.all([
+      prisma.$queryRaw(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS "totalPlays",
+          COUNT(DISTINCT campaign_id)::int AS "distinctCampaigns",
+          COUNT(DISTINCT tablet_id)::int AS "distinctTablets",
+          COUNT(DISTINCT ad_id)::int AS "distinctAds",
+          COALESCE(SUM(CASE WHEN completed THEN 1 ELSE 0 END), 0)::int AS "completedPlays"
+        FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
+      `),
       prisma.$queryRaw(Prisma.sql`
         SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date, COUNT(*)::int AS count
         FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
@@ -204,11 +244,16 @@ router.get('/range', async (req, res, next) => {
       `),
     ]);
 
+    const agg = aggRows[0] || {};
     res.json({
       from: from.toISOString(),
       to: to.toISOString(),
-      totalPlays: dailyRows.reduce((s, r) => s + Number(r.count), 0),
-      dailyPlays: dailyRows.map((r) => ({ date: String(r.date).slice(0, 10), count: Number(r.count) })),
+      totalPlays: Number(agg.totalPlays ?? 0),
+      completedPlays: Number(agg.completedPlays ?? 0),
+      distinctCampaigns: Number(agg.distinctCampaigns ?? 0),
+      distinctTablets: Number(agg.distinctTablets ?? 0),
+      distinctAds: Number(agg.distinctAds ?? 0),
+      dailyPlays: zeroFillDaily(dailyRows, from, to),
       playsByCampaign: campaignRows.map((r) => ({ campaignId: Number(r.campaignId), campaignName: r.campaignName, count: Number(r.count) })),
       playsByTablet: tabletRows.map((r) => ({ tabletId: Number(r.tabletId), tabletName: r.tabletName, count: Number(r.count) })),
       playsByAd: adRows.map((r) => ({ adId: Number(r.adId), adName: r.adName, count: Number(r.count) })),
@@ -223,19 +268,18 @@ router.get('/range', async (req, res, next) => {
 // side, not the cross breakdown)
 router.get('/by-tablet-ad', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = mvdRange(req.query.from, req.query.to);
 
-    const rows = await prisma.$queryRaw`
+    const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT t.id AS "tabletId", t.name AS "tabletName", a.id AS "adId", a.name AS "adName", COUNT(m.id)::int AS count
       FROM metrics m
       JOIN tablets t ON m.tablet_id = t.id
       JOIN ads a ON m.ad_id = a.id
       WHERE m.played_at BETWEEN ${from} AND ${to}
+      ${metricFilter('m', intParam(req.query.campaignId), intParam(req.query.tabletId))}
       GROUP BY t.id, t.name, a.id, a.name
       ORDER BY t.name ASC, count DESC
-    `;
+    `);
 
     res.json(rows.map((r) => ({
       tabletId: Number(r.tabletId), tabletName: r.tabletName,
@@ -249,9 +293,7 @@ router.get('/by-tablet-ad', async (req, res, next) => {
 // GET /api/stats/heatmap?from=&to= — plays per hour of day (#11)
 router.get('/heatmap', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = mvdRange(req.query.from, req.query.to);
     const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour, COUNT(*)::int AS count
       FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
@@ -270,9 +312,7 @@ router.get('/heatmap', async (req, res, next) => {
 // calendar day, for the day × hour grid version of /heatmap
 router.get('/heatmap-by-day', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = mvdRange(req.query.from, req.query.to);
     const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT DATE(played_at AT TIME ZONE 'America/Montevideo') AS date,
              EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour,
@@ -291,17 +331,16 @@ router.get('/heatmap-by-day', async (req, res, next) => {
 // GET /api/stats/completion?from=&to= — completion rate per ad (#12)
 router.get('/completion', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
-    const rows = await prisma.$queryRaw`
+    const { from, to } = mvdRange(req.query.from, req.query.to);
+    const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT a.id AS "adId", a.name AS "adName",
         COUNT(m.id)::int AS "totalPlays",
         SUM(CASE WHEN m.completed THEN 1 ELSE 0 END)::int AS "completedPlays"
       FROM metrics m JOIN ads a ON m.ad_id = a.id
       WHERE m.played_at BETWEEN ${from} AND ${to}
+      ${metricFilter('m', intParam(req.query.campaignId), intParam(req.query.tabletId))}
       GROUP BY a.id, a.name ORDER BY "totalPlays" DESC LIMIT 15
-    `;
+    `);
     res.json(rows.map((r) => ({
       adId: Number(r.adId),
       adName: r.adName,
@@ -386,9 +425,7 @@ router.get('/metrics/export', async (req, res, next) => {
 // GET /api/stats/playlists?from=&to= — plays per playlist (#3)
 router.get('/playlists', async (req, res, next) => {
   try {
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 30 * 86400000);
-    const to = req.query.to ? new Date(req.query.to) : new Date();
-    to.setHours(23, 59, 59, 999);
+    const { from, to } = mvdRange(req.query.from, req.query.to);
 
     const [playlists, metricsRows] = await Promise.all([
       prisma.playlist.findMany({
@@ -537,15 +574,16 @@ router.get('/sla', async (req, res, next) => {
 // GET /api/stats/monthly — plays per month, last 12 months (#38)
 router.get('/monthly', async (req, res, next) => {
   try {
-    const rows = await prisma.$queryRaw`
+    const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT
         TO_CHAR(DATE_TRUNC('month', played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM') AS month,
         COUNT(*)::int AS count
       FROM metrics
       WHERE played_at >= NOW() - INTERVAL '12 months'
+      ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
       GROUP BY DATE_TRUNC('month', played_at AT TIME ZONE 'America/Montevideo')
       ORDER BY month
-    `;
+    `);
     res.json(rows.map((r) => ({ month: String(r.month), count: Number(r.count) })));
   } catch (err) { next(err); }
 });
