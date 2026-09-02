@@ -279,9 +279,10 @@ router.get('/tablet/:id/screenshot', apiKeyOrAuth, async (req, res, next) => {
 // GET /api/admin/fleet-health — diagnóstico por tablet (apiKeyOrAuth).
 router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
   try {
-    const [tablets, playlists, metricsTotal] = await Promise.all([
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const [tablets, playlists, metricsTotal, metricsByTablet, errsByTablet] = await Promise.all([
       prisma.tablet.findMany({
-        select: { id: true, name: true, playlistId: true, lastSync: true, appVersion: true, fcmToken: true, serial: true, manualStatus: true },
+        select: { id: true, name: true, playlistId: true, lastSync: true, appVersion: true, fcmToken: true, serial: true, manualStatus: true, playerOk: true, onFallback: true, lastAdAgoS: true },
         orderBy: { id: 'asc' },
       }),
       prisma.playlist.findMany({
@@ -291,7 +292,11 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         },
       }),
       prisma.metric.count(),
+      prisma.metric.groupBy({ by: ['tabletId'], _count: { _all: true }, where: { playedAt: { gte: since } } }),
+      prisma.errorLog.groupBy({ by: ['tabletId'], _count: { _all: true }, where: { createdAt: { gte: since } } }).catch(() => []),
     ]);
+    const metricMap = Object.fromEntries(metricsByTablet.map((r) => [r.tabletId, r._count._all]));
+    const errMap = Object.fromEntries((errsByTablet || []).map((r) => [r.tabletId, r._count._all]));
     const now = Date.now();
     const plById = Object.fromEntries(playlists.map((p) => [p.id, p]));
     const rows = tablets.map((t) => {
@@ -311,6 +316,11 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         appVersion: t.appVersion,
         serial: t.serial,
         lastSyncHace: t.lastSync ? Math.round((now - new Date(t.lastSync).getTime()) / 1000) + 's' : 'nunca',
+        playerOk: t.playerOk ?? null,
+        onFallback: t.onFallback ?? null,
+        lastAdAgoS: t.lastAdAgoS ?? null,
+        metrics24h: metricMap[t.id] ?? 0,
+        errors24h: errMap[t.id] ?? 0,
       };
     });
     res.json({

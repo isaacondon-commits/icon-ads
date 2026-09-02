@@ -457,57 +457,77 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 // POST /api/device/metrics — batch upload playback metrics
 router.post('/metrics', requireDevice, async (req, res, next) => {
   try {
-    const parsed = metricsSchema.parse(req.body);
     const tabletId = req.tablet.id;
 
-    // Idempotencia: la app reenvía el mismo lote si no llega a confirmar la
-    // subida (timeout, corte). Se deduplica dentro del lote y contra lo que ya
-    // está en la DB antes de insertar. La clave natural es
-    // (tablet_id, ad_id, played_at) — dos reproducciones reales del mismo
-    // anuncio en la misma tablet en el mismo milisegundo no existen.
+    // Validación TOLERANTE: se filtran filas inválidas en vez de rechazar todo
+    // el lote con 400 — una sola fila mala (o un lote gigante que reventaba el
+    // spread de Math.min) dejaba a la tablet reenviando el mismo backlog para
+    // siempre y sin registrar nada (síntoma: "reproduce pero el monitor dice 0").
+    // Clave natural para dedup: (tablet_id, ad_id, played_at).
+    const MAX_BATCH = 5000;
+    const raw = Array.isArray(req.body) ? req.body : [];
     const seen = new Set();
     const metrics = [];
-    for (const m of parsed) {
-      const key = `${m.adId}|${new Date(m.playedAt).getTime()}`;
+    for (const m of raw) {
+      if (!m || typeof m !== 'object') continue;
+      const adId = Number(m.adId);
+      const campaignId = Number(m.campaignId);
+      const t = Date.parse(m.playedAt);
+      if (!Number.isInteger(adId) || adId <= 0) continue;
+      if (!Number.isInteger(campaignId) || campaignId <= 0) continue;
+      if (!Number.isFinite(t)) continue;
+      const key = `${adId}|${t}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      metrics.push(m);
+      metrics.push({
+        tabletId,
+        adId,
+        campaignId,
+        playedAt: new Date(t),
+        durationPlayedS: Math.max(0, Math.round(Number(m.durationPlayedS) || 0)),
+        completed: m.completed === true,
+        error: m.error === true,
+      });
+      if (metrics.length >= MAX_BATCH) break; // el resto viene en el próximo envío
     }
 
     let saved = 0;
     if (metrics.length) {
-      const timesMs = metrics.map((m) => new Date(m.playedAt).getTime());
+      let minMs = Infinity;
+      let maxMs = -Infinity;
+      for (const m of metrics) {
+        const t = m.playedAt.getTime();
+        if (t < minMs) minMs = t;
+        if (t > maxMs) maxMs = t;
+      }
       const existing = await prisma.metric.findMany({
-        where: {
-          tabletId,
-          playedAt: { gte: new Date(Math.min(...timesMs)), lte: new Date(Math.max(...timesMs)) },
-        },
+        where: { tabletId, playedAt: { gte: new Date(minMs), lte: new Date(maxMs) } },
         select: { adId: true, playedAt: true },
       });
       const existingKeys = new Set(existing.map((e) => `${e.adId}|${e.playedAt.getTime()}`));
-      const fresh = metrics.filter((m) => !existingKeys.has(`${m.adId}|${new Date(m.playedAt).getTime()}`));
+      const fresh = metrics.filter((m) => !existingKeys.has(`${m.adId}|${m.playedAt.getTime()}`));
 
-      if (fresh.length) {
-        const result = await prisma.metric.createMany({
-          data: fresh.map((m) => ({
-            tabletId,
-            adId: m.adId,
-            campaignId: m.campaignId,
-            playedAt: new Date(m.playedAt),
-            durationPlayedS: m.durationPlayedS,
-            completed: m.completed,
-            error: m.error,
-          })),
-          skipDuplicates: true,
-        });
-        saved = result.count;
+      // Sub-lotes para no pasar el límite de parámetros de Postgres; si un
+      // chunk falla (p. ej. FK a un ad borrado de verdad), se reintenta fila
+      // por fila para no perder el resto.
+      for (let i = 0; i < fresh.length; i += 1000) {
+        const chunk = fresh.slice(i, i + 1000);
+        try {
+          const r = await prisma.metric.createMany({ data: chunk, skipDuplicates: true });
+          saved += r.count;
+        } catch {
+          for (const row of chunk) {
+            try { await prisma.metric.create({ data: row }); saved++; }
+            catch (e) { console.warn(`[metrics] fila descartada (tablet ${tabletId} ad ${row.adId}): ${e.message}`); }
+          }
+        }
       }
     }
 
     // Auto-pausa por max_impressions (#7) — una query agrupada, y sólo si
     // alguna campaña del lote tiene tope configurado (antes eran N COUNT(*)
     // secuenciales que se volvían lentos y hacían solapar las subidas).
-    const campaignIds = [...new Set(parsed.map((m) => m.campaignId))];
+    const campaignIds = [...new Set(metrics.map((m) => m.campaignId))];
     if (campaignIds.length) {
       try {
         const capped = await prisma.campaign.findMany({
