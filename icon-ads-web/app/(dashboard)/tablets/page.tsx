@@ -13,6 +13,8 @@ type StatusFilter = 'all' | 'online' | 'offline' | 'no-playlist';
 const TIMEZONES = ['America/Montevideo', 'America/Argentina/Buenos_Aires', 'America/Sao_Paulo', 'UTC'];
 const LS_SEARCH = 'tablets_filter_search';
 const LS_STATUS = 'tablets_filter_status';
+const LS_PLAYLIST = 'tablets_filter_playlist';
+const LS_ZONE = 'tablets_filter_zone';
 
 export default function TabletsPage() {
   const { show } = useToast();
@@ -30,6 +32,11 @@ export default function TabletsPage() {
     if (typeof window === 'undefined') return 'all';
     return (localStorage.getItem(LS_STATUS) as StatusFilter) ?? 'all';
   });
+  // 'all' | 'none' (sin playlist) | id de playlist como string
+  const [playlistFilter, setPlaylistFilter] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem(LS_PLAYLIST) ?? 'all') : 'all');
+  const [zoneFilter, setZoneFilter] = useState<string>(() =>
+    typeof window !== 'undefined' ? (localStorage.getItem(LS_ZONE) ?? 'all') : 'all');
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
   const [togglingBlock, setTogglingBlock] = useState<number | null>(null);
@@ -76,8 +83,29 @@ export default function TabletsPage() {
     const matchStatus =
       statusFilter === 'all' || (statusFilter === 'online' && isOnline) ||
       (statusFilter === 'offline' && !isOnline) || (statusFilter === 'no-playlist' && !t.playlistId);
-    return matchSearch && matchStatus;
+    const matchPlaylist =
+      playlistFilter === 'all' ||
+      (playlistFilter === 'none' && !t.playlistId) ||
+      String(t.playlistId ?? '') === playlistFilter;
+    const matchZone = zoneFilter === 'all' || (t.zone ?? '') === zoneFilter;
+    return matchSearch && matchStatus && matchPlaylist && matchZone;
   });
+
+  // Cuántas tablets hay por playlist (sobre TODAS, no las filtradas).
+  const playlistBreakdown = (() => {
+    const counts = new Map<number, number>();
+    let none = 0;
+    for (const t of tablets) {
+      if (t.playlistId) counts.set(t.playlistId, (counts.get(t.playlistId) ?? 0) + 1);
+      else none += 1;
+    }
+    const rows = [...counts.entries()]
+      .map(([id, count]) => ({ id, name: playlists.find((p) => p.id === id)?.name ?? `Playlist ${id}`, count }))
+      .sort((a, b) => b.count - a.count);
+    return { rows, none };
+  })();
+  const zones = [...new Set(tablets.map((t) => t.zone).filter(Boolean) as string[])].sort();
+  const filtersActive = playlistFilter !== 'all' || zoneFilter !== 'all' || statusFilter !== 'all' || search !== '';
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -217,6 +245,32 @@ export default function TabletsPage() {
         </div>
       </div>
 
+      {/* Resumen por playlist — cuántas tablets hay en cada una. Clickeable = filtra. */}
+      {(playlistBreakdown.rows.length > 0 || playlistBreakdown.none > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
+          <span style={{ color: 'var(--text-muted)' }}>Por playlist:</span>
+          {playlistBreakdown.rows.map((r) => {
+            const active = playlistFilter === String(r.id);
+            return (
+              <button key={r.id}
+                onClick={() => { const v = active ? 'all' : String(r.id); setPlaylistFilter(v); localStorage.setItem(LS_PLAYLIST, v); setPage(1); }}
+                className={`px-2 py-1 rounded-full border font-medium transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-blue-50 dark:hover:bg-blue-950'}`}
+                style={!active ? { borderColor: 'var(--border-md)' } : undefined}>
+                {r.name} <span className={active ? 'opacity-80' : ''} style={!active ? { color: 'var(--text-muted)' } : undefined}>· {r.count}</span>
+              </button>
+            );
+          })}
+          {playlistBreakdown.none > 0 && (
+            <button
+              onClick={() => { const v = playlistFilter === 'none' ? 'all' : 'none'; setPlaylistFilter(v); localStorage.setItem(LS_PLAYLIST, v); setPage(1); }}
+              className={`px-2 py-1 rounded-full border font-medium ${playlistFilter === 'none' ? 'bg-amber-500 text-white border-amber-500' : 'hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-600'}`}
+              style={playlistFilter !== 'none' ? { borderColor: 'var(--border-md)' } : undefined}>
+              Sin playlist · {playlistBreakdown.none}
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3 mb-4 items-center">
         <input className="input w-56" placeholder="Buscar tablet..." value={search} onChange={(e) => { setSearch(e.target.value); localStorage.setItem(LS_SEARCH, e.target.value); setPage(1); }} />
         <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
@@ -228,12 +282,42 @@ export default function TabletsPage() {
             </button>
           ))}
         </div>
+        <select className="input w-52" value={playlistFilter}
+          onChange={(e) => { setPlaylistFilter(e.target.value); localStorage.setItem(LS_PLAYLIST, e.target.value); setPage(1); }}>
+          <option value="all">Todas las playlists</option>
+          {playlistBreakdown.rows.map((r) => (
+            <option key={r.id} value={String(r.id)}>{r.name} ({r.count})</option>
+          ))}
+          {playlistBreakdown.none > 0 && <option value="none">Sin playlist ({playlistBreakdown.none})</option>}
+        </select>
+        {zones.length > 0 && (
+          <select className="input w-40" value={zoneFilter}
+            onChange={(e) => { setZoneFilter(e.target.value); localStorage.setItem(LS_ZONE, e.target.value); setPage(1); }}>
+            <option value="all">Todas las zonas</option>
+            {zones.map((z) => <option key={z} value={z}>{z}</option>)}
+          </select>
+        )}
+        {filtersActive && (
+          <button
+            onClick={() => {
+              setSearch(''); setStatusFilter('all'); setPlaylistFilter('all'); setZoneFilter('all'); setPage(1);
+              localStorage.setItem(LS_SEARCH, ''); localStorage.setItem(LS_STATUS, 'all');
+              localStorage.setItem(LS_PLAYLIST, 'all'); localStorage.setItem(LS_ZONE, 'all');
+            }}
+            className="text-xs px-2.5 py-2 rounded-lg border hover:bg-gray-50 dark:hover:bg-gray-800"
+            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+            Limpiar filtros
+          </button>
+        )}
+        <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
+          {filtered.length} de {tablets.length}
+        </span>
       </div>
 
       {loading ? (
         <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}</div>
       ) : filtered.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)' }}>{search || statusFilter !== 'all' ? 'Sin resultados.' : 'No hay tablets registradas.'}</p>
+        <p style={{ color: 'var(--text-muted)' }}>{filtersActive ? 'Sin resultados con esos filtros.' : 'No hay tablets registradas.'}</p>
       ) : viewMode === 'cards' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {paged.map((t) => {
