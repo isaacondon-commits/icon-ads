@@ -6,6 +6,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.UserManager
 import android.util.Log
@@ -83,6 +84,9 @@ object KioskManager {
 
             // Brillo según la política remota (auto / fijo).
             applyBrightnessPolicy(context, DevicePrefs(context).getBrightnessPolicy())
+
+            // Silencio total: la tablet en el taxi nunca suena.
+            enforceSilence(context)
 
             for (restriction in listOf(
                 UserManager.DISALLOW_SAFE_BOOT,
@@ -193,6 +197,38 @@ object KioskManager {
             Log.i(TAG, "brillo → $policy")
         } catch (e: Exception) {
             Log.w(TAG, "applyBrightnessPolicy: ${e.message}")
+        }
+    }
+
+    /**
+     * Silencio. La tablet del taxi no debe sonar nunca.
+     *  - Con Device Owner: mute maestro (una sola llamada, lo cubre todo).
+     *  - Igual, por las dudas, todos los streams a 0.
+     * Barato e idempotente. NO usa DISALLOW_ADJUST_VOLUME (esa restricción, en el
+     * ROM Unisoc de estas tablets, no está probada y no hace falta: alcanza con
+     * el mute maestro + consumir los botones de volumen en la Activity).
+     */
+    fun enforceSilence(context: Context) {
+        if (isDeviceOwner(context) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                dpm(context).setMasterVolumeMuted(AdminReceiver.component(context), true)
+            } catch (e: Exception) {
+                Log.w(TAG, "setMasterVolumeMuted: ${e.message}")
+            }
+        }
+        muteAllStreams(context)
+    }
+
+    fun muteAllStreams(context: Context) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        for (s in intArrayOf(
+            AudioManager.STREAM_MUSIC,
+            AudioManager.STREAM_SYSTEM,
+            AudioManager.STREAM_RING,
+            AudioManager.STREAM_NOTIFICATION,
+            AudioManager.STREAM_ALARM,
+        )) {
+            try { am.setStreamVolume(s, 0, 0) } catch (_: Exception) { /* restringido / no soportado */ }
         }
     }
 
