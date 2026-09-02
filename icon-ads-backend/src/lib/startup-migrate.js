@@ -202,11 +202,13 @@ async function hardenPublicSchema() {
        JOIN pg_namespace ns ON ns.oid = c.relnamespace
        WHERE ns.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false`,
     );
-    const [usage] = await prisma.$queryRawUnsafe(
-      `SELECT bool_or(has_schema_privilege(r, 'public', 'USAGE')) AS can
-       FROM (VALUES ('anon'), ('authenticated')) v(r)`,
+    // Lo que importa: ¿anon/authenticated tienen ALGÚN privilegio sobre CUALQUIER
+    // tabla de public? (USAGE del esquema solo no da acceso a nada.)
+    const [grants] = await prisma.$queryRawUnsafe(
+      `SELECT count(*)::int AS n FROM information_schema.role_table_grants
+       WHERE table_schema = 'public' AND grantee IN ('anon', 'authenticated')`,
     );
-    console.log(`[harden] tablas public sin RLS: ${rls?.n} | anon/authenticated con USAGE en public: ${usage?.can}`);
+    console.log(`[harden] tablas public sin RLS: ${rls?.n} | grants a anon/authenticated sobre tablas public: ${grants?.n}`);
   } catch (err) {
     console.error(`[harden] verificación falló: ${err.message}`);
   }

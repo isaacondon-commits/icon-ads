@@ -305,14 +305,16 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         `SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
          WHERE ns.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false`,
       );
-      const [usage] = await prisma.$queryRawUnsafe(
-        `SELECT bool_or(has_schema_privilege(r, 'public', 'USAGE')) AS can
-         FROM (VALUES ('anon'), ('authenticated')) v(r)`,
+      const [grants] = await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM information_schema.role_table_grants
+         WHERE table_schema = 'public' AND grantee IN ('anon', 'authenticated')`,
       );
+      const noRls = Number(rls?.n ?? -1);
+      const anonGrants = Number(grants?.n ?? -1);
       security = {
-        tablesWithoutRls: Number(rls?.n ?? -1),
-        anonCanAccessPublic: usage?.can === true,
-        lockedDown: Number(rls?.n ?? -1) === 0 && usage?.can !== true,
+        tablesWithoutRls: noRls,
+        anonTableGrants: anonGrants,
+        lockedDown: noRls === 0 && anonGrants === 0,
       };
     } catch (e) { security = { error: e.message }; }
 
