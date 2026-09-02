@@ -109,38 +109,10 @@ const MIGRATIONS = [
   // this table holds additional clients associated with the campaign)
   { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },
   { name: 'campaign_clients.idx',      sql: `CREATE INDEX IF NOT EXISTS campaign_clients_client_idx ON campaign_clients(client_id)` },
-  // v24 — Supabase Advisor: rls_disabled_in_public / sensitive_columns_exposed.
-  // These tables had RLS off with default grants to `anon`/`authenticated`,
-  // so Supabase's auto-generated PostgREST API (reachable with the public
-  // anon key shipped in icon-ads-web) could read/write them directly,
-  // bypassing this backend's auth entirely — worst case was `tablets.token`,
-  // the exact bearer credential requireDevice checks. Enabling RLS with no
-  // policies is a deny-all for `anon`/`authenticated` via PostgREST; it does
-  // NOT affect this app, which connects as the `postgres` role (BYPASSRLS)
-  // via DATABASE_URL. Safe to re-run — ENABLE ROW LEVEL SECURITY is idempotent.
-  { name: 'ab_tests.rls',              sql: `ALTER TABLE ab_tests ENABLE ROW LEVEL SECURITY` },
-  { name: 'ads.rls',                   sql: `ALTER TABLE ads ENABLE ROW LEVEL SECURITY` },
-  { name: 'campaign_clients.rls',      sql: `ALTER TABLE campaign_clients ENABLE ROW LEVEL SECURITY` },
-  { name: 'campaign_templates.rls',    sql: `ALTER TABLE campaign_templates ENABLE ROW LEVEL SECURITY` },
-  { name: 'campaigns.rls',             sql: `ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY` },
-  { name: 'comments.rls',              sql: `ALTER TABLE comments ENABLE ROW LEVEL SECURITY` },
-  { name: 'driver_points.rls',         sql: `ALTER TABLE driver_points ENABLE ROW LEVEL SECURITY` },
-  { name: 'error_logs.rls',            sql: `ALTER TABLE error_logs ENABLE ROW LEVEL SECURITY` },
-  { name: 'favorites.rls',             sql: `ALTER TABLE favorites ENABLE ROW LEVEL SECURITY` },
-  { name: 'metrics.rls',               sql: `ALTER TABLE metrics ENABLE ROW LEVEL SECURITY` },
-  { name: 'playlist_ads.rls',          sql: `ALTER TABLE playlist_ads ENABLE ROW LEVEL SECURITY` },
-  { name: 'playlist_versions.rls',     sql: `ALTER TABLE playlist_versions ENABLE ROW LEVEL SECURITY` },
-  { name: 'playlists.rls',             sql: `ALTER TABLE playlists ENABLE ROW LEVEL SECURITY` },
-  { name: 'referrals.rls',             sql: `ALTER TABLE referrals ENABLE ROW LEVEL SECURITY` },
-  { name: 'reminders.rls',             sql: `ALTER TABLE reminders ENABLE ROW LEVEL SECURITY` },
-  { name: 'survey_answers.rls',        sql: `ALTER TABLE survey_answers ENABLE ROW LEVEL SECURITY` },
-  { name: 'surveys.rls',               sql: `ALTER TABLE surveys ENABLE ROW LEVEL SECURITY` },
-  { name: 'sync_logs.rls',             sql: `ALTER TABLE sync_logs ENABLE ROW LEVEL SECURITY` },
-  { name: 'tablet_groups.rls',         sql: `ALTER TABLE tablet_groups ENABLE ROW LEVEL SECURITY` },
-  { name: 'tablet_locations.rls',      sql: `ALTER TABLE tablet_locations ENABLE ROW LEVEL SECURITY` },
-  { name: 'tablet_messages.rls',       sql: `ALTER TABLE tablet_messages ENABLE ROW LEVEL SECURITY` },
-  { name: 'tablets.rls',               sql: `ALTER TABLE tablets ENABLE ROW LEVEL SECURITY` },
-  { name: 'zones.rls',                 sql: `ALTER TABLE zones ENABLE ROW LEVEL SECURITY` },
+  // v24/v27 — Supabase Advisor: rls_disabled_in_public / sensitive_columns_exposed.
+  // El lockdown COMPLETO de la API auto-generada (PostgREST) se hace en
+  // hardenPublicSchema() abajo, en cada arranque: RLS en TODAS las tablas de
+  // `public` (dinámico, no una lista) + REVOKE total a `anon`/`authenticated`.
   // v26 — la app vieja reenviaba lotes de métricas sin idempotencia y el server
   // los insertaba duplicados: la tabla se infló ~150x. La limpieza del
   // histórico + la creación del índice único metrics_natural_key (que hace que
@@ -193,6 +165,53 @@ async function cleanMetricsOnce() {
   }
 }
 
+// Bloquea la API auto-generada de Supabase (PostgREST) sobre el esquema
+// `public`. Este proyecto NO usa PostgREST ni Supabase Auth — tiene su propia
+// auth JWT en el backend, que conecta como `postgres` (BYPASSRLS) por
+// DATABASE_URL y NO se ve afectado. El Storage (subida de anuncios con la anon
+// key) vive en el esquema `storage`, aparte — sigue funcionando.
+// Idempotente y barato: corre en cada arranque, así cualquier tabla nueva
+// (o cualquier grant que Supabase reponga) queda cubierta en el próximo deploy.
+async function hardenPublicSchema() {
+  const stmts = [
+    // 1) RLS en TODAS las tablas de public (deny-all: sin policies).
+    `DO $$ DECLARE r record; BEGIN
+       FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+       LOOP EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.tablename); END LOOP;
+     END $$`,
+    // 2) Sacarle a anon/authenticated TODO acceso a public (lo existente…).
+    `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated`,
+    `REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated`,
+    `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated`,
+    `REVOKE USAGE ON SCHEMA public FROM anon, authenticated`,
+    // …y lo futuro (default privileges de los objetos que cree este rol).
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated`,
+  ];
+  for (const sql of stmts) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+    } catch (err) {
+      console.error(`[harden] FAILED (${sql.slice(0, 48).replace(/\s+/g, ' ')}…): ${err.message}`);
+    }
+  }
+  try {
+    const [rls] = await prisma.$queryRawUnsafe(
+      `SELECT count(*)::int AS n FROM pg_class c
+       JOIN pg_namespace ns ON ns.oid = c.relnamespace
+       WHERE ns.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false`,
+    );
+    const [usage] = await prisma.$queryRawUnsafe(
+      `SELECT bool_or(has_schema_privilege(r, 'public', 'USAGE')) AS can
+       FROM (VALUES ('anon'), ('authenticated')) v(r)`,
+    );
+    console.log(`[harden] tablas public sin RLS: ${rls?.n} | anon/authenticated con USAGE en public: ${usage?.can}`);
+  } catch (err) {
+    console.error(`[harden] verificación falló: ${err.message}`);
+  }
+}
+
 async function runStartupMigrations() {
   for (const m of MIGRATIONS) {
     try {
@@ -202,6 +221,7 @@ async function runStartupMigrations() {
       console.error(`[migrate] ${m.name} — FAILED: ${err.message}`);
     }
   }
+  await hardenPublicSchema();
   // Limpieza pesada del histórico de metrics: en segundo plano para no
   // demorar el arranque del server (Render marca el deploy como fallido si
   // tarda mucho en abrir el puerto). Se reintenta en cada deploy hasta que

@@ -297,6 +297,25 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
     ]);
     const metricMap = Object.fromEntries(metricsByTablet.map((r) => [r.tabletId, r._count._all]));
     const errMap = Object.fromEntries((errsByTablet || []).map((r) => [r.tabletId, r._count._all]));
+
+    // Estado del lockdown de la API pública de Supabase (ver hardenPublicSchema).
+    let security = null;
+    try {
+      const [rls] = await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+         WHERE ns.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = false`,
+      );
+      const [usage] = await prisma.$queryRawUnsafe(
+        `SELECT bool_or(has_schema_privilege(r, 'public', 'USAGE')) AS can
+         FROM (VALUES ('anon'), ('authenticated')) v(r)`,
+      );
+      security = {
+        tablesWithoutRls: Number(rls?.n ?? -1),
+        anonCanAccessPublic: usage?.can === true,
+        lockedDown: Number(rls?.n ?? -1) === 0 && usage?.can !== true,
+      };
+    } catch (e) { security = { error: e.message }; }
+
     const now = Date.now();
     const plById = Object.fromEntries(playlists.map((p) => [p.id, p]));
     const rows = tablets.map((t) => {
@@ -330,6 +349,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         playlistVacia: rows.filter((r) => r.playlist && r.adsEnPlaylist === 0).length,
         sinAdsReproducibles: rows.filter((r) => r.playlist && r.adsReproducibles === 0).length,
         metricsTotal,
+        security,
       },
       tablets: rows,
     });
