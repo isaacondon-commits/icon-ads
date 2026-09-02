@@ -7,14 +7,15 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import { useToast } from '@/lib/toast-context';
 import { useRole } from '@/lib/roles';
+import {
+  FILTER_FIELDS, OPS_BY_TYPE, enumOptions, applyFilter, describeFilter, fieldDef,
+  type TabletFilter,
+} from '@/lib/tabletFilters';
 
 const PAGE_SIZE = 10;
-type StatusFilter = 'all' | 'online' | 'offline' | 'no-playlist';
 const TIMEZONES = ['America/Montevideo', 'America/Argentina/Buenos_Aires', 'America/Sao_Paulo', 'UTC'];
 const LS_SEARCH = 'tablets_filter_search';
-const LS_STATUS = 'tablets_filter_status';
-const LS_PLAYLIST = 'tablets_filter_playlist';
-const LS_ZONE = 'tablets_filter_zone';
+const LS_FILTERS = 'tablets_filters_v2';
 
 export default function TabletsPage() {
   const { show } = useToast();
@@ -28,15 +29,19 @@ export default function TabletsPage() {
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Tablet | null>(null);
   const [search, setSearch] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem(LS_SEARCH) ?? '') : '');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
-    if (typeof window === 'undefined') return 'all';
-    return (localStorage.getItem(LS_STATUS) as StatusFilter) ?? 'all';
+  const [filters, setFilters] = useState<TabletFilter[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try { return JSON.parse(localStorage.getItem(LS_FILTERS) ?? '[]'); } catch { return []; }
   });
-  // 'all' | 'none' (sin playlist) | id de playlist como string
-  const [playlistFilter, setPlaylistFilter] = useState<string>(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem(LS_PLAYLIST) ?? 'all') : 'all');
-  const [zoneFilter, setZoneFilter] = useState<string>(() =>
-    typeof window !== 'undefined' ? (localStorage.getItem(LS_ZONE) ?? 'all') : 'all');
+  const [addingFilter, setAddingFilter] = useState(false);
+  const [draft, setDraft] = useState<{ field: string; op: string; value: string }>({ field: 'name', op: 'contains', value: '' });
+
+  const saveFilters = (next: TabletFilter[]) => {
+    setFilters(next);
+    try { localStorage.setItem(LS_FILTERS, JSON.stringify(next)); } catch { /* ignore */ }
+    setPage(1);
+  };
+  const removeFilter = (id: string) => saveFilters(filters.filter((f) => f.id !== id));
   const [page, setPage] = useState(1);
   const [forcingSync, setForcingSync] = useState<number | null>(null);
   const [togglingBlock, setTogglingBlock] = useState<number | null>(null);
@@ -77,18 +82,8 @@ export default function TabletsPage() {
   const now = Date.now();
   const filtered = tablets.filter((t) => {
     const q = search.toLowerCase();
-    const matchSearch = t.name.toLowerCase().includes(q) || t.deviceId.toLowerCase().includes(q) || (t.zone ?? '').toLowerCase().includes(q);
-    const lastMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
-    const isOnline = lastMs && (now - lastMs) < 10 * 60000;
-    const matchStatus =
-      statusFilter === 'all' || (statusFilter === 'online' && isOnline) ||
-      (statusFilter === 'offline' && !isOnline) || (statusFilter === 'no-playlist' && !t.playlistId);
-    const matchPlaylist =
-      playlistFilter === 'all' ||
-      (playlistFilter === 'none' && !t.playlistId) ||
-      String(t.playlistId ?? '') === playlistFilter;
-    const matchZone = zoneFilter === 'all' || (t.zone ?? '') === zoneFilter;
-    return matchSearch && matchStatus && matchPlaylist && matchZone;
+    const matchSearch = !q || t.name.toLowerCase().includes(q) || t.deviceId.toLowerCase().includes(q) || (t.zone ?? '').toLowerCase().includes(q);
+    return matchSearch && filters.every((f) => applyFilter(f, t, now));
   });
 
   // Cuántas tablets hay por playlist (sobre TODAS, no las filtradas).
@@ -104,8 +99,7 @@ export default function TabletsPage() {
       .sort((a, b) => b.count - a.count);
     return { rows, none };
   })();
-  const zones = [...new Set(tablets.map((t) => t.zone).filter(Boolean) as string[])].sort();
-  const filtersActive = playlistFilter !== 'all' || zoneFilter !== 'all' || statusFilter !== 'all' || search !== '';
+  const filtersActive = filters.length > 0 || search !== '';
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -207,10 +201,23 @@ export default function TabletsPage() {
     window.open(api.getTabletsCsvUrl(), '_blank');
   };
 
-  const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-    { key: 'all', label: 'Todas' }, { key: 'online', label: 'Online' },
-    { key: 'offline', label: 'Offline' }, { key: 'no-playlist', label: 'Sin playlist' },
-  ];
+  const draftType = fieldDef(draft.field)?.type ?? 'text';
+  const draftNeedsValue = !['empty', 'nempty', 'never'].includes(draft.op);
+  const setDraftField = (field: string) => {
+    const type = fieldDef(field)?.type ?? 'text';
+    setDraft({ field, op: OPS_BY_TYPE[type][0].value, value: '' });
+  };
+  const commitDraft = () => {
+    if (draftNeedsValue && draft.value.trim() === '') return;
+    saveFilters([...filters, { id: crypto.randomUUID(), ...draft }]);
+    setDraft({ field: 'name', op: 'contains', value: '' });
+    setAddingFilter(false);
+  };
+  const addQuickFilter = (field: string, op: string, value: string) => {
+    // evitar duplicado exacto
+    if (filters.some((f) => f.field === field && f.op === op && f.value === value)) return;
+    saveFilters([...filters, { id: crypto.randomUUID(), field, op, value }]);
+  };
 
   return (
     <div>
@@ -245,74 +252,92 @@ export default function TabletsPage() {
         </div>
       </div>
 
-      {/* Resumen por playlist — cuántas tablets hay en cada una. Clickeable = filtra. */}
+      {/* Resumen por playlist — cuántas tablets hay en cada una. Clic = agrega el filtro. */}
       {(playlistBreakdown.rows.length > 0 || playlistBreakdown.none > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 mb-3 text-xs">
           <span style={{ color: 'var(--text-muted)' }}>Por playlist:</span>
-          {playlistBreakdown.rows.map((r) => {
-            const active = playlistFilter === String(r.id);
-            return (
-              <button key={r.id}
-                onClick={() => { const v = active ? 'all' : String(r.id); setPlaylistFilter(v); localStorage.setItem(LS_PLAYLIST, v); setPage(1); }}
-                className={`px-2 py-1 rounded-full border font-medium transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-blue-50 dark:hover:bg-blue-950'}`}
-                style={!active ? { borderColor: 'var(--border-md)' } : undefined}>
-                {r.name} <span className={active ? 'opacity-80' : ''} style={!active ? { color: 'var(--text-muted)' } : undefined}>· {r.count}</span>
-              </button>
-            );
-          })}
+          {playlistBreakdown.rows.map((r) => (
+            <button key={r.id}
+              onClick={() => addQuickFilter('playlist', 'eq', r.name)}
+              title={`Filtrar por "${r.name}"`}
+              className="px-2 py-1 rounded-full border font-medium hover:bg-blue-50 dark:hover:bg-blue-950"
+              style={{ borderColor: 'var(--border-md)' }}>
+              {r.name} <span style={{ color: 'var(--text-muted)' }}>· {r.count}</span>
+            </button>
+          ))}
           {playlistBreakdown.none > 0 && (
-            <button
-              onClick={() => { const v = playlistFilter === 'none' ? 'all' : 'none'; setPlaylistFilter(v); localStorage.setItem(LS_PLAYLIST, v); setPage(1); }}
-              className={`px-2 py-1 rounded-full border font-medium ${playlistFilter === 'none' ? 'bg-amber-500 text-white border-amber-500' : 'hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-600'}`}
-              style={playlistFilter !== 'none' ? { borderColor: 'var(--border-md)' } : undefined}>
+            <button onClick={() => addQuickFilter('playlist', 'eq', '(sin playlist)')}
+              className="px-2 py-1 rounded-full border font-medium hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-600"
+              style={{ borderColor: 'var(--border-md)' }}>
               Sin playlist · {playlistBreakdown.none}
             </button>
           )}
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <input className="input w-56" placeholder="Buscar tablet..." value={search} onChange={(e) => { setSearch(e.target.value); localStorage.setItem(LS_SEARCH, e.target.value); setPage(1); }} />
-        <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
-          {STATUS_FILTERS.map(({ key, label }) => (
-            <button key={key} onClick={() => { setStatusFilter(key); localStorage.setItem(LS_STATUS, key); setPage(1); }}
-              className={`px-3 py-2 text-xs font-medium border-r last:border-0 ${statusFilter === key ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-              style={{ borderColor: 'var(--border-md)', color: statusFilter === key ? 'white' : 'var(--text-muted)' }}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <select className="input w-52" value={playlistFilter}
-          onChange={(e) => { setPlaylistFilter(e.target.value); localStorage.setItem(LS_PLAYLIST, e.target.value); setPage(1); }}>
-          <option value="all">Todas las playlists</option>
-          {playlistBreakdown.rows.map((r) => (
-            <option key={r.id} value={String(r.id)}>{r.name} ({r.count})</option>
-          ))}
-          {playlistBreakdown.none > 0 && <option value="none">Sin playlist ({playlistBreakdown.none})</option>}
-        </select>
-        {zones.length > 0 && (
-          <select className="input w-40" value={zoneFilter}
-            onChange={(e) => { setZoneFilter(e.target.value); localStorage.setItem(LS_ZONE, e.target.value); setPage(1); }}>
-            <option value="all">Todas las zonas</option>
-            {zones.map((z) => <option key={z} value={z}>{z}</option>)}
-          </select>
+      {/* Barra de filtros componibles */}
+      <div className="flex flex-wrap gap-2 mb-2 items-center">
+        <input className="input w-56" placeholder="Buscar (nombre / ID / zona)…" value={search}
+          onChange={(e) => { setSearch(e.target.value); localStorage.setItem(LS_SEARCH, e.target.value); setPage(1); }} />
+
+        {filters.map((f) => (
+          <span key={f.id} className="inline-flex items-center gap-1 text-xs pl-2.5 pr-1 py-1 rounded-full bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800">
+            <span className="font-medium">{describeFilter(f)}</span>
+            <button onClick={() => removeFilter(f.id)} className="w-4 h-4 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 leading-none" title="Quitar">×</button>
+          </span>
+        ))}
+
+        {!addingFilter ? (
+          <button onClick={() => setAddingFilter(true)}
+            className="text-xs px-2.5 py-1.5 rounded-lg border font-medium border-dashed hover:bg-gray-50 dark:hover:bg-gray-800"
+            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+            + Agregar filtro
+          </button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-lg border" style={{ borderColor: 'var(--border-md)', background: 'var(--bg)' }}>
+            <select className="input !py-1 text-xs w-36" value={draft.field} onChange={(e) => setDraftField(e.target.value)}>
+              {FILTER_FIELDS.map((fd) => <option key={fd.key} value={fd.key}>{fd.label}</option>)}
+            </select>
+            <select className="input !py-1 text-xs w-auto" value={draft.op} onChange={(e) => setDraft({ ...draft, op: e.target.value })}>
+              {OPS_BY_TYPE[draftType].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            {draftNeedsValue && (
+              draftType === 'enum' ? (
+                <select className="input !py-1 text-xs w-40" value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })}>
+                  <option value="">— elegí —</option>
+                  {enumOptions(draft.field, tablets, playlists).map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              ) : (
+                <input
+                  className="input !py-1 text-xs w-28"
+                  type={draftType === 'number' || draftType === 'sync' ? 'number' : 'text'}
+                  placeholder={draftType === 'sync' ? 'minutos' : ''}
+                  value={draft.value}
+                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitDraft(); }}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  autoFocus
+                />
+              )
+            )}
+            <button onClick={commitDraft} className="text-xs px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium">Agregar</button>
+            <button onClick={() => setAddingFilter(false)} className="text-xs px-2 py-1" style={{ color: 'var(--text-muted)' }}>Cancelar</button>
+          </div>
         )}
+
         {filtersActive && (
           <button
-            onClick={() => {
-              setSearch(''); setStatusFilter('all'); setPlaylistFilter('all'); setZoneFilter('all'); setPage(1);
-              localStorage.setItem(LS_SEARCH, ''); localStorage.setItem(LS_STATUS, 'all');
-              localStorage.setItem(LS_PLAYLIST, 'all'); localStorage.setItem(LS_ZONE, 'all');
-            }}
-            className="text-xs px-2.5 py-2 rounded-lg border hover:bg-gray-50 dark:hover:bg-gray-800"
-            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
-            Limpiar filtros
+            onClick={() => { setSearch(''); saveFilters([]); localStorage.setItem(LS_SEARCH, ''); }}
+            className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+            style={{ color: 'var(--text-muted)' }}>
+            Limpiar todo
           </button>
         )}
-        <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
+        <span className="text-xs ml-auto whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
           {filtered.length} de {tablets.length}
         </span>
       </div>
+      <div className="mb-4" />
 
       {loading ? (
         <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}</div>
