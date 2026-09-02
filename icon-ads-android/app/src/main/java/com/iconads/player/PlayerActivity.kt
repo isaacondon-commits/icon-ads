@@ -597,10 +597,12 @@ class PlayerActivity : AppCompatActivity() {
                 recordMetric(completed = false, error = true)
                 errorStreak++
                 failCount++
+                // Backoff: sin esto, varios anuncios corruptos seguidos hacen
+                // error -> playNext -> error... a toda velocidad.
                 when {
-                    failCount < ads.size -> playNext()
+                    failCount < ads.size -> imageHandler.postDelayed({ playNext() }, 1500L)
                     ads.all { it.campaignId < 0 } -> scheduleRetry()
-                    else -> activateFallback()
+                    else -> imageHandler.postDelayed({ activateFallback() }, 5000L)
                 }
             }
         })
@@ -694,11 +696,27 @@ class PlayerActivity : AppCompatActivity() {
 
     // ── Métricas ─────────────────────────────────────────────────────────────
 
+    // Tope duro: si el player entra en un loop de reintentos (p. ej. varios
+    // videos corruptos -> error -> playNext -> error...), esto evita que se
+    // graben miles de métricas por minuto. El ritmo real es ~8/min por tablet;
+    // 40/min deja margen de sobra y corta cualquier runaway.
+    private val recordTimes = ArrayDeque<Long>()
+    private val MAX_RECORDS_PER_MIN = 40
+
     private fun recordMetric(completed: Boolean, error: Boolean = false) {
         val ad = ads.getOrNull(currentIndex) ?: return
         if (ad.campaignId < 0) return
+
+        val now = System.currentTimeMillis()
+        while (recordTimes.isNotEmpty() && now - recordTimes.first() > 60_000L) recordTimes.removeFirst()
+        if (recordTimes.size >= MAX_RECORDS_PER_MIN) {
+            Log.w(TAG, "recordMetric: tope de $MAX_RECORDS_PER_MIN/min alcanzado — descartando (¿loop del player?)")
+            return
+        }
+        recordTimes.addLast(now)
+
         val playedAt = adStartTime
-        val duration = ((System.currentTimeMillis() - adStartTime) / 1000).toInt()
+        val duration = ((now - adStartTime) / 1000).toInt()
         lifecycleScope.launch(Dispatchers.IO) {
             metricRepo.record(
                 adId = ad.id,
