@@ -8,10 +8,17 @@ const rateLimit = require('express-rate-limit');
 const prisma = require('../lib/prisma');
 const { requireDevice } = require('../middleware/deviceAuth');
 const { audit } = require('../lib/auditLog');
+const { Readable } = require('stream');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const forceApkFlags = require('../lib/forceApkFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
 const { resolveScheduleJson } = require('../lib/brightnessSchedule');
+
+// Cuántos ZIP de playlist se pueden ARMAR a la vez. Armar un paquete baja los
+// videos de Supabase y los mete al ZIP; hacerlo para 12 tablets en paralelo
+// reventaba la RAM de Render. El resto recibe 503 y reintenta (o pega el cache).
+const MAX_PACKAGE_BUILDS = 2;
+let activePackageBuilds = 0;
 
 // Registration re-issues the existing token for a known deviceId with no further
 // proof of possession (deviceId — Android's ANDROID_ID — isn't a secret). Keying
@@ -289,51 +296,59 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       return fs.createReadStream(cachedZip).pipe(res);
     }
 
-    // PRE-RESOLVER TODA la media ANTES de responder. Si falta aunque sea un
-    // archivo, se aborta con 503 y la tablet reintenta más tarde — nunca se
-    // sirve (ni se cachea) un paquete incompleto: eso hacía que en la tablet
-    // faltaran anuncios y los demás se repitieran en loop.
-    const uniqueByFilename = [];
+    // Tope de concurrencia: si ya hay varios armándose, esta tablet reintenta.
+    if (activePackageBuilds >= MAX_PACKAGE_BUILDS) {
+      console.log(`[package] ${activePackageBuilds} builds activos — 503, que reintente`);
+      return res.status(503).json({ error: 'Servidor ocupado armando paquetes. Reintentar.' });
+    }
+
+    // Archivos únicos por filename (un mismo video no entra dos veces al ZIP).
     const seen = new Set();
+    const uniqueAds = [];
     for (const { ad } of activeAds) {
       if (seen.has(ad.filename)) continue;
       seen.add(ad.filename);
-      uniqueByFilename.push(ad);
+      uniqueAds.push(ad);
     }
 
-    // Resolver la media EN PARALELO con timeout por archivo. Nunca hacer fetch
-    // secuencial sin timeout: si un archivo de Supabase se cuelga, todo /package
-    // se cuelga, y con él el syncNow() de la tablet — se cae del monitor.
-    const FETCH_TIMEOUT_MS = 20000;
-    const resolveOne = async (ad) => {
-      const filePath = path.join(uploadDir, ad.filename);
-      if (fs.existsSync(filePath)) return { name: `media/${ad.filename}`, filePath };
-      if (ad.fileUrl && /^https?:\/\//.test(ad.fileUrl)) {
+    // Pre-chequeo LIVIANO (sin bajar el archivo): un GET con Range 0-0 a cada
+    // URL para confirmar que existe y no está vacía. Si falta alguno → 503 y la
+    // tablet reintenta; nunca se arma un ZIP incompleto. Sin buffers en RAM.
+    const CHECK_TIMEOUT_MS = 15000;
+    const sources = [];
+    try {
+      await Promise.all(uniqueAds.map(async (ad) => {
+        const filePath = path.join(uploadDir, ad.filename);
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > 0) {
+          sources.push({ name: `media/${ad.filename}`, filePath });
+          return;
+        }
+        if (!ad.fileUrl || !/^https?:\/\//.test(ad.fileUrl)) {
+          throw new Error(`${ad.filename}: sin archivo ni URL`);
+        }
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+        const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
         try {
-          const remote = await fetch(ad.fileUrl, { signal: ctrl.signal });
-          if (!remote.ok) throw new Error(`HTTP ${remote.status}`);
-          const buf = Buffer.from(await remote.arrayBuffer());
-          if (buf.length === 0) throw new Error('archivo vacío');
-          return { name: `media/${ad.filename}`, buffer: buf };
+          const head = await fetch(ad.fileUrl, { headers: { Range: 'bytes=0-0' }, signal: ctrl.signal });
+          if (!head.ok && head.status !== 206) throw new Error(`${ad.filename}: HTTP ${head.status}`);
+          const len = head.headers.get('content-range') || head.headers.get('content-length');
+          if (len && /(?:\/|^)0$/.test(String(len).trim())) throw new Error(`${ad.filename}: vacío`);
+          if (head.body) { try { await head.body.cancel(); } catch { /* ignore */ } }
         } finally {
           clearTimeout(timer);
         }
-      }
-      throw new Error('sin archivo ni URL');
-    };
-
-    let mediaEntries;
-    try {
-      mediaEntries = await Promise.all(uniqueByFilename.map((ad) =>
-        resolveOne(ad).catch((e) => { throw new Error(`${ad.filename}: ${e.message}`); })));
+        sources.push({ name: `media/${ad.filename}`, url: ad.fileUrl });
+      }));
     } catch (e) {
-      console.warn(`[package] media incompleta — abortando: ${e.message}`);
+      console.warn(`[package] media incompleta — 503: ${e.message}`);
       return res.status(503).json({ error: `Media incompleta (${e.message}). Reintentar.` });
     }
 
-    console.log(`[package] generando ZIP (${mediaEntries.length} archivos)…`);
+    activePackageBuilds++;
+    let doneAccounting = false;
+    const releaseSlot = () => { if (!doneAccounting) { doneAccounting = true; activePackageBuilds--; } };
+
+    console.log(`[package] generando ZIP (${sources.length} archivos) [${activePackageBuilds} activos]…`);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
     res.setHeader('X-Playlist-Hash', hash);
@@ -342,37 +357,61 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       { version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
     );
 
-    const archive = archiver('zip', { zlib: { level: 6 } });
-    archive.on('error', (err) => {
-      console.error('[package] archive error:', err.message);
-      if (!res.writableEnded) res.destroy(err);
-    });
+    // Sin recompresión: los videos/imágenes ya vienen comprimidos.
+    // Se escribe a un .tmp en disco EN STREAMING (no se junta el ZIP en RAM) y
+    // recién al terminar OK se renombra al cache y se marca el contentHash.
+    const archive = archiver('zip', { store: true });
+    const tmpZip = `${cachedZip}.tmp.${process.pid}.${Date.now()}`;
+    const diskOut = fs.createWriteStream(tmpZip);
+    let failed = false;
+    const fail = (why) => {
+      if (failed) return;
+      failed = true;
+      console.error(`[package] fallo armando ZIP: ${why}`);
+      releaseSlot();
+      try { archive.abort(); } catch { /* ignore */ }
+      try { fs.unlink(tmpZip, () => {}); } catch { /* ignore */ }
+      if (!res.writableEnded) res.destroy();
+    };
+    archive.on('error', (err) => fail(err.message));
+    diskOut.on('error', (err) => fail(`disco: ${err.message}`));
+    res.on('error', () => fail('res error'));
+    res.on('close', () => { if (!res.writableEnded) fail('cliente cortó'); });
     archive.pipe(res);
+    archive.pipe(diskOut);
 
-    // Cachear en background sólo si el ZIP se completó OK.
-    const cacheChunks = [];
-    let archiveFailed = false;
-    archive.on('data', (chunk) => cacheChunks.push(Buffer.from(chunk)));
     archive.on('end', () => {
-      if (archiveFailed) return;
-      const buf = Buffer.concat(cacheChunks);
-      console.log(`[package] ZIP enviado — ${(buf.length / 1024).toFixed(1)} KB`);
-      fs.writeFile(cachedZip, buf, async (writeErr) => {
-        if (writeErr) { console.warn('[package] no se pudo cachear ZIP:', writeErr.message); return; }
+      releaseSlot();
+      if (failed) { fs.unlink(tmpZip, () => {}); return; }
+      fs.rename(tmpZip, cachedZip, async (renErr) => {
+        if (renErr) { console.warn('[package] no se pudo cachear:', renErr.message); return; }
         try {
           await prisma.playlist.update({ where: { id: playlist.id }, data: { contentHash: hash } });
-          console.log(`[package] cache guardado`);
+          console.log('[package] cache guardado');
         } catch { /* non-fatal */ }
       });
     });
-    res.on('error', () => { archiveFailed = true; });
+    archive.on('close', releaseSlot);
 
-    archive.append(playlistJson, { name: 'playlist.json' });
-    for (const e of mediaEntries) {
-      if (e.filePath) archive.file(e.filePath, { name: e.name });
-      else archive.append(e.buffer, { name: e.name });
+    try {
+      archive.append(playlistJson, { name: 'playlist.json' });
+      for (const s of sources) {
+        if (failed) break;
+        if (s.filePath) {
+          archive.file(s.filePath, { name: s.name });
+        } else {
+          const remote = await fetch(s.url);
+          if (!remote.ok || !remote.body) { fail(`${s.name}: HTTP ${remote.status}`); break; }
+          // Stream del body directo al ZIP — nunca se bufferiza el archivo entero.
+          archive.append(Readable.fromWeb(remote.body), { name: s.name });
+        }
+      }
+      if (!failed) archive.finalize();
+    } catch (e) {
+      fail(e.message);
+      fs.unlink(tmpZip, () => {});
+      releaseSlot();
     }
-    archive.finalize();
   } catch (err) {
     next(err);
   }
