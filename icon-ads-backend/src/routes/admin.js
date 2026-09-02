@@ -204,6 +204,45 @@ router.post('/playlist/:id/rebuild', apiKeyOrAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/admin/playlist/:id/media-check — verifica que TODOS los archivos de
+// media de la playlist (los que iría al ZIP) estén accesibles. Diagnóstico para
+// cuando un paquete no se arma / las tablets no levantan.
+router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const pl = await prisma.playlist.findUnique({
+      where: { id },
+      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
+    });
+    if (!pl) return res.status(404).json({ error: 'No existe' });
+    const ads = pl.playlistAds
+      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus === 'approved')
+      .map(({ ad }) => ad);
+    const seen = new Set();
+    const uniq = ads.filter((a) => (seen.has(a.filename) ? false : seen.add(a.filename)));
+    const results = await Promise.all(uniq.map(async (a) => {
+      if (!a.fileUrl || !/^https?:\/\//.test(a.fileUrl)) {
+        return { ad: a.name, filename: a.filename, ok: false, why: 'sin fileUrl' };
+      }
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
+        const r = await fetch(a.fileUrl, { headers: { Range: 'bytes=0-0' }, signal: ctrl.signal });
+        clearTimeout(t);
+        const len = r.headers.get('content-range') || r.headers.get('content-length');
+        return { ad: a.name, filename: a.filename, ok: (r.ok || r.status === 206), status: r.status, len };
+      } catch (e) {
+        return { ad: a.name, filename: a.filename, ok: false, why: e.message };
+      }
+    }));
+    const bad = results.filter((x) => !x.ok);
+    res.json({
+      playlist: pl.name, version: pl.version, contentHash: pl.contentHash ? pl.contentHash.slice(0, 12) : null,
+      total: results.length, ok: results.length - bad.length, faltantes: bad, detalle: results,
+    });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.
