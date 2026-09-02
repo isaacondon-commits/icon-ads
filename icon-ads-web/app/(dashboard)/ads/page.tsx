@@ -105,6 +105,8 @@ export default function AdsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [approvingAll, setApprovingAll] = useState(false);
+  const [confirmApproveAll, setConfirmApproveAll] = useState(false);
   const [pausingId, setPausingId] = useState<number | null>(null);
   const [hoveredAdId, setHoveredAdId] = useState<number | null>(null);
   const [storage, setStorage] = useState<StorageStats | null>(null);
@@ -401,6 +403,15 @@ export default function AdsPage() {
     setApprovingId(null);
     load();
   };
+  const handleApproveAll = async () => {
+    const pending = ads.filter((a) => a.approvalStatus === 'pending');
+    if (pending.length === 0) { setConfirmApproveAll(false); return; }
+    setApprovingAll(true);
+    await Promise.allSettled(pending.map((a) => api.approveAd(a.id)));
+    setApprovingAll(false);
+    setConfirmApproveAll(false);
+    load();
+  };
 
   const handleTogglePause = async (ad: Ad) => {
     setPausingId(ad.id);
@@ -445,6 +456,19 @@ export default function AdsPage() {
           );
         })}
       </div>
+
+      {/* Aprobar todo — solo en la pestaña Pendientes */}
+      {activeTab === 'pending' && ads.some((a) => a.approvalStatus === 'pending') && (
+        <div className="mb-4">
+          <button
+            onClick={() => setConfirmApproveAll(true)}
+            disabled={approvingAll}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white"
+          >
+            {approvingAll ? 'Aprobando...' : `Aprobar todo (${ads.filter((a) => a.approvalStatus === 'pending').length})`}
+          </button>
+        </div>
+      )}
 
       {/* Storage usage bar */}
       {storage && (
@@ -675,6 +699,17 @@ export default function AdsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Aprobar todo — confirmación */}
+      {confirmApproveAll && (
+        <ConfirmDialog
+          title="Aprobar todos los pendientes"
+          message={`Se aprobarán ${ads.filter((a) => a.approvalStatus === 'pending').length} anuncios. Pasarán a estar activos.`}
+          confirmLabel="Aprobar todo"
+          onConfirm={handleApproveAll}
+          onCancel={() => setConfirmApproveAll(false)}
+        />
       )}
 
       {/* #9 — delete confirmation modal */}
