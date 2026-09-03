@@ -16,6 +16,32 @@ const { resolveScheduleJson } = require('../lib/brightnessSchedule');
 const bandwidthGuard = require('../lib/bandwidthGuard');
 const { sendAlert } = require('../lib/alerts');
 const freezeState = require('../lib/freezeState');
+const r2 = require('../lib/r2');
+
+// Sirve un ZIP que ya está en disco. Si R2 está configurado con URL pública, lo
+// sube a R2 y responde un 302 (Render manda ~200 bytes; la tablet baja de R2,
+// egress gratis, y el caché sobrevive los redeploys). Si no, lo streamea.
+async function serveZipFromDisk(res, tabletId, hash, playlistId, version, zipPath) {
+  const size = fs.statSync(zipPath).size;
+  if (r2.hasPublicUrl) {
+    const r2Key = `zips/playlist_${playlistId}_${hash}.zip`;
+    try {
+      await r2.putFile(r2Key, zipPath, 'application/zip');
+      console.log(`[package] ZIP -> R2 (${(size / 1024).toFixed(0)} KB) — 302`);
+      afterPackageServe(tabletId, hash, 300);
+      return res.redirect(302, r2.getPublicUrl(r2Key));
+    } catch (e) {
+      console.warn('[package] subida a R2 falló, sirvo desde disco:', e.message);
+    }
+  }
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Length', size);
+  res.setHeader('Content-Disposition', `attachment; filename="playlist_v${version}.zip"`);
+  res.setHeader('X-Playlist-Hash', hash);
+  fs.createReadStream(zipPath).on('error', () => { if (!res.writableEnded) res.destroy(); }).pipe(res);
+  afterPackageServe(tabletId, hash, size);
+  return undefined;
+}
 
 // Despacha alertas tras servir un paquete (odómetro mensual + disyuntor).
 function afterPackageServe(tabletId, hash, bytes) {
@@ -384,17 +410,25 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       return res.status(304).end();
     }
 
-    // Cache hit: el ZIP ya generado y completo se sirve tal cual.
+    // R2: si el ZIP ya está en R2, redirigir directo (Render manda ~200 bytes).
+    // Este chequeo va contra R2, no contra el disco -> sobrevive los redeploys.
+    if (r2.hasPublicUrl) {
+      const r2Key = `zips/playlist_${playlist.id}_${hash}.zip`;
+      try {
+        if (await r2.objectExists(r2Key)) {
+          console.log(`[package] R2 hit — 302 a ${r2Key}`);
+          afterPackageServe(tablet.id, hash, 300);
+          return res.redirect(302, r2.getPublicUrl(r2Key));
+        }
+      } catch (e) {
+        console.warn('[package] chequeo R2 falló, sigo con disco/build:', e.message);
+      }
+    }
+
+    // Cache hit en disco: subir a R2 (si aplica) y redirigir, o servir tal cual.
     if (playlist.contentHash === hash && fs.existsSync(cachedZip)) {
-      console.log(`[package] cache hit — sirviendo desde disco`);
-      const size = fs.statSync(cachedZip).size;
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Length', size);
-      res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
-      res.setHeader('X-Playlist-Hash', hash);
-      fs.createReadStream(cachedZip).pipe(res);
-      afterPackageServe(tablet.id, hash, size);
-      return;
+      console.log(`[package] cache hit en disco`);
+      return serveZipFromDisk(res, tablet.id, hash, playlist.id, playlist.version, cachedZip);
     }
 
     // Tope de concurrencia: si ya hay varios armándose, esta tablet reintenta.
@@ -525,12 +559,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       if (!slotReleased) { slotReleased = true; releaseSlot(); }
 
       console.log(`[package] ZIP listo — ${(zipSize / 1024).toFixed(0)} KB`);
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Length', zipSize);
-      res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
-      res.setHeader('X-Playlist-Hash', hash);
-      fs.createReadStream(cachedZip).on('error', () => { if (!res.writableEnded) res.destroy(); }).pipe(res);
-      afterPackageServe(tablet.id, hash, zipSize);
+      await serveZipFromDisk(res, tablet.id, hash, playlist.id, playlist.version, cachedZip);
     } catch (e) {
       done(e.message);
     }
