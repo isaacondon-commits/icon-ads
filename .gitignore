@@ -63,3 +63,7 @@ temp/
 # ── Testing ───────────────────────────────────────────────────────────────────
 coverage/
 .nyc_output/
+
+# scripts locales temporales (nunca commitear)
+icon-ads-backend/_*.mjs
+icon-ads-backend/_*.js
