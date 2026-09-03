@@ -77,6 +77,14 @@ export default function MonitorPage() {
   };
   const [bw, setBw] = useState<import('@/lib/api').BandwidthStatus | null>(null);
   const [resettingCircuit, setResettingCircuit] = useState(false);
+  const [togglingFreeze, setTogglingFreeze] = useState(false);
+  const setFreeze = async (next: boolean) => {
+    if (!next && !confirm('¿Descongelar producción? Las tablets van a poder volver a descargar playlists (consume ancho de banda de Render). Hacelo solo si ya está la media en R2 o si aceptás el gasto.')) return;
+    setTogglingFreeze(true);
+    try { const r = await api.setFleetFreeze(next); show(r.message); await fetchData(); }
+    catch (e) { show(e instanceof Error ? e.message : 'Error', 'error'); }
+    finally { setTogglingFreeze(false); }
+  };
   const doResetCircuit = async () => {
     setResettingCircuit(true);
     try { await api.resetCircuit(); await fetchData(); show('Disyuntor reseteado — /package vuelve a servir'); }
@@ -298,6 +306,27 @@ export default function MonitorPage() {
           <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
             ⚠ {alerts.length} tablet{alerts.length > 1 ? 's' : ''} offline &gt;2h: {alerts.map(t => t.name).join(', ')}
           </p>
+        </div>
+      )}
+
+      {/* Interruptor maestro: producción congelada */}
+      {bw && (
+        <div className={`mb-4 p-3 rounded-xl border flex flex-wrap items-center gap-3 ${bw.frozen ? 'border-sky-300 bg-sky-50 dark:bg-sky-950/30 dark:border-sky-800' : 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800'}`}>
+          <span className="text-sm font-semibold">
+            {bw.frozen ? '🧊 PRODUCCIÓN CONGELADA' : '🟢 Producción activa'}
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {bw.frozen
+              ? 'Ninguna tablet puede descargar playlists. Siguen reproduciendo su contenido local. Egress de Render ≈ 0.'
+              : 'Las tablets pueden descargar playlists (con disyuntor y topes activos).'}
+          </span>
+          <button
+            onClick={() => setFreeze(!bw.frozen)}
+            disabled={togglingFreeze}
+            className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg text-white ${bw.frozen ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} disabled:opacity-50`}
+          >
+            {togglingFreeze ? '…' : bw.frozen ? 'Descongelar producción' : 'Congelar producción'}
+          </button>
         </div>
       )}
 

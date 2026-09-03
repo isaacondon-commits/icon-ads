@@ -15,6 +15,7 @@ const screenshotFlags = require('../lib/screenshotFlags');
 const { resolveScheduleJson } = require('../lib/brightnessSchedule');
 const bandwidthGuard = require('../lib/bandwidthGuard');
 const { sendAlert } = require('../lib/alerts');
+const freezeState = require('../lib/freezeState');
 
 // Despacha alertas tras servir un paquete (odómetro mensual + disyuntor).
 function afterPackageServe(tabletId, hash, bytes) {
@@ -250,15 +251,18 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // frena la reproducción y muestra una pantalla neutra hasta que se
     // desbloquee — pero sigue sincronizando normalmente.
     const blocked = tablet.manualStatus === 'bloqueada';
+    const frozen = freezeState.isFrozen();
 
-    // Tablet bloqueada: no se evalúa playlist ni se le ofrece descarga. Sigue
-    // sincronizando (para poder desbloquearla) pero con needsUpdate:false, así
-    // no hay forma de que dispare un /package mientras está bloqueada.
-    if (blocked) {
+    // Producción congelada O tablet bloqueada: no se evalúa playlist ni se le
+    // ofrece descarga. Sigue sincronizando (para poder descongelar/desbloquear)
+    // pero con needsUpdate:false — cero riesgo de /package.
+    if (frozen || blocked) {
       return res.json({
-        needsUpdate: false, version: currentVersion, blocked: true,
+        needsUpdate: false, version: currentVersion, blocked: true, frozen,
         rotated180: tablet.rotated180, forceApkCheck, testMode,
-        brightnessPolicy, screenshotRequested, brightnessSchedule, syncIntervalS,
+        brightnessPolicy, screenshotRequested, brightnessSchedule,
+        // Congelado: forzar sync lento (10 min) para minimizar hasta el latido.
+        syncIntervalS: frozen ? 600 : syncIntervalS,
       });
     }
 
@@ -317,6 +321,10 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 // GET /api/device/package/:version — download ZIP (cached by content hash) (#31)
 router.get('/package/:version', requireDevice, async (req, res, next) => {
   try {
+    // Interruptor maestro: producción congelada -> NADA se arma ni se sirve.
+    if (freezeState.isFrozen()) {
+      return res.status(403).json({ frozen: true, error: 'Producción congelada — descargas deshabilitadas.' });
+    }
     const tablet = req.tablet;
     if (!tablet.playlistId) return res.status(404).json({ error: 'No playlist assigned' });
 

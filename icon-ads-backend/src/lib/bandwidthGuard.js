@@ -20,7 +20,9 @@ const prisma = require('./prisma');
 
 const MVD_OFFSET_MS = 3 * 60 * 60 * 1000; // Montevideo = UTC-3, sin DST
 const GB = 1024 * 1024 * 1024;
-const WINDOW_BUDGET_BYTES = 1 * GB;   // por ventana mañana/tarde
+const WINDOW_BUDGET_BYTES = 300 * 1024 * 1024;   // 300 MB por ventana mañana/tarde
+// (bajado de 1 GB tras el susto de los 25 USD; subilo de nuevo cuando la media
+//  esté en R2 y una descarga en loop no cueste egress de Render)
 const ALERT_STEP_BYTES = 5 * GB;      // alerta mensual cada 5 GB
 const PER_TABLET_DAILY_SOFT = 2;      // > este nº de pedidos/día = anómala
 const PER_TABLET_DISTINCT_HARD = 4;   // >= hashes distintos/día = 429
@@ -150,7 +152,10 @@ async function getStatus() {
   rollWindow();
   let month = { bytes: 0, alertedStep: 0, month: monthKey() };
   try { month = await loadMonthly(); } catch { /* ignore */ }
+  let frozen = true;
+  try { frozen = require('./freezeState').isFrozen(); } catch { /* ignore */ }
   return {
+    frozen,
     monthKey: month.month,
     monthGb: +(month.bytes / GB).toFixed(3),
     nextAlertGb: (month.alertedStep + 1) * 5,

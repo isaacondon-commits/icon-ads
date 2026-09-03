@@ -257,6 +257,7 @@ export const api = {
   ackAlert: (id: number | 'all') => request<{ ok: boolean }>(`/api/admin/alerts/${id}/ack`, { method: 'POST' }),
   getBandwidth: () => request<BandwidthStatus>('/api/admin/bandwidth'),
   resetCircuit: () => request<{ ok: boolean; window: string }>('/api/admin/circuit/reset', { method: 'POST' }),
+  setFleetFreeze: (on: boolean) => request<{ ok: boolean; frozen: boolean; message: string }>('/api/admin/fleet-freeze', { method: 'POST', body: JSON.stringify({ on }) }),
 
   // Audit export URL
   getAuditCsvUrl: (from?: string, to?: string) =>
@@ -695,6 +696,7 @@ export interface Notifications {
   offlineTablets: { id: number; name: string; offlineMinutes: number | null }[];
 }
 export interface BandwidthStatus {
+  frozen?: boolean;
   monthKey: string; monthGb: number; nextAlertGb: number;
   window: string; windowGb: number; windowBudgetGb: number;
   circuitOpen: boolean; offenders: { tabletId: number; count: number }[];

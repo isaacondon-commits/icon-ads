@@ -122,6 +122,9 @@ const MIGRATIONS = [
   { name: 'system_alerts', sql: `CREATE TABLE IF NOT EXISTS system_alerts (id BIGSERIAL PRIMARY KEY, type TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'warning', title TEXT NOT NULL, body TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), acknowledged_at TIMESTAMPTZ)` },
   { name: 'system_alerts.idx', sql: `CREATE INDEX IF NOT EXISTS system_alerts_open_idx ON system_alerts(acknowledged_at, id DESC)` },
   { name: 'system_alerts.rls', sql: `ALTER TABLE system_alerts ENABLE ROW LEVEL SECURITY` },
+  // v28 — interruptor maestro "producción congelada". Arranca en '1' (congelado)
+  // si la clave no existe. Sólo se descongela seteándola en '0' explícitamente.
+  { name: 'fleet_frozen.default', sql: `INSERT INTO system_config (key, value) VALUES ('fleet_frozen', '1') ON CONFLICT (key) DO NOTHING` },
 ];
 
 // One-shot: vacía metrics si todavía no tiene el índice único. Data de prueba,

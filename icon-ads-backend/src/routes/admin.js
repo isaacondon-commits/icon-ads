@@ -244,6 +244,22 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
 });
 
 const bandwidthGuard = require('../lib/bandwidthGuard');
+const freezeState = require('../lib/freezeState');
+
+// POST /api/admin/fleet-freeze { on: true|false } — interruptor maestro.
+// on=true  -> /package devuelve 403 SIEMPRE, /sync no ofrece updates. Cero egress
+//             de descargas. Las tablets siguen reproduciendo lo que tienen.
+// on=false -> vuelve a la operación normal (con disyuntor + topes activos).
+router.post('/fleet-freeze', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const on = req.body?.on === true || req.body?.on === 'true' || req.body?.on === 1;
+    const frozen = await freezeState.set(on);
+    audit(req, 'FLEET_FREEZE', 'system', null, `Producción ${frozen ? 'CONGELADA' : 'descongelada'}`).catch(() => {});
+    res.json({ ok: true, frozen, message: frozen
+      ? 'Producción CONGELADA — ninguna tablet puede descargar. Siguen reproduciendo su contenido local.'
+      : 'Producción descongelada — operación normal (con disyuntor y topes).' });
+  } catch (err) { next(err); }
+});
 
 // GET /api/admin/bandwidth — estado de la red de seguridad de ancho de banda.
 router.get('/bandwidth', apiKeyOrAuth, async (req, res, next) => {
@@ -421,6 +437,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         security,
         bandwidth,
         openAlerts,
+        frozen: freezeState.isFrozen(),
       },
       tablets: rows,
     });
