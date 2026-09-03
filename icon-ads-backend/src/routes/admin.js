@@ -246,6 +246,38 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
 const bandwidthGuard = require('../lib/bandwidthGuard');
 const freezeState = require('../lib/freezeState');
 
+// ── TEMPORAL: migración de media a R2 (los bytes van Supabase -> tu máquina ->
+//    R2, nunca por Render). Se borran estos endpoints después. ──────────────
+// GET: lista de anuncios con sus URLs actuales.
+router.get('/media/list', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const ads = await prisma.ad.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, filename: true, fileUrl: true, thumbnailUrl: true },
+      orderBy: { id: 'asc' },
+    });
+    res.json({ count: ads.length, ads });
+  } catch (err) { next(err); }
+});
+// POST { items: [{ id, fileUrl, thumbnailUrl }] } — reapunta las URLs en la DB.
+router.post('/media/relink', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    let updated = 0;
+    for (const it of items) {
+      const id = Number(it.id);
+      if (!Number.isInteger(id)) continue;
+      const data = {};
+      if (typeof it.fileUrl === 'string' && it.fileUrl) data.fileUrl = it.fileUrl;
+      if (typeof it.thumbnailUrl === 'string') data.thumbnailUrl = it.thumbnailUrl || null;
+      if (!Object.keys(data).length) continue;
+      await prisma.ad.update({ where: { id }, data }).catch((e) => console.warn('[relink]', id, e.message));
+      updated += 1;
+    }
+    res.json({ ok: true, updated });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/fleet-freeze { on: true|false } — interruptor maestro.
 // on=true  -> /package devuelve 403 SIEMPRE, /sync no ofrece updates. Cero egress
 //             de descargas. Las tablets siguen reproduciendo lo que tienen.
