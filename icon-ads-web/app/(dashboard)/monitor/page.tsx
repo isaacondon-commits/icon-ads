@@ -73,6 +73,15 @@ export default function MonitorPage() {
     } finally {
       setLoading(false);
     }
+    api.getBandwidth().then(setBw).catch(() => {});
+  };
+  const [bw, setBw] = useState<import('@/lib/api').BandwidthStatus | null>(null);
+  const [resettingCircuit, setResettingCircuit] = useState(false);
+  const doResetCircuit = async () => {
+    setResettingCircuit(true);
+    try { await api.resetCircuit(); await fetchData(); show('Disyuntor reseteado — /package vuelve a servir'); }
+    catch (e) { show(e instanceof Error ? e.message : 'Error al resetear', 'error'); }
+    finally { setResettingCircuit(false); }
   };
 
   const resetCountdown = () => {
@@ -289,6 +298,36 @@ export default function MonitorPage() {
           <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
             ⚠ {alerts.length} tablet{alerts.length > 1 ? 's' : ''} offline &gt;2h: {alerts.map(t => t.name).join(', ')}
           </p>
+        </div>
+      )}
+
+      {/* Disyuntor de descargas / consumo de ancho de banda */}
+      {bw && (bw.circuitOpen || bw.windowGb > 0 || bw.monthGb > 0) && (
+        <div className={`mb-4 p-3 rounded-xl border ${bw.circuitOpen ? 'border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-800' : 'border-gray-200 dark:border-gray-800'}`}>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            {bw.circuitOpen ? (
+              <span className="font-semibold text-red-700 dark:text-red-400">🚨 Disyuntor de descargas ABIERTO — /package cortado para toda la flota</span>
+            ) : (
+              <span className="font-medium">Descargas de playlist</span>
+            )}
+            <span style={{ color: 'var(--text-muted)' }}>
+              Ventana {bw.window}: <b>{bw.windowGb.toFixed(2)} GB</b> / {bw.windowBudgetGb} GB
+            </span>
+            <span style={{ color: 'var(--text-muted)' }}>
+              Mes: <b>{bw.monthGb.toFixed(2)} GB</b> (próx. aviso a los {bw.nextAlertGb} GB)
+            </span>
+            {bw.circuitOpen && (
+              <button onClick={doResetCircuit} disabled={resettingCircuit}
+                className="ml-auto text-xs font-medium px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white">
+                {resettingCircuit ? 'Reseteando…' : 'Resetear disyuntor'}
+              </button>
+            )}
+          </div>
+          {bw.circuitOpen && bw.offenders.length > 0 && (
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Más pidieron: {bw.offenders.map((o) => `tablet ${o.tabletId} (${o.count})`).join(', ')}
+            </p>
+          )}
         </div>
       )}
 

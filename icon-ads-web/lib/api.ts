@@ -254,6 +254,9 @@ export const api = {
 
   // Notifications
   getNotifications: () => request<Notifications>('/api/notifications'),
+  ackAlert: (id: number | 'all') => request<{ ok: boolean }>(`/api/admin/alerts/${id}/ack`, { method: 'POST' }),
+  getBandwidth: () => request<BandwidthStatus>('/api/admin/bandwidth'),
+  resetCircuit: () => request<{ ok: boolean; window: string }>('/api/admin/circuit/reset', { method: 'POST' }),
 
   // Audit export URL
   getAuditCsvUrl: (from?: string, to?: string) =>
@@ -681,10 +684,20 @@ export interface AdNoPlays {
   campaign: { id: number; name: string; active: boolean };
 }
 
+export interface SystemAlert {
+  id: number; type: string; severity: 'info' | 'warning' | 'critical' | string;
+  title: string; body: string | null; createdAt: string;
+}
 export interface Notifications {
   total: number; pendingAds: number; monitorAlerts?: number;
+  systemAlerts?: SystemAlert[]; systemAlertCount?: number;
   expiringCampaigns: { id: number; name: string; daysLeft: number }[];
   offlineTablets: { id: number; name: string; offlineMinutes: number | null }[];
+}
+export interface BandwidthStatus {
+  monthKey: string; monthGb: number; nextAlertGb: number;
+  window: string; windowGb: number; windowBudgetGb: number;
+  circuitOpen: boolean; offenders: { tabletId: number; count: number }[];
 }
 
 export interface ZoneStat {

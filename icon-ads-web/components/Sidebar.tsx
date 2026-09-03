@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRole } from '@/lib/roles';
 import { useTheme } from '@/lib/theme-context';
 import { api, Notifications } from '@/lib/api';
+
+const SEV_ICON: Record<string, string> = { critical: '🚨', warning: '⚠️', info: 'ℹ️' };
 
 // Secciones que sólo ve un admin/superadmin (supervisor y operator no).
 const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk', '/api-control', '/public-api']);
@@ -85,13 +87,37 @@ export default function Sidebar() {
   const [showNotif, setShowNotif] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
+  const seenAlertIds = useRef<Set<number>>(new Set());
+  const firstNotifLoad = useRef(true);
+
   useEffect(() => {
+    try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch { /* ignore */ }
     const fetchNotifs = () => {
       api.getPendingAdsCount().then((r) => setPendingAds(r.count)).catch(() => {});
-      api.getNotifications().then(setNotifications).catch(() => {});
+      api.getNotifications().then((n) => {
+        setNotifications(n);
+        const alerts = n.systemAlerts ?? [];
+        if (firstNotifLoad.current) {
+          // La primera carga sólo siembra los ids: no queremos un pop-up por
+          // cada alerta vieja al abrir el panel.
+          alerts.forEach((a) => seenAlertIds.current.add(a.id));
+          firstNotifLoad.current = false;
+          return;
+        }
+        for (const a of alerts) {
+          if (seenAlertIds.current.has(a.id)) continue;
+          seenAlertIds.current.add(a.id);
+          try {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              const notif = new Notification(`ICON ADS — ${a.title}`, { body: a.body ?? '', tag: `alert-${a.id}` });
+              void notif;
+            }
+          } catch { /* ignore */ }
+        }
+      }).catch(() => {});
     };
     fetchNotifs();
-    const id = setInterval(fetchNotifs, 5 * 60_000);
+    const id = setInterval(fetchNotifs, 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -192,11 +218,17 @@ export default function Sidebar() {
           >
             <span>🔔</span>
             <span className="flex-1">Notificaciones</span>
-            {notifications && notifications.total > 0 && (
-              <span className="text-xs font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                {notifications.total > 99 ? '99+' : notifications.total}
-              </span>
-            )}
+            {(() => {
+              const sysN = notifications?.systemAlertCount ?? notifications?.systemAlerts?.length ?? 0;
+              const n = (notifications?.total ?? 0) + sysN;
+              if (!n) return null;
+              const crit = notifications?.systemAlerts?.some((a) => a.severity === 'critical');
+              return (
+                <span className={`text-xs font-bold text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${crit ? 'bg-red-600 animate-pulse' : 'bg-red-500'}`}>
+                  {n > 99 ? '99+' : n}
+                </span>
+              );
+            })()}
           </button>
           {showNotif && notifications && (
             <div
@@ -206,10 +238,23 @@ export default function Sidebar() {
               <div className="px-3 py-2 border-b text-xs font-semibold" style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
                 ALERTAS
               </div>
-              {notifications.total === 0 ? (
+              {notifications.total === 0 && (notifications.systemAlerts?.length ?? 0) === 0 ? (
                 <p className="px-3 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>Sin alertas activas</p>
               ) : (
-                <div className="max-h-64 overflow-y-auto">
+                <div className="max-h-72 overflow-y-auto">
+                  {(notifications.systemAlerts ?? []).map((a) => (
+                    <div key={a.id} className="flex items-start gap-2 px-3 py-2 border-b" style={{ borderColor: 'var(--border)', background: a.severity === 'critical' ? 'rgba(239,68,68,0.08)' : undefined }}>
+                      <span className="shrink-0">{SEV_ICON[a.severity] ?? '•'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold">{a.title}</p>
+                        {a.body && <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{a.body}</p>}
+                      </div>
+                      <button
+                        onClick={async () => { await api.ackAlert(a.id).catch(() => {}); setNotifications((prev) => prev ? { ...prev, systemAlerts: (prev.systemAlerts ?? []).filter((x) => x.id !== a.id), systemAlertCount: Math.max(0, (prev.systemAlertCount ?? 1) - 1) } : prev); }}
+                        className="shrink-0 text-xs px-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Marcar leída"
+                      >✓</button>
+                    </div>
+                  ))}
                   {notifications.pendingAds > 0 && (
                     <Link href="/ads" onClick={() => setShowNotif(false)} className="flex items-start gap-2 px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-950/20 border-b" style={{ borderColor: 'var(--border)' }}>
                       <span className="text-amber-500 shrink-0">⏳</span>
