@@ -17,6 +17,7 @@ const bandwidthGuard = require('../lib/bandwidthGuard');
 const { sendAlert } = require('../lib/alerts');
 const freezeState = require('../lib/freezeState');
 const r2 = require('../lib/r2');
+const zipDispatch = require('../lib/zipDispatch');
 
 // Sirve un ZIP que ya está en disco. Si R2 está configurado con URL pública, lo
 // sube a R2 y responde un 302 (Render manda ~200 bytes; la tablet baja de R2,
@@ -488,15 +489,30 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       return res.status(503).json({ error: `Media incompleta (${e.message}). Reintentar.` });
     }
 
+    const playlistJson = JSON.stringify(
+      { playlistId: playlist.id, playlistName: playlist.name, version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2,
+    );
+
+    // Opción A: el ZIP lo arma GitHub Actions (repo iconads-zip-builder) y lo
+    // sube a R2. Render no mueve media. La tablet reintenta en su próximo sync.
+    if (zipDispatch.enabled) {
+      // sources ya son todos {name,url} (media en R2 tras la migración).
+      const media = sources.filter((s) => s.url).map((s) => ({ name: s.name, url: s.url }));
+      if (media.length === sources.length) {
+        const r = await zipDispatch.dispatchBuild({
+          playlistId: playlist.id, version: playlist.version, hash, playlistJson, media,
+        });
+        console.log(`[package] dispatch a GitHub: ${r.dispatched ? 'ok' : r.reason}`);
+        return res.status(503).json({ building: true, error: 'Armando el paquete (unos segundos), reintentá.' });
+      }
+      console.warn('[package] hay media sin URL — no se puede dispatchar, armo local');
+    }
+
     activePackageBuilds++;
     let doneAccounting = false;
     const releaseSlot = () => { if (!doneAccounting) { doneAccounting = true; activePackageBuilds--; } };
 
-    console.log(`[package] generando ZIP (${sources.length} archivos) [${activePackageBuilds} activos]…`);
-
-    const playlistJson = JSON.stringify(
-      { playlistId: playlist.id, playlistName: playlist.name, version: playlist.version, hash, generatedAt: new Date().toISOString(), ads: adsPayload }, null, 2
-    );
+    console.log(`[package] generando ZIP LOCAL (${sources.length} archivos) [${activePackageBuilds} activos]…`);
 
     // El ZIP se arma ENTERO a un .tmp en disco (NO se hace tee a res + disco a la
     // vez: eso mandaba un ZIP con bytes perdidos a la tablet → videos negros).
