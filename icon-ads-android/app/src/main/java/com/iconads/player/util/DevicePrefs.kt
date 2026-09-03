@@ -87,6 +87,10 @@ class DevicePrefs(context: Context) {
     fun getBrightnessSchedule(): String = prefs.getString(KEY_BRIGHTNESS_SCHEDULE, "") ?: ""
     fun setBrightnessSchedule(json: String) = prefs.edit().putString(KEY_BRIGHTNESS_SCHEDULE, json).apply()
 
+    // Intervalo del ciclo de sync (segundos), server-controlado. Default 300 (5 min).
+    fun getSyncIntervalS(): Int = prefs.getInt(KEY_SYNC_INTERVAL_S, 300)
+    fun setSyncIntervalS(s: Int) = prefs.edit().putInt(KEY_SYNC_INTERVAL_S, s.coerceIn(15, 3600)).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -104,6 +108,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_TEST_MODE = "kiosk_test_mode"
         private const val KEY_BRIGHTNESS_POLICY = "screen_brightness_policy"
         private const val KEY_BRIGHTNESS_SCHEDULE = "screen_brightness_schedule"
+        private const val KEY_SYNC_INTERVAL_S = "sync_interval_s"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)

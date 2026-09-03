@@ -1,5 +1,6 @@
 package com.iconads.player.fcm
 
+import android.content.Intent
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -23,6 +24,12 @@ class FcmService : FirebaseMessagingService() {
             "force_sync" -> {
                 Log.i(TAG, "onMessageReceived: force_sync — encolando sync inmediato")
                 SyncWorker.scheduleImmediate(applicationContext)
+                // Además despierta a la Activity (el intervalo de sync ahora es
+                // de minutos; sin esto las acciones del panel esperarían al
+                // próximo ciclo). La Activity es la única que saca capturas.
+                applicationContext.sendBroadcast(
+                    Intent(ACTION_FORCE_SYNC_NOW).setPackage(applicationContext.packageName),
+                )
             }
             "wake" -> {
                 Log.i(TAG, "onMessageReceived: wake — encendiendo pantalla / player al frente")
@@ -33,5 +40,6 @@ class FcmService : FirebaseMessagingService() {
 
     companion object {
         private const val TAG = "FcmService"
+        const val ACTION_FORCE_SYNC_NOW = "com.iconads.player.FORCE_SYNC_NOW"
     }
 }

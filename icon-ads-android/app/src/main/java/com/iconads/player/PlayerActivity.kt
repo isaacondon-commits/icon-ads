@@ -94,6 +94,11 @@ class PlayerActivity : AppCompatActivity() {
     // Evita bajar el paquete dos veces a la vez (la descarga corre detached del
     // loop de sync para no bloquear el heartbeat).
     private var packageDownloadInProgress = false
+    @Volatile private var pendingFollowUp = false
+    // Backoff de descarga: máx N intentos de /package por hora. Si se supera,
+    // la tablet sigue reproduciendo su contenido actual y solo loguea.
+    private val packageAttempts = ArrayDeque<Long>()
+    private val maxPackageAttemptsPerHour = 3
 
     // El operador bloqueó la tablet desde el panel (manualStatus="bloqueada").
     // A diferencia de `dormant` (apagado por energía/quietud), acá el kiosco
@@ -117,6 +122,14 @@ class PlayerActivity : AppCompatActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.i(TAG, "rotated180 cambió — aplicando")
             applyRotation()
+        }
+    }
+
+    // Push FCM force_sync -> sincronizar YA (el intervalo normal es de minutos).
+    private val forceSyncReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            Log.i(TAG, "force_sync (push) — sincronizando ahora")
+            lifecycleScope.launch { syncNow() }
         }
     }
 
@@ -247,10 +260,14 @@ class PlayerActivity : AppCompatActivity() {
         // Ciclo periódico — 30 s normal, 10 s en modo test (para que los
         // force-sync se apliquen más rápido durante las pruebas).
         lifecycleScope.launch {
+            // Intervalo server-controlado (syncResp.syncIntervalS, guardado en
+            // prefs; default 300 s = 5 min). Baja el consumo de ancho de banda:
+            // el latido a 30 s gastaba ~1,6 GB/mes. Si el último sync trajo algo
+            // pendiente (captura, update, force-apk), el próximo va en 15 s.
+            // Las acciones del panel llegan igual al instante por push FCM.
             while (true) {
-                delay(if (prefs.getTestMode()) 10_000L else 30_000L)
-                Log.d(TAG, "ciclo periódico")
-                if (prefs.getToken() == null) registerNow()  // retry si el registro falló al arrancar
+                delay(if (pendingFollowUp) 15_000L else prefs.getSyncIntervalS().toLong() * 1000)
+                if (prefs.getToken() == null) registerNow()
                 syncNow()
             }
         }
@@ -307,6 +324,12 @@ class PlayerActivity : AppCompatActivity() {
             IntentFilter(PowerController.ACTION_CLOSE_APP),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        ContextCompat.registerReceiver(
+            this,
+            forceSyncReceiver,
+            IntentFilter(com.iconads.player.fcm.FcmService.ACTION_FORCE_SYNC_NOW),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         gravitySensor?.let { sensorManager.registerListener(gravityListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
         try {
             (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
@@ -321,6 +344,7 @@ class PlayerActivity : AppCompatActivity() {
         unregisterReceiver(playlistUpdatedReceiver)
         unregisterReceiver(rotationChangedReceiver)
         unregisterReceiver(closeAppReceiver)
+        unregisterReceiver(forceSyncReceiver)
         sensorManager.unregisterListener(gravityListener)
         adaptiveBrightness.pause()
         try {
@@ -956,13 +980,31 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 return
             }
+            // Intervalo de sync server-controlado.
+            if (syncResp.syncIntervalS in 15..3600 && syncResp.syncIntervalS != prefs.getSyncIntervalS()) {
+                Log.i(TAG, "syncNow: intervalo de sync → ${syncResp.syncIntervalS}s")
+                prefs.setSyncIntervalS(syncResp.syncIntervalS)
+            }
+            // ¿El próximo ciclo tiene que ir más rápido? (captura pendiente,
+            // update, force-apk) — así el intervalo largo no demora seguimientos.
+            pendingFollowUp = syncResp.screenshotRequested || syncResp.needsUpdate || syncResp.forceApkCheck
+
             if (!syncResp.needsUpdate) return
+
+            // Backoff: no más de N intentos de descarga por hora.
+            val now = System.currentTimeMillis()
+            while (packageAttempts.isNotEmpty() && now - packageAttempts.first() > 3_600_000L) packageAttempts.removeFirst()
+            if (packageAttempts.size >= maxPackageAttemptsPerHour) {
+                Log.w(TAG, "syncNow: tope de $maxPackageAttemptsPerHour descargas/hora — sigo reproduciendo lo actual")
+                return
+            }
 
             // La descarga del paquete (puede ser >100 MB, minutos con señal débil)
             // va en su PROPIA corrutina — si se hiciera acá, bloquearía el loop de
             // heartbeat y la tablet se caería del monitor mientras baja.
             val packageUrl = syncResp.packageUrl ?: "api/device/package/${syncResp.version}"
             if (!packageDownloadInProgress) {
+                packageAttempts.addLast(now)
                 packageDownloadInProgress = true
                 lifecycleScope.launch(Dispatchers.IO) {
                     try { downloadAndInstallPackage(token, syncResp.version, packageUrl) }
@@ -988,6 +1030,10 @@ class PlayerActivity : AppCompatActivity() {
         val api = NetworkModule.provideDeviceApi(token)
         Log.i(TAG, "descargando paquete v$version: $packageUrl")
         val dlResp = api.downloadPackage(packageUrl)
+        if (dlResp.code() == 304) {
+            Log.i(TAG, "paquete v$version: 304 — ya tengo esta playlist, nada que descargar")
+            return
+        }
         if (!dlResp.isSuccessful) {
             Log.e(TAG, "HTTP ${dlResp.code()} descargando paquete v$version — se reintenta en el próximo sync")
             return

@@ -320,7 +320,7 @@ setInterval(async () => {
     const tablets = await prisma.tablet.findMany({
       select: { id: true, name: true, zone: true, lastSync: true, playlistId: true, playerOk: true, onFallback: true, lastAdAgoS: true, manualStatus: true },
     });
-    const tenMinAgo = Date.now() - 10 * 60 * 1000;
+    const tenMinAgo = Date.now() - 20 * 60 * 1000;  // 20 min (intervalo de sync = 5 min)
     for (const t of tablets) {
       // Bloqueada a propósito desde el panel — no es una falla, no alertar.
       if (t.manualStatus === 'bloqueada') { notPlayingAlerted.delete(t.id); continue; }

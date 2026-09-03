@@ -85,7 +85,7 @@ router.get('/monitor', async (req, res, next) => {
     const now = Date.now();
     const result = tablets.map((t) => {
       const diffMin = t.lastSync ? (now - new Date(t.lastSync).getTime()) / 60000 : Infinity;
-      const online = diffMin < 10;
+      const online = diffMin < 20;  // 20 min = tolera ~3 syncs perdidos con intervalo de 5 min
       // Salud: 'blocked' si el operador la bloqueó desde el panel; 'offline' si
       // no sincroniza; 'no-reproduce' si está online, tiene playlist y el player
       // reporta que NO está mostrando anuncios; 'ok' si no.
@@ -223,7 +223,7 @@ router.get('/export', async (req, res, next) => {
     const now = Date.now();
     const header = 'id,device_id,name,zone,playlist,status,last_sync,battery,app_version,os_version,device_model,created_at';
     const rows = tablets.map((t) => {
-      const isOnline = t.lastSync && (now - new Date(t.lastSync).getTime()) < 10 * 60000;
+      const isOnline = t.lastSync && (now - new Date(t.lastSync).getTime()) < 20 * 60000;
       return [
         t.id,
         t.deviceId,
@@ -270,7 +270,7 @@ router.get('/locations/live', async (req, res, next) => {
         playlist: t.playlist ? { id: t.playlist.id, name: t.playlist.name } : null,
         // Mismo criterio que GET /monitor: la tablet sincroniza cada ~30 s
         // mientras el player corre, así que 10 min sin sync = offline.
-        status: diffMin < 10 ? 'online' : 'offline',
+        status: diffMin < 20 ? 'online' : 'offline',
         lat: t.lastLat ?? null,
         lng: t.lastLng ?? null,
         todayPlays: countMap[t.id] ?? 0,

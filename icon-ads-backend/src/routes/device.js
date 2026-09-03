@@ -234,6 +234,12 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // app la usa cuando brightnessPolicy === 'auto' y no hay sensor de luz.
     const bsRow = await prisma.systemConfig.findUnique({ where: { key: 'brightness_schedule' } });
     const brightnessSchedule = resolveScheduleJson(bsRow?.value);
+    // Intervalo del ciclo de sync de la app (segundos). Server-controlado para
+    // poder ajustar el consumo de ancho de banda sin sacar otro APK. Default
+    // 300 s (5 min) — el latido a 30 s consumía ~1,6 GB/mes solo en heartbeat.
+    const siRow = await prisma.systemConfig.findUnique({ where: { key: 'sync_interval_s' } });
+    const siParsed = parseInt(siRow?.value, 10);
+    const syncIntervalS = Number.isFinite(siParsed) && siParsed >= 15 && siParsed <= 3600 ? siParsed : 300;
     // Sólo la Activity del player (que manda appVersion/playerOk) puede sacar
     // la captura — el SyncWorker no. Así el flag no se "consume" en un sync
     // del worker sin que nadie fotografíe.
@@ -252,7 +258,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       return res.json({
         needsUpdate: false, version: currentVersion, blocked: true,
         rotated180: tablet.rotated180, forceApkCheck, testMode,
-        brightnessPolicy, screenshotRequested, brightnessSchedule,
+        brightnessPolicy, screenshotRequested, brightnessSchedule, syncIntervalS,
       });
     }
 
@@ -260,13 +266,13 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
       // noPlaylist: la app borra la playlist local y cae al institucional en vez
       // de seguir loopeando el último paquete que descargó.
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0, noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
+      return res.json({ needsUpdate: false, version: 0, noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
     // #48 — el admin forzó un sync desde el panel: baja sí o sí.
@@ -285,7 +291,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!needsUpdate) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} v${playlist.version} sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
     const motivo = forced ? 'forzado' : differentPlaylist ? `otra playlist (${installedPlaylistId}→${tablet.playlistId})` : `v${currentVersion}→v${playlist.version}`;
@@ -301,6 +307,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       screenshotRequested,
       blocked,
       brightnessSchedule,
+      syncIntervalS,
     });
   } catch (err) {
     next(err);

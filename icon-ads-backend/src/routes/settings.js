@@ -14,6 +14,7 @@ const ALLOWED_KEYS = [
   'auto_archive_expired',
   'battery_alert_pct',
   'brightness_schedule',
+  'sync_interval_s',
 ];
 
 // GET /api/settings — all system config values
@@ -36,6 +37,13 @@ router.put('/:key', requireAdmin, async (req, res, next) => {
       const norm = validateSchedule(safeParse(value));
       if (!norm) return res.status(400).json({ error: 'Tabla de brillo inválida: se esperan al menos 2 puntos con ref (sunrise/sunset), offsetMin y pct.' });
       value = JSON.stringify(norm);
+    }
+    if (key === 'sync_interval_s') {
+      const n = parseInt(value, 10);
+      if (!Number.isFinite(n) || n < 15 || n > 3600) {
+        return res.status(400).json({ error: 'sync_interval_s debe estar entre 15 y 3600 segundos.' });
+      }
+      value = String(n);
     }
     const config = await prisma.systemConfig.upsert({
       where: { key },

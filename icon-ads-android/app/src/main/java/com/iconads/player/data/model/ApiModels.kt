@@ -36,6 +36,8 @@ data class SyncResponse(
     // La tablet quedó SIN playlist asignada en el panel: borrar la playlist
     // local y pasar al institucional (no seguir loopeando el último paquete).
     val noPlaylist: Boolean = false,
+    // Intervalo del ciclo de sync en segundos (server-controlado). Default 300.
+    val syncIntervalS: Int = 300,
 )
 
 data class ScreenshotUpload(

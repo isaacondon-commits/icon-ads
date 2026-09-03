@@ -33,7 +33,7 @@ router.get('/', async (req, res, next) => {
     ]);
 
     // Contador para el badge de "Monitor": tablets que necesitan atención ahora.
-    const tenMinAgo = Date.now() - 10 * 60 * 1000;
+    const tenMinAgo = Date.now() - 20 * 60 * 1000;  // 20 min (intervalo de sync = 5 min)
     let monitorAlerts = 0;
     for (const t of allTablets) {
       const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
