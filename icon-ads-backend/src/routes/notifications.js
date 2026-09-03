@@ -11,6 +11,11 @@ router.get('/', async (req, res, next) => {
     const inSevenDays = new Date(today); inSevenDays.setDate(inSevenDays.getDate() + 7);
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
+    const systemAlerts = await prisma.$queryRawUnsafe(
+      `SELECT id, type, severity, title, body, created_at AS "createdAt"
+       FROM system_alerts WHERE acknowledged_at IS NULL ORDER BY id DESC LIMIT 50`,
+    ).catch(() => []);
+
     const [pendingAds, expiringCampaigns, offlineTablets, allTablets] = await Promise.all([
       prisma.ad.count({ where: { approvalStatus: 'pending', deletedAt: null } }),
       prisma.campaign.findMany({
@@ -44,6 +49,8 @@ router.get('/', async (req, res, next) => {
       total: pendingAds + expiringCampaigns.length + offlineTablets.length,
       pendingAds,
       monitorAlerts,
+      systemAlerts: (systemAlerts || []).map((a) => ({ ...a, id: Number(a.id) })),
+      systemAlertCount: (systemAlerts || []).length,
       expiringCampaigns: expiringCampaigns.map((c) => ({
         id: c.id,
         name: c.name,

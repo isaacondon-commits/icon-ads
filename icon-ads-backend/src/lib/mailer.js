@@ -32,4 +32,19 @@ async function sendTabletOfflineAlert(tablet) {
   }
 }
 
-module.exports = { sendTabletOfflineAlert };
+async function sendAlertMail(subject, body) {
+  if (!process.env.SMTP_USER || !process.env.ALERT_EMAIL) return;
+  try {
+    await transporter.sendMail({
+      from: `"Icon Ads" <${process.env.SMTP_USER}>`,
+      to: process.env.ALERT_EMAIL,
+      subject: `🔔 ICON ADS — ${subject}`,
+      html: `<h2>${subject}</h2><p>${String(body).replace(/\n/g, '<br>')}</p>`
+        + `<p style="color:#888;font-size:12px">Enviado ${new Date().toISOString()}</p>`,
+    });
+  } catch (err) {
+    console.warn('[mailer] sendAlertMail:', err.message);
+  }
+}
+
+module.exports = { sendTabletOfflineAlert, sendAlertMail };

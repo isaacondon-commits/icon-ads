@@ -243,6 +243,63 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
+const bandwidthGuard = require('../lib/bandwidthGuard');
+
+// GET /api/admin/bandwidth — estado de la red de seguridad de ancho de banda.
+router.get('/bandwidth', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    res.json(await bandwidthGuard.getStatus());
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/circuit/reset — cierra el disyuntor a mano (vuelve a servir
+// /package). Se sigue contando el uso de la ventana.
+router.post('/circuit/reset', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const r = bandwidthGuard.resetCircuit();
+    audit(req, 'CIRCUIT_RESET', 'system', null, `Disyuntor de descargas reseteado (ventana ${r.window})`).catch(() => {});
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/bandwidth/reset — pone el odómetro mensual en 0 (y el nivel
+// de alerta). Normalmente se resetea solo el día 1.
+router.post('/bandwidth/reset', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const r = await bandwidthGuard.resetOdometer();
+    audit(req, 'BANDWIDTH_RESET', 'system', null, `Odómetro de descargas reseteado (mes ${r.month})`).catch(() => {});
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/alerts — alertas del sistema (sin reconocer primero).
+router.get('/alerts', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT id, type, severity, title, body, created_at AS "createdAt", acknowledged_at AS "acknowledgedAt"
+       FROM system_alerts ORDER BY id DESC LIMIT 100`,
+    );
+    res.json(rows.map((r) => ({ ...r, id: Number(r.id) })));
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/alerts/:alertId/ack — marca una alerta como leída.
+//   alertId numérico = esa; 'all' = todas las pendientes.
+// (param 'alertId', no 'id', para saltear el validador numérico de router.param)
+router.post('/alerts/:alertId/ack', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const a = req.params.alertId;
+    if (a === 'all') {
+      await prisma.$executeRawUnsafe(`UPDATE system_alerts SET acknowledged_at = NOW() WHERE acknowledged_at IS NULL`);
+    } else if (/^\d+$/.test(a)) {
+      await prisma.$executeRawUnsafe(`UPDATE system_alerts SET acknowledged_at = NOW() WHERE id = $1`, Number(a));
+    } else {
+      return res.status(400).json({ error: 'alertId inválido' });
+    }
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
 // POST /api/admin/tablet/:id/resync — fuerza a UNA tablet a re-descargar su
 // playlist ya (ignora el check de versión). Para cuando una tablet quedó
 // mostrando el video de respaldo porque no bajó su playlist.
@@ -298,6 +355,16 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
     const metricMap = Object.fromEntries(metricsByTablet.map((r) => [r.tabletId, r._count._all]));
     const errMap = Object.fromEntries((errsByTablet || []).map((r) => [r.tabletId, r._count._all]));
 
+    let bandwidth = null;
+    let openAlerts = 0;
+    try {
+      bandwidth = await bandwidthGuard.getStatus();
+      const [a] = await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM system_alerts WHERE acknowledged_at IS NULL`,
+      );
+      openAlerts = Number(a?.n ?? 0);
+    } catch (e) { /* tabla puede no existir aún */ }
+
     // Estado del lockdown de la API pública de Supabase (ver hardenPublicSchema).
     let security = null;
     try {
@@ -352,6 +419,8 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
         sinAdsReproducibles: rows.filter((r) => r.playlist && r.adsReproducibles === 0).length,
         metricsTotal,
         security,
+        bandwidth,
+        openAlerts,
       },
       tablets: rows,
     });

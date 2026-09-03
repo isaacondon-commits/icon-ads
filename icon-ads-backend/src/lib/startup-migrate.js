@@ -118,6 +118,10 @@ const MIGRATIONS = [
   // histórico + la creación del índice único metrics_natural_key (que hace que
   // skipDuplicates / ON CONFLICT DO NOTHING rechace los reenvíos) se hacen en
   // cleanMetricsOnce() abajo — una sola vez, en segundo plano.
+  // v27 — alertas del sistema (campanita del panel + red de seguridad de bw).
+  { name: 'system_alerts', sql: `CREATE TABLE IF NOT EXISTS system_alerts (id BIGSERIAL PRIMARY KEY, type TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'warning', title TEXT NOT NULL, body TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), acknowledged_at TIMESTAMPTZ)` },
+  { name: 'system_alerts.idx', sql: `CREATE INDEX IF NOT EXISTS system_alerts_open_idx ON system_alerts(acknowledged_at, id DESC)` },
+  { name: 'system_alerts.rls', sql: `ALTER TABLE system_alerts ENABLE ROW LEVEL SECURITY` },
 ];
 
 // One-shot: vacía metrics si todavía no tiene el índice único. Data de prueba,
@@ -214,6 +218,29 @@ async function hardenPublicSchema() {
   }
 }
 
+// One-shot: bloquea toda la flota al arrancar (pedido del usuario — quería
+// congelarla mientras se despliega la red de seguridad de ancho de banda, y no
+// podía hacerlo con la app caída). Se desbloquea desde el panel cuando verifica.
+// Guardado por systemConfig: no vuelve a correr en deploys siguientes.
+async function autoBlockFleetOnce() {
+  try {
+    const done = await prisma.systemConfig.findUnique({ where: { key: 'fleet_autoblock_v1' } });
+    if (done) return;
+    const r = await prisma.tablet.updateMany({
+      where: { manualStatus: { not: 'bloqueada' } },
+      data: { manualStatus: 'bloqueada' },
+    });
+    await prisma.systemConfig.upsert({
+      where: { key: 'fleet_autoblock_v1' },
+      update: { value: new Date().toISOString() },
+      create: { key: 'fleet_autoblock_v1', value: new Date().toISOString() },
+    });
+    console.log(`[migrate] auto-bloqueo de flota: ${r.count} tablets bloqueadas al arrancar — desbloquear desde el panel`);
+  } catch (err) {
+    console.error(`[migrate] auto-bloqueo FAILED: ${err.message}`);
+  }
+}
+
 async function runStartupMigrations() {
   for (const m of MIGRATIONS) {
     try {
@@ -224,6 +251,7 @@ async function runStartupMigrations() {
     }
   }
   await hardenPublicSchema();
+  await autoBlockFleetOnce();
   // Limpieza pesada del histórico de metrics: en segundo plano para no
   // demorar el arranque del server (Render marca el deploy como fallido si
   // tarda mucho en abrir el puerto). Se reintenta en cada deploy hasta que

@@ -13,6 +13,33 @@ const forceSyncFlags = require('../lib/forceSyncFlags');
 const forceApkFlags = require('../lib/forceApkFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
 const { resolveScheduleJson } = require('../lib/brightnessSchedule');
+const bandwidthGuard = require('../lib/bandwidthGuard');
+const { sendAlert } = require('../lib/alerts');
+
+// Despacha alertas tras servir un paquete (odómetro mensual + disyuntor).
+function afterPackageServe(tabletId, hash, bytes) {
+  bandwidthGuard.recordServed(tabletId, hash, bytes).then((r) => {
+    if (r.stepAlertGb) {
+      sendAlert('bandwidth_step',
+        `Uso de descargas: ${r.stepAlertGb} GB este mes`,
+        `El backend sirvió ${r.monthGb} GB de paquetes de playlist este mes (Render incluye 25 GB). `
+        + `Próximo aviso a los ${r.stepAlertGb + 5} GB.`, 'warning');
+    }
+    if (r.circuitAlert) {
+      const offs = r.circuitAlert.offenders;
+      const off = offs.map((o) => `tablet ${o.tabletId} (${o.count} pedidos)`).join(', ') || '—';
+      const looksLikeLoop = offs.some((o) => o.count >= 4);
+      const diagnostico = looksLikeLoop
+        ? `Hay una tablet pidiendo en LOOP (${off}) — probablemente un bug. Revisala antes de resetear.`
+        : `Los pedidos están repartidos (${off}) — parece una actualización masiva legítima. Si es así, reseteá el disyuntor para que termine.`;
+      sendAlert('bandwidth_circuit',
+        `Disyuntor de descargas ABIERTO — ventana ${r.circuitAlert.window}`,
+        `Se superó 1 GB de descargas en esta ventana (${r.circuitAlert.gb} GB). /package quedó CORTADO para toda la flota `
+        + `hasta el próximo cambio de ventana (mediodía / medianoche). Las tablets siguen reproduciendo su contenido. `
+        + `${diagnostico} Reset manual: POST /api/admin/circuit/reset (o desde el panel).`, 'critical');
+    }
+  }).catch(() => {});
+}
 
 // Cuántos ZIP de playlist se pueden ARMAR a la vez. Ahora el armado es 100%
 // streaming (no bufferiza los videos), así que la RAM ya no es el límite; el
@@ -218,6 +245,17 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     // desbloquee — pero sigue sincronizando normalmente.
     const blocked = tablet.manualStatus === 'bloqueada';
 
+    // Tablet bloqueada: no se evalúa playlist ni se le ofrece descarga. Sigue
+    // sincronizando (para poder desbloquearla) pero con needsUpdate:false, así
+    // no hay forma de que dispare un /package mientras está bloqueada.
+    if (blocked) {
+      return res.json({
+        needsUpdate: false, version: currentVersion, blocked: true,
+        rotated180: tablet.rotated180, forceApkCheck, testMode,
+        brightnessPolicy, screenshotRequested, brightnessSchedule,
+      });
+    }
+
     if (!tablet.playlistId) {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
       // noPlaylist: la app borra la playlist local y cae al institucional en vez
@@ -306,13 +344,42 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     console.log(`[package] tablet=${tablet.id} playlist=${playlist.id} v${playlist.version} ads=${adsPayload.length} hash=${hash.slice(0, 8)}`);
 
+    // ── Red de seguridad de ancho de banda ──────────────────────────────────
+    const gate = bandwidthGuard.checkPackageRequest(tablet.id, hash);
+    if (gate.anomalous) {
+      sendAlert('tablet_download_anomaly',
+        `Tablet ${tablet.id} pide descargas de más`,
+        `La tablet ${tablet.id} pidió /package ${gate.count} veces hoy (lo normal es 1). `
+        + `Sigue reproduciendo su contenido; ${gate.action === 'rate-limited'
+          ? 'se le cortó la descarga (429)'
+          : gate.action === 'not-modified'
+            ? 'se le devolvió 204 (ya tiene esa playlist)'
+            : 'se le sirvió igual'}.`, 'warning');
+    }
+    if (gate.action === 'circuit-open') {
+      return res.status(503).json({ circuitOpen: true, error: 'Límite de descargas alcanzado — reintentá más tarde.' });
+    }
+    if (gate.action === 'rate-limited') {
+      return res.status(429).json({ error: 'Demasiadas descargas distintas hoy para esta tablet.' });
+    }
+    if (gate.action === 'not-modified') {
+      // La tablet ya recibió este ZIP hoy: 304, no se rearma ni se reenvía.
+      // El cliente actual (v1.44) trata !isSuccessful como "no hay update" y NO
+      // toca el almacenamiento local. Un APK futuro puede loguearlo más lindo.
+      return res.status(304).end();
+    }
+
     // Cache hit: el ZIP ya generado y completo se sirve tal cual.
     if (playlist.contentHash === hash && fs.existsSync(cachedZip)) {
       console.log(`[package] cache hit — sirviendo desde disco`);
+      const size = fs.statSync(cachedZip).size;
       res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Length', size);
       res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
       res.setHeader('X-Playlist-Hash', hash);
-      return fs.createReadStream(cachedZip).pipe(res);
+      fs.createReadStream(cachedZip).pipe(res);
+      afterPackageServe(tablet.id, hash, size);
+      return;
     }
 
     // Tope de concurrencia: si ya hay varios armándose, esta tablet reintenta.
@@ -448,6 +515,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
       res.setHeader('Content-Disposition', `attachment; filename="playlist_v${playlist.version}.zip"`);
       res.setHeader('X-Playlist-Hash', hash);
       fs.createReadStream(cachedZip).on('error', () => { if (!res.writableEnded) res.destroy(); }).pipe(res);
+      afterPackageServe(tablet.id, hash, zipSize);
     } catch (e) {
       done(e.message);
     }
