@@ -20,9 +20,11 @@ const prisma = require('./prisma');
 
 const MVD_OFFSET_MS = 3 * 60 * 60 * 1000; // Montevideo = UTC-3, sin DST
 const GB = 1024 * 1024 * 1024;
-const WINDOW_BUDGET_BYTES = 300 * 1024 * 1024;   // 300 MB por ventana mañana/tarde
-// (bajado de 1 GB tras el susto de los 25 USD; subilo de nuevo cuando la media
-//  esté en R2 y una descarga en loop no cueste egress de Render)
+const WINDOW_BUDGET_BYTES = 500 * 1024 * 1024;   // 500 MB por ventana mañana/tarde
+// AUTO-CONGELAR la producción si el egress del MES cruza esto. Margen enorme
+// sobre lo que queda del plan (~1,44 GB). Ajustable por systemConfig
+// bw_auto_refreeze_gb. Es el "cortá inmediatamente" automatizado.
+const AUTO_REFREEZE_BYTES_DEFAULT = 1.0 * GB;
 const ALERT_STEP_BYTES = 5 * GB;      // alerta mensual cada 5 GB
 const PER_TABLET_DAILY_SOFT = 2;      // > este nº de pedidos/día = anómala
 const PER_TABLET_DISTINCT_HARD = 4;   // >= hashes distintos/día = 429
@@ -124,7 +126,7 @@ async function recordServed(tabletId, hash, bytes) {
 
   const out = { stepAlertGb: null, circuitAlert: null };
 
-  // odómetro mensual + alerta escalonada
+  // odómetro mensual + alerta escalonada + AUTO-CONGELADO
   try {
     const o = await loadMonthly();
     o.bytes += bytes;
@@ -132,6 +134,20 @@ async function recordServed(tabletId, hash, bytes) {
     if (step > o.alertedStep) { out.stepAlertGb = step * 5; o.alertedStep = step; }
     await saveMonthly(o);
     out.monthGb = +(o.bytes / GB).toFixed(2);
+
+    // Techo duro: si el mes cruza el límite, congelar la producción YA.
+    let ceiling = AUTO_REFREEZE_BYTES_DEFAULT;
+    try {
+      const cfg = await prisma.systemConfig.findUnique({ where: { key: 'bw_auto_refreeze_gb' } });
+      const g = parseFloat(cfg?.value);
+      if (Number.isFinite(g) && g > 0) ceiling = g * GB;
+    } catch { /* ignore */ }
+    if (o.bytes > ceiling) {
+      try {
+        const fz = require('./freezeState');
+        if (!fz.isFrozen()) { await fz.set(true); out.autoRefrozeGb = +(ceiling / GB).toFixed(2); }
+      } catch (e) { console.error('[bwGuard] auto-congelado falló:', e.message); }
+    }
   } catch (e) {
     console.warn('[bwGuard] odómetro:', e.message);
   }

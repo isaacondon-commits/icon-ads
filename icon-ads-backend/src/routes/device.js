@@ -28,7 +28,9 @@ async function serveZipFromDisk(res, tabletId, hash, playlistId, version, zipPat
     try {
       await r2.putFile(r2Key, zipPath, 'application/zip');
       console.log(`[package] ZIP -> R2 (${(size / 1024).toFixed(0)} KB) — 302`);
-      afterPackageServe(tabletId, hash, 300);
+      // Cuenta los bytes REALES subidos a R2 (Service-Initiated egress de Render)
+      // para que el disyuntor y el odómetro los vean.
+      afterPackageServe(tabletId, hash, size);
       return res.redirect(302, r2.getPublicUrl(r2Key));
     } catch (e) {
       console.warn('[package] subida a R2 falló, sirvo desde disco:', e.message);
@@ -46,6 +48,13 @@ async function serveZipFromDisk(res, tabletId, hash, playlistId, version, zipPat
 // Despacha alertas tras servir un paquete (odómetro mensual + disyuntor).
 function afterPackageServe(tabletId, hash, bytes) {
   bandwidthGuard.recordServed(tabletId, hash, bytes).then((r) => {
+    if (r.autoRefrozeGb) {
+      sendAlert('bandwidth_autofreeze',
+        `PRODUCCIÓN AUTO-CONGELADA — se cruzó ${r.autoRefrozeGb} GB este mes`,
+        `El egress del backend llegó a ${r.monthGb} GB (techo automático ${r.autoRefrozeGb} GB). `
+        + `La producción se CONGELÓ sola: /package deshabilitado, las tablets siguen reproduciendo su contenido. `
+        + `Revisá qué pasó antes de descongelar desde el panel.`, 'critical');
+    }
     if (r.stepAlertGb) {
       sendAlert('bandwidth_step',
         `Uso de descargas: ${r.stepAlertGb} GB este mes`,
