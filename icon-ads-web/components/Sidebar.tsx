@@ -77,7 +77,7 @@ const linkGroups = [
 
 const COLLAPSE_STORAGE_KEY = 'iconads-sidebar-collapsed';
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onNavigate }: { open?: boolean; onNavigate?: () => void } = {}) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { isAdmin } = useRole();
@@ -141,7 +141,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="w-60 min-h-screen flex flex-col transition-colors duration-200"
+      className={`fixed inset-y-0 left-0 z-40 w-60 flex flex-col transition duration-200 lg:static lg:z-auto lg:min-h-screen lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       style={{ background: 'var(--sidebar)' }}
     >
       <div className="px-6 py-5 border-b border-gray-800">
@@ -183,6 +183,7 @@ export default function Sidebar() {
                       <Link
                         key={link.href}
                         href={link.href}
+                        onClick={() => onNavigate?.()}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                           active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                         }`}
