@@ -68,6 +68,16 @@ body {
 tbody tr { transition: background 0.1s; }
 tbody tr:hover { background: var(--bg); }
 
+/* Tablet/celular: las tablas anchas scrollean en horizontal en vez de recortar
+   columnas (así se llega a los botones de acción). En >=lg no cambia nada. */
+@media (max-width: 1023px) {
+  main table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+}
+
 /* Skeleton loader */
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
