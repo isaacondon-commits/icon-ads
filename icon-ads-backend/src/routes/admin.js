@@ -11,7 +11,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const apiKeyOrAuth = require('../middleware/apiKeyOrAuth');
 const { audit } = require('../lib/auditLog');
-const supabaseStorage = require('../lib/supabase-storage');
+const r2 = require('../lib/r2');
 const firebaseAdmin = require('../lib/firebase-admin');
 const forceApkFlags = require('../lib/forceApkFlags');
 const forceSyncFlags = require('../lib/forceSyncFlags');
@@ -801,26 +801,35 @@ router.delete('/api-keys/:id', requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// POST /api/admin/apk — upload a new Android release APK for the fleet to
-// auto-download (#apk-autoupdate). versionCode/versionName come from
-// app/build.gradle.kts at the time of the build; not parsed from the APK
-// itself to avoid pulling in a manifest-binary-XML parser for something the
-// person uploading already knows.
+// POST /api/admin/apk — publica una release Android para que la flota la
+// auto-descargue (#apk-autoupdate). El APK vive en R2 (Cloudflare, egress
+// gratis), NO en Supabase. Dos modos:
+//   - multipart {file, versionCode, versionName}  -> sube el APK a R2 por acá
+//   - JSON {versionCode, versionName}             -> "record-only": el APK ya se
+//     subió directo a R2 vía /apk/presign (scripts/publish-apk.mjs), sólo se
+//     registra la versión — cero bytes por Render.
+// versionCode/versionName vienen de app/build.gradle.kts al momento del build;
+// no se parsean del APK para no arrastrar un parser de XML binario de manifest.
 router.post('/apk', apiKeyOrAuth, apkUpload.single('file'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    if (!/\.apk$/i.test(req.file.originalname)) return res.status(400).json({ error: 'El archivo debe ser un .apk' });
-
     const { versionCode, versionName } = z.object({
       versionCode: z.coerce.number().int().positive(),
       versionName: z.string().min(1),
     }).parse(req.body);
 
-    if (!supabaseStorage.isConfigured) return res.status(503).json({ error: 'Storage not configured' });
+    if (!r2.hasPublicUrl) return res.status(503).json({ error: 'R2 no configurado (falta R2_PUBLIC_URL)' });
 
-    const filename = `apk/iconads-v${versionCode}.apk`;
-    const url = await supabaseStorage.uploadFile(filename, req.file.buffer, 'application/vnd.android.package-archive');
+    const key = `apk/iconads-v${versionCode}.apk`;
 
+    if (req.file) {
+      if (!/\.apk$/i.test(req.file.originalname)) return res.status(400).json({ error: 'El archivo debe ser un .apk' });
+      await r2.putBuffer(key, req.file.buffer, 'application/vnd.android.package-archive');
+    } else {
+      const exists = await r2.objectExists(key);
+      if (!exists) return res.status(422).json({ error: `El APK no está en R2 (${key}). Subilo primero con POST /api/admin/apk/presign.` });
+    }
+
+    const url = r2.getPublicUrl(key);
     const uploadedAt = new Date().toISOString();
     await Promise.all([
       prisma.systemConfig.upsert({ where: { key: 'apk_version_code' }, update: { value: String(versionCode) }, create: { key: 'apk_version_code', value: String(versionCode) } }),
@@ -829,8 +838,25 @@ router.post('/apk', apiKeyOrAuth, apkUpload.single('file'), async (req, res, nex
       prisma.systemConfig.upsert({ where: { key: 'apk_uploaded_at' }, update: { value: uploadedAt }, create: { key: 'apk_uploaded_at', value: uploadedAt } }),
     ]);
 
-    await audit(req, 'UPLOAD_APK', 'system', null, `APK v${versionCode} (${versionName})`);
+    await audit(req, 'UPLOAD_APK', 'system', null, `APK v${versionCode} (${versionName})${req.file ? '' : ' [directo a R2]'}`);
     res.status(201).json({ versionCode, versionName, url, uploadedAt });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
+// POST /api/admin/apk/presign {versionCode} — URL de subida directa a R2 para
+// el APK, así los bytes NO pasan por Render. La usa scripts/publish-apk.mjs.
+router.post('/apk/presign', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const { versionCode } = z.object({
+      versionCode: z.coerce.number().int().positive(),
+    }).parse(req.body);
+    if (!r2.hasPublicUrl) return res.status(503).json({ error: 'R2 no configurado (falta R2_PUBLIC_URL)' });
+    const key = `apk/iconads-v${versionCode}.apk`;
+    const uploadUrl = await r2.getPresignedUploadUrl(key, 'application/vnd.android.package-archive', 600);
+    res.json({ uploadUrl, key, publicUrl: r2.getPublicUrl(key) });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);

@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-// Publica la APK compilada en el panel (POST /api/admin/apk) usando una API key,
-// sin sesión de navegador. Opcionalmente fuerza la actualización en toda la flota.
+// Publica la APK compilada usando una API key, sin sesión de navegador.
+// Opcionalmente fuerza la actualización en toda la flota.
+//
+// El APK se sube DIRECTO a R2 (Cloudflare) con una URL prefirmada que da el
+// backend — los bytes NO pasan por Render. Después se registra la versión con
+// un POST liviano en JSON. La flota baja el APK de R2 (egress gratis).
 //
 // Uso:
 //   node scripts/publish-apk.mjs [--release|--debug] [--force] [--apk <ruta>]
@@ -61,24 +65,45 @@ if (!existsSync(apkPath)) {
 
 console.log(`Publicando ${basename(apkPath)}  v${versionName} (código ${versionCode})  →  ${panelUrl}`);
 
-// ── Upload ───────────────────────────────────────────────────────────────
+// ── 1) URL prefirmada de R2 ──────────────────────────────────────────────
+const APK_CT = 'application/vnd.android.package-archive';
 const buf = readFileSync(apkPath);
-const fd = new FormData();
-fd.append('file', new Blob([buf], { type: 'application/vnd.android.package-archive' }), basename(apkPath));
-fd.append('versionCode', String(versionCode));
-fd.append('versionName', versionName);
 
+const pre = await fetch(`${panelUrl}/api/admin/apk/presign`, {
+  method: 'POST',
+  headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ versionCode }),
+});
+const preBody = await pre.json().catch(() => ({}));
+if (!pre.ok || !preBody.uploadUrl) {
+  console.error(`Falló el presign (HTTP ${pre.status}):`, preBody.error || preBody);
+  process.exit(1);
+}
+
+// ── 2) PUT del APK directo a R2 (no pasa por Render) ─────────────────────
+const put = await fetch(preBody.uploadUrl, {
+  method: 'PUT',
+  headers: { 'Content-Type': APK_CT },
+  body: buf,
+});
+if (!put.ok) {
+  console.error(`Falló la subida a R2 (HTTP ${put.status}):`, await put.text().catch(() => ''));
+  process.exit(1);
+}
+console.log(`✓ APK subido a R2 (${(buf.length / 1e6).toFixed(1)} MB, directo, 0 bytes por Render)`);
+
+// ── 3) Registrar la versión (POST liviano en JSON) ─────────────────────
 const up = await fetch(`${panelUrl}/api/admin/apk`, {
   method: 'POST',
-  headers: { 'X-API-Key': apiKey },
-  body: fd,
+  headers: { 'X-API-Key': apiKey, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ versionCode, versionName }),
 });
 const upBody = await up.json().catch(() => ({}));
 if (!up.ok) {
   console.error(`Falló la publicación (HTTP ${up.status}):`, upBody.error || upBody);
   process.exit(1);
 }
-console.log(`✓ Publicada: v${upBody.versionName} (código ${upBody.versionCode})`);
+console.log(`✓ Publicada: v${upBody.versionName} (código ${upBody.versionCode})  →  ${upBody.url}`);
 
 // ── Force (opcional) ─────────────────────────────────────────────────────
 if (force) {

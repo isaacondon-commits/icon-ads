@@ -71,6 +71,19 @@ async function putFile(key, filePath, contentType) {
   return stat.size;
 }
 
+// Sube un buffer en memoria a R2 (para el APK subido vía multipart al backend).
+async function putBuffer(key, buffer, contentType) {
+  if (!client) throw new Error('R2 no configurado');
+  await client.send(new PutObjectCommand({
+    Bucket: process.env.R2_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentLength: buffer.length,
+    ContentType: contentType,
+  }));
+  return buffer.length;
+}
+
 function getPublicUrl(key) {
   const base = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
   return `${base}/${key}`;
@@ -78,5 +91,5 @@ function getPublicUrl(key) {
 
 module.exports = {
   isConfigured, hasPublicUrl,
-  getPresignedUploadUrl, deleteObject, objectExists, putFile, getPublicUrl,
+  getPresignedUploadUrl, deleteObject, objectExists, putFile, putBuffer, getPublicUrl,
 };
