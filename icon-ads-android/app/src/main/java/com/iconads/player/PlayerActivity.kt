@@ -166,39 +166,60 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // Auto 180° flip (#rotation-auto) — compares live gravity readings
-    // against the reference captured on first boot (see DevicePrefs). If the
-    // tablet is now settled ~180° away from how it was originally mounted,
-    // it flips on its own without needing the admin panel toggle.
+    // Auto 180° flip (#rotation-auto) — detecta si la tablet quedó montada al
+    // revés y gira el contenido sola, sin depender del toggle del panel.
     //
-    // Uses TYPE_GRAVITY (not raw accelerometer) since it's already low-pass
-    // filtered by the OS to strip out linear acceleration — important here
-    // because several tablets are mounted in moving vehicles. A streak of
-    // consistent readings is still required before acting, as extra
-    // debounce against bumps/turns.
+    // Sólo importa la gravedad EN EL PLANO de la pantalla: (x, y). El eje z
+    // (perpendicular a la pantalla) se ignora, así que la referencia ya NO se
+    // rompe si el primer arranque fue con la tablet acostada.
+    //
+    //  - Tablet acostada (|inPlane| chico)  -> no se puede saber la rotación,
+    //    se mantiene el estado actual.
+    //  - Sin referencia válida + tablet bien parada -> se calibra ahí.
+    //  - Referencia guardada inválida (se capturó acostada) -> se descarta y
+    //    se recalibra. Esto auto-cura a las tablets ya provisionadas.
+    //  - Se compara la dirección de la gravedad-en-plano actual contra la de
+    //    referencia (producto punto 2D). Opuesta => 180°. Se exige una racha
+    //    de lecturas consistentes (debounce para baches/curvas del auto).
+    //
+    // TYPE_GRAVITY viene filtrado por el SO (sin aceleración lineal); si no
+    // existe se cae a TYPE_ACCELEROMETER y la racha alcanza para el ruido.
     private val gravityListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
             val x = event.values[0]
             val y = event.values[1]
-            val z = event.values[2]
+            val inPlane = sqrt(x * x + y * y)
 
+            // Pantalla ~horizontal: la rotación en el plano es indeterminada.
+            if (inPlane < FLAT_INPLANE_MIN) return
+
+            // Auto-cura: referencia vieja capturada con la tablet acostada.
+            if (prefs.hasGravityReference()) {
+                val r = prefs.getGravityReference()
+                if (sqrt(r[0] * r[0] + r[1] * r[1]) < FLAT_INPLANE_MIN) {
+                    prefs.clearGravityReference()
+                    Log.i(TAG, "Referencia de gravedad inválida (plana) — descartada")
+                }
+            }
+
+            // Sin referencia: calibrar sólo si la tablet está claramente parada.
             if (!prefs.hasGravityReference()) {
-                prefs.setGravityReference(x, y, z)
-                Log.i(TAG, "Referencia de gravedad calibrada (primer arranque)")
+                if (inPlane >= CALIBRATE_INPLANE_MIN) {
+                    prefs.setGravityReference(x, y, 0f)
+                    Log.i(TAG, "Referencia de gravedad calibrada (tablet parada)")
+                }
                 return
             }
 
             val ref = prefs.getGravityReference()
-            val magNow = sqrt(x * x + y * y + z * z)
-            val magRef = sqrt(ref[0] * ref[0] + ref[1] * ref[1] + ref[2] * ref[2])
-            if (magNow < 0.1f || magRef < 0.1f) return
-            val dot = x * ref[0] + y * ref[1] + z * ref[2]
-            val cos = (dot / (magNow * magRef)).coerceIn(-1f, 1f)
+            val refInPlane = sqrt(ref[0] * ref[0] + ref[1] * ref[1])
+            if (refInPlane < 0.1f) return
+            val cos = ((x * ref[0] + y * ref[1]) / (inPlane * refInPlane)).coerceIn(-1f, 1f)
 
             val candidate = when {
-                cos > FLIP_COS_THRESHOLD -> false  // orientación ~igual a la referencia
-                cos < -FLIP_COS_THRESHOLD -> true  // orientación ~opuesta (180°)
-                else -> return                     // ángulo intermedio (manipulación/curva) — ignorar
+                cos > FLIP_COS_THRESHOLD -> false  // misma orientación que la referencia
+                cos < -FLIP_COS_THRESHOLD -> true  // ~opuesta (180°)
+                else -> return                     // ~90° o intermedio — ignorar
             }
 
             if (candidate == candidateFlipped) {
@@ -1212,13 +1233,19 @@ class PlayerActivity : AppCompatActivity() {
         private const val LOCATION_PERM_REQ = 101
         private const val PHONE_PERM_REQ = 102
         private const val CALL_ROLE_REQ = 103
-        // Coseno del ángulo entre la gravedad actual y la de referencia.
-        // 0.85 ≈ tolera hasta ~32° de inclinación antes de considerar la
-        // lectura ambigua.
+        // Coseno del ángulo entre la gravedad-en-plano actual y la de
+        // referencia. 0.85 ≈ tolera hasta ~32° antes de considerar la lectura
+        // ambigua (zona de ~90°).
         private const val FLIP_COS_THRESHOLD = 0.85f
         // Lecturas consecutivas consistentes requeridas antes de aplicar un
         // cambio de estado — evita que baches/curvas del vehículo disparen
         // el giro por una lectura puntual.
         private const val STABLE_READINGS_REQUIRED = 8
+        // Gravedad en el plano de la pantalla (m/s²). Por debajo, la tablet
+        // está ~acostada y la rotación en el plano es indeterminada.
+        private const val FLAT_INPLANE_MIN = 3.0f
+        // Para (re)calibrar la referencia se exige que esté claramente parada
+        // (~>40° respecto de la horizontal).
+        private const val CALIBRATE_INPLANE_MIN = 6.5f
     }
 }

@@ -35,11 +35,11 @@ class DevicePrefs(context: Context) {
     fun getRotated180(): Boolean = prefs.getBoolean(KEY_ROTATED_180, false)
     fun setRotated180(value: Boolean) = prefs.edit().putBoolean(KEY_ROTATED_180, value).apply()
 
-    // Gravity vector captured on the tablet's first-ever boot, used as the
-    // "this is how it was mounted correctly" baseline. Auto-rotation later
-    // compares live gravity readings against this reference — set once and
-    // never overwritten, so a later physical 180° flip is what gets detected
-    // (see PlayerActivity's gravity listener).
+    // Gravity vector de referencia: "así está montada la tablet cuando el
+    // contenido se ve derecho". La auto-rotación compara la gravedad actual
+    // contra esta referencia para detectar un giro físico de 180°.
+    // Se re-calibra sola si la referencia guardada es inválida (p.ej. se
+    // capturó con la tablet acostada en el primer arranque) — ver PlayerActivity.
     fun hasGravityReference(): Boolean = prefs.contains(KEY_GRAVITY_REF_X)
     fun getGravityReference(): FloatArray = floatArrayOf(
         prefs.getFloat(KEY_GRAVITY_REF_X, 0f),
@@ -50,6 +50,11 @@ class DevicePrefs(context: Context) {
         .putFloat(KEY_GRAVITY_REF_X, x)
         .putFloat(KEY_GRAVITY_REF_Y, y)
         .putFloat(KEY_GRAVITY_REF_Z, z)
+        .apply()
+    fun clearGravityReference() = prefs.edit()
+        .remove(KEY_GRAVITY_REF_X)
+        .remove(KEY_GRAVITY_REF_Y)
+        .remove(KEY_GRAVITY_REF_Z)
         .apply()
 
     // Last APK versionCode we already downloaded + prompted to install — avoids
