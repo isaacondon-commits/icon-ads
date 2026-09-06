@@ -3,7 +3,9 @@ services:
     name: icon-ads-backend
     env: node
     rootDir: icon-ads-backend
-    plan: free
+    # starter = 0.5 CPU / 512 MB / US$7 — sin spin-down ni tope de 750 h/mes.
+    # NO volver a 'free': el backend atiende la flota 24/7 y se comería el free tier.
+    plan: starter
     buildCommand: npm install && npx prisma generate && npx prisma db push --accept-data-loss
     startCommand: node server.js
     envVars:
