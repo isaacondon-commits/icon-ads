@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, TabletDetail, SyncLog, PlaylistVersion, BASE } from '@/lib/api';
+import { api, TabletDetail, SyncLog, PlaylistVersion, Playlist, BASE } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
 
 type Tab = 'errors' | 'sync' | 'playlist';
+
+const TIMEZONES = ['America/Montevideo', 'America/Argentina/Buenos_Aires', 'America/Sao_Paulo', 'UTC'];
 
 function fmtDur(min: number): string {
   if (!min || min < 1) return '0m';
@@ -38,6 +40,17 @@ export default function TabletDetailPage() {
   const [resyncing, setResyncing] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
   const [waking, setWaking] = useState(false);
+  const [forcingSync, setForcingSync] = useState(false);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [showEdit, setShowEdit] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editErr, setEditErr] = useState('');
+  const [showDelete, setShowDelete] = useState(false);
+  const [form, setForm] = useState({
+    name: '', zone: '', playlistId: '', timezone: 'America/Montevideo', scheduleAt: '',
+    notes: '', maintenanceUntil: '', driverName: '', licensePlate: '', spotPrice: '',
+    manualStatus: 'activa', rotated180: false,
+  });
 
   const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/tablets')).finally(() => setLoading(false));
   const refresh = async () => {
@@ -51,6 +64,7 @@ export default function TabletDetailPage() {
 
   useEffect(() => {
     load();
+    api.getPlaylists().then(setPlaylists).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router]);
 
@@ -98,6 +112,75 @@ export default function TabletDetailPage() {
     } catch (e) {
       show(e instanceof Error ? e.message : 'Error al forzar la re-descarga', 'error');
     } finally { setResyncing(false); }
+  };
+
+  const handleForceSync = async () => {
+    if (!tablet) return;
+    setForcingSync(true);
+    try {
+      const res = await api.forceSync(tablet.id);
+      show(res.message);
+    } catch (e) {
+      show(e instanceof Error ? `Error: ${e.message}` : 'Error al forzar sync', 'error');
+    } finally { setForcingSync(false); }
+  };
+
+  const openEdit = () => {
+    if (!tablet) return;
+    setForm({
+      name: tablet.name,
+      zone: tablet.zone ?? '',
+      playlistId: tablet.playlistId?.toString() ?? '',
+      timezone: tablet.timezone ?? 'America/Montevideo',
+      scheduleAt: tablet.scheduleAt ? tablet.scheduleAt.slice(0, 16) : '',
+      notes: tablet.notes ?? '',
+      maintenanceUntil: tablet.maintenanceUntil ? tablet.maintenanceUntil.slice(0, 16) : '',
+      driverName: tablet.driverName ?? '',
+      licensePlate: tablet.licensePlate ?? '',
+      spotPrice: tablet.spotPrice != null ? String(tablet.spotPrice) : '',
+      manualStatus: tablet.manualStatus ?? 'activa',
+      rotated180: tablet.rotated180 ?? false,
+    });
+    setEditErr('');
+    setShowEdit(true);
+  };
+
+  const handleSave = async () => {
+    if (!tablet) return;
+    setSaving(true); setEditErr('');
+    try {
+      await api.updateTablet(tablet.id, {
+        name: form.name,
+        zone: form.zone || undefined,
+        timezone: form.timezone || undefined,
+        playlistId: form.playlistId ? Number(form.playlistId) : null,
+        scheduleAt: form.scheduleAt ? new Date(form.scheduleAt).toISOString() : null,
+        notes: form.notes || null,
+        maintenanceUntil: form.maintenanceUntil ? new Date(form.maintenanceUntil).toISOString() : null,
+        driverName: form.driverName || null,
+        licensePlate: form.licensePlate || null,
+        spotPrice: form.spotPrice ? Number(form.spotPrice) : null,
+        manualStatus: form.manualStatus as 'activa' | 'mantenimiento' | 'bloqueada',
+        rotated180: form.rotated180,
+      });
+      setShowEdit(false);
+      await load();
+      show('Tablet actualizada');
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : 'Error');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!tablet) return;
+    try {
+      await api.deleteTablet(tablet.id);
+      show('Tablet eliminada', 'info');
+      router.push('/tablets');
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al eliminar', 'error');
+      setShowDelete(false);
+    }
   };
 
   const handleToggleBlock = async () => {
@@ -225,11 +308,32 @@ export default function TabletDetailPage() {
               Enviar mensaje
             </button>
             <button
+              onClick={handleForceSync}
+              disabled={forcingSync}
+              title="Fuerza a la tablet a sincronizar ahora"
+              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-violet-50 dark:hover:bg-violet-950 text-violet-600 border-violet-200 disabled:opacity-50"
+            >
+              {forcingSync ? 'Sincronizando...' : 'Forzar sync'}
+            </button>
+            <button
+              onClick={openEdit}
+              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200"
+            >
+              Editar
+            </button>
+            <button
               onClick={() => setShowRegenConfirm(true)}
               title="Invalida el token actual — usar si la tablet se perdió o robó"
               className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-red-50 dark:hover:bg-red-950 text-red-600 border-red-200"
             >
               Regenerar token
+            </button>
+            <button
+              onClick={() => setShowDelete(true)}
+              title="Elimina la tablet del sistema"
+              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-red-50 dark:hover:bg-red-950 text-red-600 border-red-200"
+            >
+              Eliminar
             </button>
           </div>
         </div>
@@ -498,6 +602,86 @@ export default function TabletDetailPage() {
           onCancel={() => setShowRegenConfirm(false)}
         />
       )}
+
+      {showDelete && (
+        <ConfirmDialog title="Eliminar tablet" message={`¿Eliminar "${tablet.name}"? Esta acción no se puede deshacer.`}
+          confirmLabel="Eliminar" onConfirm={handleDelete} onCancel={() => setShowDelete(false)} />
+      )}
+
+      {showEdit && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" style={{ background: 'var(--card)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-lg">Editar tablet</h2>
+              <button onClick={() => setShowEdit(false)} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }} title="Cerrar">×</button>
+            </div>
+            <div className="space-y-4">
+              <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+              <Field label="Zona (opcional)"><input className="input" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} placeholder="Planta baja" /></Field>
+              <Field label="Zona horaria">
+                <select className="input" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
+                  {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                </select>
+              </Field>
+              <Field label="Playlist (opcional)">
+                <select className="input" value={form.playlistId} onChange={(e) => setForm({ ...form, playlistId: e.target.value })}>
+                  <option value="">Sin playlist</option>
+                  {playlists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Programar activación (opcional)">
+                <input type="datetime-local" className="input" value={form.scheduleAt} onChange={(e) => setForm({ ...form, scheduleAt: e.target.value })} />
+              </Field>
+              <Field label="Mantenimiento hasta (opcional)">
+                <input type="datetime-local" className="input" value={form.maintenanceUntil} onChange={(e) => setForm({ ...form, maintenanceUntil: e.target.value })} />
+              </Field>
+              <Field label="Notas (opcional)">
+                <textarea className="input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Observaciones internas..." style={{ resize: 'vertical' }} />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Conductor (opcional)">
+                  <input className="input" value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} placeholder="Nombre del conductor" />
+                </Field>
+                <Field label="Patente (opcional)">
+                  <input className="input" value={form.licensePlate} onChange={(e) => setForm({ ...form, licensePlate: e.target.value })} placeholder="ABC 1234" />
+                </Field>
+              </div>
+              <Field label="Precio por spot (USD, opcional)">
+                <input type="number" min="0" step="0.01" className="input" value={form.spotPrice} onChange={(e) => setForm({ ...form, spotPrice: e.target.value })} onWheel={(e) => e.currentTarget.blur()} placeholder="0.00" />
+              </Field>
+              <Field label="Estado operativo">
+                <select className="input" value={form.manualStatus} onChange={(e) => setForm({ ...form, manualStatus: e.target.value })}>
+                  <option value="activa">Activa</option>
+                  <option value="mantenimiento">En mantenimiento</option>
+                  <option value="bloqueada">Bloqueada (kiosco)</option>
+                </select>
+              </Field>
+              <Field label="Pantalla">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.rotated180} onChange={(e) => setForm({ ...form, rotated180: e.target.checked })} />
+                  Voltear 180° extra (ajuste manual para montajes planos)
+                </label>
+              </Field>
+              {editErr && <p className="text-red-600 text-sm">{editErr}</p>}
+              <div className="flex gap-2 pt-2">
+                <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </button>
+                <button onClick={() => setShowEdit(false)} className="flex-1 border hover:bg-gray-50 dark:hover:bg-gray-800 py-2 rounded-lg text-sm" style={{ borderColor: 'var(--border-md)' }}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
+      {children}
     </div>
   );
 }
