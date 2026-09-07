@@ -88,17 +88,17 @@ router.post('/rename-tablets', apiKeyOrAuth, async (req, res, next) => {
 });
 
 // POST /api/admin/tablet/:id/request-screenshot — pide una captura ya.
-// La tablet la sube en su próximo /sync (≤10s en modo test, o instantáneo con FCM).
 router.post('/tablet/:id/request-screenshot', apiKeyOrAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const tablet = await prisma.tablet.findUnique({ where: { id }, select: { id: true, fcmToken: true } });
     if (!tablet) return res.status(404).json({ error: 'No existe' });
-    // NO se manda push FCM: el push despierta al SyncWorker, no a la Activity,
-    // y ésta es la única que puede sacar la captura. La Activity la agarra en
-    // su loop de sync (≤10s en modo test, ≤30s normal).
     screenshotFlags.add(id);
-    res.json({ ok: true, message: 'Pedida — la tablet la manda en su próximo sync (unos segundos).' });
+    // Push FCM: desde APK v1.45 el push despierta también a la Activity
+    // (ACTION_FORCE_SYNC_NOW) -> sincroniza y sube la captura en segundos, sin
+    // esperar el loop de sync (que ahora es cada ~5 min).
+    if (tablet.fcmToken) firebaseAdmin.sendSyncPush([tablet.fcmToken]).catch(() => {});
+    res.json({ ok: true, message: 'Pedida — la tablet la manda en unos segundos.' });
   } catch (err) { next(err); }
 });
 
