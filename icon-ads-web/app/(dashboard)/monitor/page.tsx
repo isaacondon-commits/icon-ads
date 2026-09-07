@@ -12,7 +12,7 @@ import { monitorFilterConfig } from '@/lib/monitorFilters';
 
 const LS_MONITOR_FILTERS = 'monitor_filters_v1';
 
-const POLL_INTERVAL = 30;
+const POLL_INTERVAL = 120; // segundos — refresco automático del monitor
 
 function relativeTime(iso: string | null): string {
   if (!iso) return 'Nunca';
