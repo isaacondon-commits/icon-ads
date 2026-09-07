@@ -32,7 +32,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:lockTaskMode="if_whitelisted"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="sensorLandscape"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">

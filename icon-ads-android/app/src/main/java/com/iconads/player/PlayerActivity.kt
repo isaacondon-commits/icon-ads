@@ -160,22 +160,20 @@ class PlayerActivity : AppCompatActivity() {
 
     // Rotación de la publicidad
     // ──────────────────────────
-    // El ROM de estas Chuwi (Unisoc) tiene la PANTALLA CLAVADA en una sola
-    // rotación de landscape — ni `screenOrientation=fullSensor` ni
-    // `settings put system user_rotation` la mueven. Así que rotamos la VISTA
-    // nosotros: leemos la gravedad del acelerómetro crudo (ese sí anda), vemos
-    // hacia qué lado del device apunta "abajo", y rotamos `binding.root`
-    // 0/90/180/270° para que el contenido quede derecho, montés la tablet como
-    // la montés.
-    //   - 0° / 180°  -> rotación pura, llena la pantalla.
-    //   - 90° / 270° -> además se intercambian ancho/alto de la vista y se
-    //     recentra: el contenido (horizontal) queda vertical con franjas
-    //     negras arriba/abajo. Es inevitable con material horizontal.
-    // `rotated180` (toggle del panel) suma 180° extra — para montajes planos
-    // (pantalla al techo) donde la gravedad no define el lado.
+    // Sólo landscape: `screenOrientation="sensorLandscape"` en el manifest
+    // limita la ventana a las 2 orientaciones horizontales (nunca vertical, así
+    // NO puede quedar trabada en vertical). El SO rota la ventana entre normal
+    // y "al revés" cuando su sensor funciona; el acelerómetro crudo (que en
+    // estas Chuwi sí anda) es el respaldo:
+    //   - "abajo" hacia el -X del device -> montaje normal  -> vista a 0°
+    //   - "abajo" hacia el +X del device -> montaje al revés -> vista a 180°
+    //   - gy dominante (tablet en vertical) o casi plana     -> mantener el
+    //     último estado (siempre 0 o 180). Nunca rotamos a 90/270.
+    // Si el SO ya rotó la ventana bien, el residual da 0 y no se toca nada
+    // (evita el doble giro). `rotated180` del panel suma 180° manual extra.
     private var sensorMgr: SensorManager? = null
     private var accel: Sensor? = null
-    private var curRotationDeg = 0        // residual que aplicamos a la vista (0/90/180/270)
+    private var curRotationDeg = 0        // 0 o 180
     private var candRotationDeg = 0
     private var candCount = 0
 
@@ -184,25 +182,20 @@ class PlayerActivity : AppCompatActivity() {
             val gx = event.values[0]
             val gy = event.values[1]
 
-            // El ROM rota la ventana solo en algunos casos (landscape <-> al
-            // revés) pero NO en vertical. Así que llevamos la gravedad al marco
-            // de la pantalla YA ROTADA por el SO y giramos la vista sólo lo que
-            // FALTA para que "abajo" quede abajo. Si el SO ya lo dejó derecho,
-            // el residual es 0 y no tocamos nada (evita el doble giro).
+            // Gravedad en el marco de la pantalla ya rotada por el SO. Con
+            // sensorLandscape, disp.rotation sólo puede ser 90 o 270, así que
+            // sy siempre domina -> want sólo puede ser 0 o 180.
             val disp = (if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay)
-            val rot90 = disp?.rotation ?: 0                 // 0..3
+            val rot90 = disp?.rotation ?: 1
             val rad = Math.toRadians(rot90 * 90.0)
             val c = Math.cos(rad).toFloat()
             val s = Math.sin(rad).toFloat()
-            val sx = c * gx - s * gy                        // gravedad en el marco de la pantalla
             val sy = s * gx + c * gy                        // +sy = hacia el borde inferior
 
             val want = when {
-                sy >  ORIENT_G_THRESHOLD -> 0               // ya derecho
-                sy < -ORIENT_G_THRESHOLD -> 180             // al revés
-                sx >  ORIENT_G_THRESHOLD -> 270             // "abajo" a la derecha
-                sx < -ORIENT_G_THRESHOLD -> 90              // "abajo" a la izquierda
-                else -> return                             // ~plana / ambiguo
+                sy >  ORIENT_G_THRESHOLD -> 0
+                sy < -ORIENT_G_THRESHOLD -> 180
+                else -> return                             // vertical / plana -> mantener
             }
 
             if (want == candRotationDeg) candCount++ else { candRotationDeg = want; candCount = 1 }
@@ -217,33 +210,18 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun applyRotation() {
         val root = binding.root
-        val dv = window.decorView
-        val w = dv.width
-        val h = dv.height
-        if (w == 0 || h == 0) { dv.post { applyRotation() }; return }
-
         val deg = ((curRotationDeg + if (prefs.getRotated180()) 180 else 0) % 360)
+        // Siempre pantalla completa (nunca 90/270). Reset defensivo por si una
+        // versión anterior dejó la vista con dimensiones intercambiadas.
         val lp = root.layoutParams
-        if (deg == 90 || deg == 270) {
-            // Vista con ancho/alto intercambiados, rotada y recentrada.
-            lp.width = h
-            lp.height = w
-            root.layoutParams = lp
-            root.pivotX = h / 2f
-            root.pivotY = w / 2f
-            root.rotation = deg.toFloat()
-            root.translationX = (w - h) / 2f
-            root.translationY = (h - w) / 2f
-        } else {
-            lp.width = ViewGroup.LayoutParams.MATCH_PARENT
-            lp.height = ViewGroup.LayoutParams.MATCH_PARENT
-            root.layoutParams = lp
-            root.pivotX = w / 2f
-            root.pivotY = h / 2f
-            root.rotation = deg.toFloat()
-            root.translationX = 0f
-            root.translationY = 0f
-        }
+        lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+        lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+        root.layoutParams = lp
+        root.pivotX = root.width / 2f
+        root.pivotY = root.height / 2f
+        root.translationX = 0f
+        root.translationY = 0f
+        root.rotation = deg.toFloat()
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
