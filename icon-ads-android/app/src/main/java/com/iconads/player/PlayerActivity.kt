@@ -7,14 +7,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.AudioManager
-import android.telecom.TelecomManager
-import android.telephony.PhoneStateListener
-import android.telephony.TelephonyManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioManager
+import android.telecom.TelecomManager
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
 import android.os.BatteryManager
 import android.net.Uri
 import android.os.Build
@@ -27,6 +27,7 @@ import android.os.VibratorManager
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -61,7 +62,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.sqrt
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -70,8 +70,6 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var prefs: DevicePrefs
     private lateinit var playlistRepo: PlaylistRepository
     private lateinit var metricRepo: MetricRepository
-    private lateinit var sensorManager: SensorManager
-    private var gravitySensor: Sensor? = null
     private val adaptiveBrightness by lazy { AdaptiveBrightness(this) }
 
     private val imageHandler = Handler(Looper.getMainLooper())
@@ -104,12 +102,6 @@ class PlayerActivity : AppCompatActivity() {
     // A diferencia de `dormant` (apagado por energía/quietud), acá el kiosco
     // sigue armado y la pantalla prendida — sólo se frena la reproducción.
     private var blockedByPanel = false
-
-    // Auto-detected via gravitySensorListener below — true once the tablet's
-    // live orientation has settled ~180° away from its first-boot reference.
-    private var sensorFlipped180 = false
-    private var candidateFlipped: Boolean? = null
-    private var candidateStreak = 0
 
     private val playlistUpdatedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -166,87 +158,98 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // Auto 180° flip (#rotation-auto) — detecta si la tablet quedó montada al
-    // revés y gira el contenido sola, sin depender del toggle del panel.
-    //
-    // Sólo importa la gravedad EN EL PLANO de la pantalla: (x, y). El eje z
-    // (perpendicular a la pantalla) se ignora, así que la referencia ya NO se
-    // rompe si el primer arranque fue con la tablet acostada.
-    //
-    //  - Tablet acostada (|inPlane| chico)  -> no se puede saber la rotación,
-    //    se mantiene el estado actual.
-    //  - Sin referencia válida + tablet bien parada -> se calibra ahí.
-    //  - Referencia guardada inválida (se capturó acostada) -> se descarta y
-    //    se recalibra. Esto auto-cura a las tablets ya provisionadas.
-    //  - Se compara la dirección de la gravedad-en-plano actual contra la de
-    //    referencia (producto punto 2D). Opuesta => 180°. Se exige una racha
-    //    de lecturas consistentes (debounce para baches/curvas del auto).
-    //
-    // TYPE_GRAVITY viene filtrado por el SO (sin aceleración lineal); si no
-    // existe se cae a TYPE_ACCELEROMETER y la racha alcanza para el ruido.
-    private val gravityListener = object : SensorEventListener {
+    // Rotación de la publicidad
+    // ──────────────────────────
+    // El ROM de estas Chuwi (Unisoc) tiene la PANTALLA CLAVADA en una sola
+    // rotación de landscape — ni `screenOrientation=fullSensor` ni
+    // `settings put system user_rotation` la mueven. Así que rotamos la VISTA
+    // nosotros: leemos la gravedad del acelerómetro crudo (ese sí anda), vemos
+    // hacia qué lado del device apunta "abajo", y rotamos `binding.root`
+    // 0/90/180/270° para que el contenido quede derecho, montés la tablet como
+    // la montés.
+    //   - 0° / 180°  -> rotación pura, llena la pantalla.
+    //   - 90° / 270° -> además se intercambian ancho/alto de la vista y se
+    //     recentra: el contenido (horizontal) queda vertical con franjas
+    //     negras arriba/abajo. Es inevitable con material horizontal.
+    // `rotated180` (toggle del panel) suma 180° extra — para montajes planos
+    // (pantalla al techo) donde la gravedad no define el lado.
+    private var sensorMgr: SensorManager? = null
+    private var accel: Sensor? = null
+    private var curRotationDeg = 0        // residual que aplicamos a la vista (0/90/180/270)
+    private var candRotationDeg = 0
+    private var candCount = 0
+
+    private val orientationListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
-            val x = event.values[0]
-            val y = event.values[1]
-            val inPlane = sqrt(x * x + y * y)
+            val gx = event.values[0]
+            val gy = event.values[1]
 
-            // Pantalla ~horizontal: la rotación en el plano es indeterminada.
-            if (inPlane < FLAT_INPLANE_MIN) return
+            // El ROM rota la ventana solo en algunos casos (landscape <-> al
+            // revés) pero NO en vertical. Así que llevamos la gravedad al marco
+            // de la pantalla YA ROTADA por el SO y giramos la vista sólo lo que
+            // FALTA para que "abajo" quede abajo. Si el SO ya lo dejó derecho,
+            // el residual es 0 y no tocamos nada (evita el doble giro).
+            val disp = (if (Build.VERSION.SDK_INT >= 30) display else @Suppress("DEPRECATION") windowManager.defaultDisplay)
+            val rot90 = disp?.rotation ?: 0                 // 0..3
+            val rad = Math.toRadians(rot90 * 90.0)
+            val c = Math.cos(rad).toFloat()
+            val s = Math.sin(rad).toFloat()
+            val sx = c * gx - s * gy                        // gravedad en el marco de la pantalla
+            val sy = s * gx + c * gy                        // +sy = hacia el borde inferior
 
-            // Auto-cura: referencia vieja capturada con la tablet acostada.
-            if (prefs.hasGravityReference()) {
-                val r = prefs.getGravityReference()
-                if (sqrt(r[0] * r[0] + r[1] * r[1]) < FLAT_INPLANE_MIN) {
-                    prefs.clearGravityReference()
-                    Log.i(TAG, "Referencia de gravedad inválida (plana) — descartada")
-                }
+            val want = when {
+                sy >  ORIENT_G_THRESHOLD -> 0               // ya derecho
+                sy < -ORIENT_G_THRESHOLD -> 180             // al revés
+                sx >  ORIENT_G_THRESHOLD -> 270             // "abajo" a la derecha
+                sx < -ORIENT_G_THRESHOLD -> 90              // "abajo" a la izquierda
+                else -> return                             // ~plana / ambiguo
             }
 
-            // Sin referencia: calibrar sólo si la tablet está claramente parada.
-            if (!prefs.hasGravityReference()) {
-                if (inPlane >= CALIBRATE_INPLANE_MIN) {
-                    prefs.setGravityReference(x, y, 0f)
-                    Log.i(TAG, "Referencia de gravedad calibrada (tablet parada)")
-                }
-                return
-            }
-
-            val ref = prefs.getGravityReference()
-            val refInPlane = sqrt(ref[0] * ref[0] + ref[1] * ref[1])
-            if (refInPlane < 0.1f) return
-            val cos = ((x * ref[0] + y * ref[1]) / (inPlane * refInPlane)).coerceIn(-1f, 1f)
-
-            val candidate = when {
-                cos > FLIP_COS_THRESHOLD -> false  // misma orientación que la referencia
-                cos < -FLIP_COS_THRESHOLD -> true  // ~opuesta (180°)
-                else -> return                     // ~90° o intermedio — ignorar
-            }
-
-            if (candidate == candidateFlipped) {
-                candidateStreak++
-            } else {
-                candidateFlipped = candidate
-                candidateStreak = 1
-            }
-
-            if (candidateStreak >= STABLE_READINGS_REQUIRED && candidate != sensorFlipped180) {
-                sensorFlipped180 = candidate
-                Log.i(TAG, "Sensor detectó tablet física ${if (candidate) "boca abajo" else "en posición normal"} — aplicando")
+            if (want == candRotationDeg) candCount++ else { candRotationDeg = want; candCount = 1 }
+            if (candCount >= ORIENT_STABLE_READINGS && want != curRotationDeg) {
+                curRotationDeg = want
+                Log.i(TAG, "Rotación de la vista -> ${want}°")
                 applyRotation()
             }
         }
-
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
     }
 
-    // Rotación efectiva = toggle manual del panel admin XOR estado detectado
-    // por el sensor. El sensor cubre el caso común (alguien voltea la
-    // tablet); el manual queda como override para montajes donde el sensor
-    // no aplica. Rota todo el contenido de pantalla, no solo video/imagen,
-    // así queda correcto sin importar qué se esté mostrando.
     private fun applyRotation() {
-        val flipped = prefs.getRotated180() xor sensorFlipped180
-        binding.root.rotation = if (flipped) 180f else 0f
+        val root = binding.root
+        val dv = window.decorView
+        val w = dv.width
+        val h = dv.height
+        if (w == 0 || h == 0) { dv.post { applyRotation() }; return }
+
+        val deg = ((curRotationDeg + if (prefs.getRotated180()) 180 else 0) % 360)
+        val lp = root.layoutParams
+        if (deg == 90 || deg == 270) {
+            // Vista con ancho/alto intercambiados, rotada y recentrada.
+            lp.width = h
+            lp.height = w
+            root.layoutParams = lp
+            root.pivotX = h / 2f
+            root.pivotY = w / 2f
+            root.rotation = deg.toFloat()
+            root.translationX = (w - h) / 2f
+            root.translationY = (h - w) / 2f
+        } else {
+            lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+            lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+            root.layoutParams = lp
+            root.pivotX = w / 2f
+            root.pivotY = h / 2f
+            root.rotation = deg.toFloat()
+            root.translationX = 0f
+            root.translationY = 0f
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        setupWindow()
+        applyRotation()
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -259,9 +262,8 @@ class PlayerActivity : AppCompatActivity() {
         prefs = DevicePrefs(this)
         playlistRepo = PlaylistRepository(this)
         metricRepo = MetricRepository(this)
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        gravitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
-            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        sensorMgr = getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        accel = sensorMgr?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         KioskManager.applyPolicies(this)
         KioskManager.enterPlaying(this)
@@ -351,7 +353,7 @@ class PlayerActivity : AppCompatActivity() {
             IntentFilter(com.iconads.player.fcm.FcmService.ACTION_FORCE_SYNC_NOW),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        gravitySensor?.let { sensorManager.registerListener(gravityListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        accel?.let { sensorMgr?.registerListener(orientationListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
         try {
             (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
                 .listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
@@ -366,7 +368,7 @@ class PlayerActivity : AppCompatActivity() {
         unregisterReceiver(rotationChangedReceiver)
         unregisterReceiver(closeAppReceiver)
         unregisterReceiver(forceSyncReceiver)
-        sensorManager.unregisterListener(gravityListener)
+        sensorMgr?.unregisterListener(orientationListener)
         adaptiveBrightness.pause()
         try {
             (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
@@ -1233,19 +1235,10 @@ class PlayerActivity : AppCompatActivity() {
         private const val LOCATION_PERM_REQ = 101
         private const val PHONE_PERM_REQ = 102
         private const val CALL_ROLE_REQ = 103
-        // Coseno del ángulo entre la gravedad-en-plano actual y la de
-        // referencia. 0.85 ≈ tolera hasta ~32° antes de considerar la lectura
-        // ambigua (zona de ~90°).
-        private const val FLIP_COS_THRESHOLD = 0.85f
-        // Lecturas consecutivas consistentes requeridas antes de aplicar un
-        // cambio de estado — evita que baches/curvas del vehículo disparen
-        // el giro por una lectura puntual.
-        private const val STABLE_READINGS_REQUIRED = 8
-        // Gravedad en el plano de la pantalla (m/s²). Por debajo, la tablet
-        // está ~acostada y la rotación en el plano es indeterminada.
-        private const val FLAT_INPLANE_MIN = 3.0f
-        // Para (re)calibrar la referencia se exige que esté claramente parada
-        // (~>40° respecto de la horizontal).
-        private const val CALIBRATE_INPLANE_MIN = 6.5f
+        // Un eje del plano de la pantalla tiene que superar esto (m/s², ~9.8 = 1g)
+        // para decidir hacia dónde está "abajo". Debajo => tablet ~acostada.
+        private const val ORIENT_G_THRESHOLD = 6.0f
+        // Lecturas consistentes (a ~200 ms c/u) antes de rotar — debounce.
+        private const val ORIENT_STABLE_READINGS = 5
     }
 }

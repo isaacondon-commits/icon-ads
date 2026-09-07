@@ -27,7 +27,7 @@ android {
         applicationId = "com.iconads.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 47
+        versionCode = 56
         versionName = "1.46"
 
         buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")

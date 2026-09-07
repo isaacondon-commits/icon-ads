@@ -32,10 +32,10 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:lockTaskMode="if_whitelisted"
-            android:screenOrientation="landscape"
+            android:screenOrientation="fullSensor"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:configChanges="orientation|screenSize|keyboardHidden">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
