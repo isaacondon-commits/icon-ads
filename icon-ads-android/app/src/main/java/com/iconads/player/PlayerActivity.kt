@@ -388,7 +388,14 @@ class PlayerActivity : AppCompatActivity() {
         super.onResume()
         hideSystemUI()
         KioskManager.muteAllStreams(this)
-        if (!dormant && !blockedByPanel && ads.isNotEmpty()) exoPlayer.play()
+        if (!dormant && !blockedByPanel && ads.isNotEmpty()) {
+            exoPlayer.play()
+            // onPause() limpió imageHandler. Si el anuncio actual es una imagen,
+            // su temporizador de avance quedó muerto -> re-armarlo, si no queda
+            // congelada. (Los videos se reanudan y avanzan por el listener de
+            // fin de reproducción.)
+            if (ads.getOrNull(currentIndex)?.type == "image") showImage(ads[currentIndex])
+        }
         if (!dormant && prefs.getBrightnessPolicy() == "auto") adaptiveBrightness.resume(window)
     }
 
@@ -875,16 +882,22 @@ class PlayerActivity : AppCompatActivity() {
                         "iconads:shot",
                     ).apply { acquire(8_000L) }
                 }
-                // Traer el player al frente y encender la pantalla (esta ROM no
-                // despierta sólo con el wake lock). Es a sí misma (singleTask).
-                startActivity(
-                    Intent(this@PlayerActivity, PlayerActivity::class.java).addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                    ),
-                )
-                delay(if (wasOff) 2800 else 500)
+                // Sólo re-frontear si la pantalla estaba apagada: esta ROM no
+                // despierta sólo con el wake lock. Si ya está prendida y
+                // reproduciendo, el startActivity provoca un onPause/onResume que
+                // frena el avance de anuncios -> capturamos directo.
+                if (wasOff) {
+                    startActivity(
+                        Intent(this@PlayerActivity, PlayerActivity::class.java).addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                        ),
+                    )
+                    delay(2800)
+                } else {
+                    delay(200)
+                }
                 if (!doCapture(token)) { delay(2000); doCapture(token) }
             } catch (e: Exception) {
                 Log.w(TAG, "captureAndUploadScreenshot: ${e.message}")
