@@ -508,7 +508,7 @@ export default function StatsPage() {
       {/* ══ Rendimiento por zona ══ */}
       {zoneStats.length > 0 && (
         <div className="card p-6 mb-6">
-          <h2 className="font-semibold mb-4">Rendimiento por zona</h2>
+          <h2 className="font-semibold mb-4">Rendimiento por zona (últimos 30 días)</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>

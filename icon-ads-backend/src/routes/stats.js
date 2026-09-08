@@ -49,12 +49,16 @@ function zeroFillDaily(rows, from, to) {
 // GET /api/stats — global stats + chart data (#35 enhanced)
 router.get('/', async (req, res, next) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    // "Hoy" en Montevideo (UTC-3, sin DST) — el gráfico de 7 días se arma con
+    // fechas LOCALES para que matchee con el GROUP BY (que agrupa por
+    // DATE(played_at AT TIME ZONE 'America/Montevideo')).
+    const todayMvdStr = new Date(Date.now() - MVD_OFFSET_MS).toISOString().slice(0, 10);
+    const mvdMidnightUtc = Date.parse(`${todayMvdStr}T00:00:00Z`) + MVD_OFFSET_MS;
+    const sevenDaysAgo = new Date(mvdMidnightUtc - 6 * 86400000);
 
     // Expiring campaigns: active, not deleted, ending within 7 days
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const inSevenDays = new Date(today);
     inSevenDays.setDate(inSevenDays.getDate() + 7);
 
@@ -91,9 +95,9 @@ router.get('/', async (req, res, next) => {
       dailyRows.map((r) => [String(r.date).slice(0, 10), Number(r.count)])
     );
     const dailyPlays = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(sevenDaysAgo);
-      d.setDate(d.getDate() + i);
-      const key = d.toISOString().slice(0, 10);
+      // Fecha local de Montevideo para el día (hoy-6 .. hoy).
+      const key = new Date(mvdMidnightUtc - MVD_OFFSET_MS - (6 - i) * 86400000)
+        .toISOString().slice(0, 10);
       return { date: key, count: dayMap[key] ?? 0 };
     });
 
@@ -162,16 +166,17 @@ router.get('/weekly', async (req, res, next) => {
       ...(Number.isFinite(campaignId) ? { campaignId } : {}),
       ...(Number.isFinite(tabletId) ? { tabletId } : {}),
     };
+    // Ventanas de 7 días RODANTES ancladas en "ahora" — la más reciente (w=0)
+    // termina en este instante, así incluye el día de hoy. Sin bordes de día
+    // (UTC ni local), no hay ambigüedad de zona horaria.
+    const now = Date.now();
     const result = [];
     for (let w = weeks - 1; w >= 0; w--) {
-      const from = new Date();
-      from.setDate(from.getDate() - (w + 1) * 7);
-      from.setHours(0, 0, 0, 0);
-      const to = new Date(from);
-      to.setDate(to.getDate() + 7);
+      const from = new Date(now - (w + 1) * 7 * 86400000);
+      const to = new Date(now - w * 7 * 86400000);
       const count = await prisma.metric.count({ where: { playedAt: { gte: from, lt: to }, ...extra } });
       result.push({
-        week: `Sem -${w}`,
+        week: w === 0 ? 'Últ. 7 días' : `Hace ${w} sem`,
         from: from.toISOString().slice(0, 10),
         to: to.toISOString().slice(0, 10),
         count,
@@ -432,12 +437,16 @@ router.get('/playlists', async (req, res, next) => {
         select: { id: true, name: true, _count: { select: { tablets: true } } },
         orderBy: { name: 'asc' },
       }),
+      // Se atribuye cada reproducción a la playlist ASIGNADA a la tablet, no a
+      // todas las playlists que contienen el anuncio (eso duplicaba: un anuncio
+      // en 2 playlists sumaba en las 2). Así cada metric cuenta una sola vez y
+      // el total por playlist cuadra con el total general.
       prisma.$queryRaw`
-        SELECT pa.playlist_id AS "playlistId", COUNT(m.id)::int AS count
+        SELECT t.playlist_id AS "playlistId", COUNT(m.id)::int AS count
         FROM metrics m
-        JOIN playlist_ads pa ON pa.ad_id = m.ad_id
-        WHERE m.played_at BETWEEN ${from} AND ${to}
-        GROUP BY pa.playlist_id
+        JOIN tablets t ON t.id = m.tablet_id
+        WHERE m.played_at BETWEEN ${from} AND ${to} AND t.playlist_id IS NOT NULL
+        GROUP BY t.playlist_id
       `,
     ]);
 
@@ -554,7 +563,7 @@ router.get('/sla', async (req, res, next) => {
         t.name AS "tabletName",
         t.zone,
         COUNT(sl.id)::int AS "syncCount30d",
-        COUNT(DISTINCT DATE(sl.created_at AT TIME ZONE 'UTC'))::int AS "activeDays30d"
+        COUNT(DISTINCT DATE(sl.created_at AT TIME ZONE 'America/Montevideo'))::int AS "activeDays30d"
       FROM tablets t
       LEFT JOIN sync_logs sl ON sl.tablet_id = t.id AND sl.created_at >= NOW() - INTERVAL '30 days'
       GROUP BY t.id, t.name, t.zone
@@ -588,10 +597,13 @@ router.get('/monthly', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /api/stats/by-zone — tablets and plays grouped by zone (#35)
+// GET /api/stats/by-zone — tablets and plays grouped by zone, últimos 30 días
+// (#35). Las reproducciones se limitan a 30 días para que matcheen con el resto
+// de las vistas y no sean un acumulado de todo el tiempo.
 router.get('/by-zone', async (req, res, next) => {
   try {
     const cutoff = new Date(Date.now() - 70 * 60 * 1000);
+    const playsFrom = new Date(Date.now() - 30 * 86400000);
     const rows = await prisma.$queryRaw`
       SELECT
         COALESCE(t.zone, 'Sin zona') AS zone,
@@ -599,7 +611,7 @@ router.get('/by-zone', async (req, res, next) => {
         COUNT(DISTINCT CASE WHEN t.last_sync >= ${cutoff} THEN t.id END)::int AS online,
         COUNT(m.id)::int AS plays
       FROM tablets t
-      LEFT JOIN metrics m ON m.tablet_id = t.id
+      LEFT JOIN metrics m ON m.tablet_id = t.id AND m.played_at >= ${playsFrom}
       GROUP BY COALESCE(t.zone, 'Sin zona')
       ORDER BY plays DESC
     `;
