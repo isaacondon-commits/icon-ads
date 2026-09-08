@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForCampaignId } = require('../lib/bumpPlaylists');
+const { purgeAd } = require('../lib/purgeAd');
 const pdf = require('../lib/pdfHelper');
 
 router.use(requireAuth);
@@ -318,6 +319,26 @@ router.delete('/:id', async (req, res, next) => {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });
     next(err);
   }
+});
+
+// DELETE /:id/permanent — borra la campaña DEFINITIVAMENTE: todos sus anuncios
+// (fila + archivos R2), sus métricas, y la fila Campaign. Sólo sobre campañas
+// ya archivadas (soft-deleted).
+router.delete('/:id/permanent', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const campaign = await prisma.campaign.findUnique({ where: { id } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    if (!campaign.deletedAt) return res.status(400).json({ error: 'La campaña no está archivada. Archívala primero.' });
+
+    const ads = await prisma.ad.findMany({ where: { campaignId: id }, select: { id: true } });
+    for (const a of ads) await purgeAd(a.id);
+    await prisma.metric.deleteMany({ where: { campaignId: id } });
+    await prisma.campaign.delete({ where: { id } }); // CampaignComment cascadea
+
+    await audit(req, 'DELETE_PERMANENT', 'campaign', id, `Eliminada definitivamente "${campaign.name}" (${ads.length} anuncios)`);
+    res.status(204).send();
+  } catch (err) { next(err); }
 });
 
 // PATCH /:id/reactivate (#34)

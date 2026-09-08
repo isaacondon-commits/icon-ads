@@ -11,6 +11,7 @@ const { requireAuth, requireAdmin, requireCreator } = require('../middleware/aut
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
 const { mp4DurationSeconds } = require('../lib/mp4Duration');
+const { purgeAd } = require('../lib/purgeAd');
 
 const IMAGE_MAX = 10 * 1024 * 1024;
 const VIDEO_MAX = 100 * 1024 * 1024;
@@ -322,6 +323,20 @@ router.delete('/:id', async (req, res, next) => {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Ad not found' });
     next(err);
   }
+});
+
+// DELETE /:id/permanent — borra el anuncio DEFINITIVAMENTE (fila + archivos R2).
+// Sólo sobre anuncios ya archivados (soft-deleted).
+router.delete('/:id/permanent', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const ad = await prisma.ad.findUnique({ where: { id } });
+    if (!ad) return res.status(404).json({ error: 'Ad not found' });
+    if (!ad.deletedAt) return res.status(400).json({ error: 'El anuncio no está archivado. Archívalo primero.' });
+    await purgeAd(id);
+    await audit(req, 'DELETE_PERMANENT', 'ad', id, `Eliminado definitivamente "${ad.name}"`);
+    res.status(204).send();
+  } catch (err) { next(err); }
 });
 
 // PATCH /:id/approve — approve pending ad (#26)
