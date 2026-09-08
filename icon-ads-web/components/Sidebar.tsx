@@ -11,7 +11,7 @@ import { api, Notifications } from '@/lib/api';
 const SEV_ICON: Record<string, string> = { critical: '🚨', warning: '⚠️', info: 'ℹ️' };
 
 // Secciones que sólo ve un admin/superadmin (supervisor y operator no).
-const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk', '/api-control', '/public-api']);
+const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk']);
 
 const linkGroups = [
   {
@@ -62,8 +62,6 @@ const linkGroups = [
   },
   {
     id: 'a-desarrollo', label: 'A desarrollo', links: [
-      { href: '/api-control', label: 'Panel API', icon: '⊞' },
-      { href: '/public-api', label: 'API pública', icon: '⊞' },
       { href: '/referrals', label: 'Referidos', icon: '◎' },
       { href: '/executive', label: 'Ejecutivo', icon: '◈' },
       { href: '/impact', label: 'Impacto', icon: '🌿' },

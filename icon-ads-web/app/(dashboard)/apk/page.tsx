@@ -19,11 +19,6 @@ export default function ApkPage() {
   const { show } = useToast();
   const [status, setStatus] = useState<ApkStatus | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const [file, setFile] = useState<File | null>(null);
-  const [versionCode, setVersionCode] = useState('');
-  const [versionName, setVersionName] = useState('');
-  const [uploading, setUploading] = useState(false);
   const [forcing, setForcing] = useState(false);
 
   const load = useCallback(() => {
@@ -34,23 +29,8 @@ export default function ApkPage() {
       .finally(() => setLoading(false));
   }, [show]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial de datos, no un target del compilador
   useEffect(() => { load(); }, [load]);
-
-  const handleUpload = async () => {
-    if (!file) { show('Seleccioná el archivo .apk', 'error'); return; }
-    const code = Number(versionCode);
-    if (!Number.isInteger(code) || code < 1) { show('versionCode inválido', 'error'); return; }
-    if (!versionName.trim()) { show('Falta el versionName', 'error'); return; }
-    setUploading(true);
-    try {
-      const res = await api.uploadApk(file, code, versionName.trim());
-      show(`APK v${res.versionCode} publicada — las tablets la bajan solas en el próximo sync`);
-      setFile(null); setVersionCode(''); setVersionName('');
-      load();
-    } catch (e) {
-      show(e instanceof Error ? e.message : 'Error al subir el APK', 'error');
-    } finally { setUploading(false); }
-  };
 
   const handleForce = async () => {
     setForcing(true);
@@ -71,7 +51,7 @@ export default function ApkPage() {
       <div>
         <h1 className="text-xl font-bold">APK Android</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          La versión publicada acá es la que todas las tablets descargan e instalan solas.
+          Versión publicada y estado del despliegue en la flota.
         </p>
       </div>
 
@@ -94,31 +74,6 @@ export default function ApkPage() {
         ) : (
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Todavía no se publicó ninguna APK.</p>
         )}
-      </div>
-
-      {/* Subir nueva */}
-      <div className="card p-6">
-        <h2 className="font-semibold mb-1">Publicar una versión nueva</h2>
-        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-          El <code>versionCode</code> y <code>versionName</code> tienen que coincidir con los de{' '}
-          <code>app/build.gradle.kts</code> al compilar. La APK tiene que estar firmada con la misma
-          clave que la que ya está en las tablets, o el sistema la rechaza.
-        </p>
-        <div className="space-y-3">
-          <input type="file" accept=".apk" className="input"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <div className="flex flex-wrap gap-3">
-            <input type="number" min="1" className="input w-40" placeholder="versionCode"
-              value={versionCode} onChange={(e) => setVersionCode(e.target.value)}
-              onWheel={(e) => e.currentTarget.blur()} />
-            <input type="text" className="input flex-1 min-w-[160px]" placeholder="versionName (ej: 1.10)"
-              value={versionName} onChange={(e) => setVersionName(e.target.value)} />
-            <button onClick={handleUpload} disabled={uploading}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium whitespace-nowrap">
-              {uploading ? 'Subiendo...' : 'Publicar APK'}
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* Despliegue en la flota */}
@@ -160,17 +115,6 @@ export default function ApkPage() {
             </div>
           </>
         )}
-      </div>
-
-      {/* Cómo funciona */}
-      <div className="card p-6 text-sm space-y-2" style={{ color: 'var(--text-muted)' }}>
-        <h2 className="font-semibold" style={{ color: 'var(--text-strong, inherit)' }}>Cómo funciona</h2>
-        <p>1. Cada tablet se instala <b>una sola vez por USB</b> (la primera de todas).</p>
-        <p>2. Cada ~1 h la tablet consulta la versión publicada acá. Si hay una mayor, la baja por WiFi
-          y la instala con <code>PackageInstaller</code>.</p>
-        <p>3. Con la app <b>Device Owner</b>: instalación 100% silenciosa, sin ningún toque. Sin Device
-          Owner: puede pedir confirmar una vez (la primera actualización OTA), después silenciosa.</p>
-        <p>4. Nunca desinstalar una tablet: cambia su <code>ANDROID_ID</code> y aparece como tablet nueva.</p>
       </div>
     </div>
   );

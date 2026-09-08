@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { api, ArchivedCampaign, ArchivedAd } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 type SectionTab = 'campaigns' | 'ads';
+type DeleteTarget = { kind: 'campaign' | 'ad'; id: number; name: string };
 
 export default function ArchivePage() {
   const { show } = useToast();
@@ -14,6 +16,8 @@ export default function ArchivePage() {
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [loadingAds, setLoadingAds] = useState(true);
   const [restoringId, setRestoringId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     api.getArchivedCampaigns()
@@ -49,6 +53,27 @@ export default function ArchivePage() {
       show(e instanceof Error ? e.message : 'Error al restaurar', 'error');
     } finally {
       setRestoringId(null);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.kind === 'campaign') {
+        await api.permanentDeleteCampaign(deleteTarget.id);
+        setCampaigns((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+        show('Campaña eliminada definitivamente');
+      } else {
+        await api.permanentDeleteAd(deleteTarget.id);
+        setAds((prev) => prev.filter((a) => a.id !== deleteTarget.id));
+        show('Anuncio eliminado definitivamente');
+      }
+      setDeleteTarget(null);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al eliminar', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -109,13 +134,19 @@ export default function ArchivePage() {
                     <td className="px-5 py-3 text-right text-xs" style={{ color: 'var(--text-xs)' }}>
                       {c.deletedAt ? new Date(c.deletedAt).toLocaleDateString('es-AR') : '—'}
                     </td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-5 py-3 text-right whitespace-nowrap">
                       <button
                         onClick={() => handleRestoreCampaign(c.id)}
                         disabled={restoringId === c.id}
                         className="text-xs text-emerald-600 hover:underline disabled:opacity-50"
                       >
                         {restoringId === c.id ? 'Restaurando...' : 'Restaurar'}
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget({ kind: 'campaign', id: c.id, name: c.name })}
+                        className="text-xs text-red-600 hover:underline ml-3"
+                      >
+                        Eliminar definitivamente
                       </button>
                     </td>
                   </tr>
@@ -157,13 +188,19 @@ export default function ArchivePage() {
                     <td className="px-5 py-3 text-right text-xs" style={{ color: 'var(--text-xs)' }}>
                       {a.deletedAt ? new Date(a.deletedAt).toLocaleDateString('es-AR') : '—'}
                     </td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-5 py-3 text-right whitespace-nowrap">
                       <button
                         onClick={() => handleRestoreAd(a.id)}
                         disabled={restoringId === a.id}
                         className="text-xs text-emerald-600 hover:underline disabled:opacity-50"
                       >
                         {restoringId === a.id ? 'Restaurando...' : 'Restaurar'}
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget({ kind: 'ad', id: a.id, name: a.name })}
+                        className="text-xs text-red-600 hover:underline ml-3"
+                      >
+                        Eliminar definitivamente
                       </button>
                     </td>
                   </tr>
@@ -173,6 +210,20 @@ export default function ArchivePage() {
           )
         )}
       </div>
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Eliminar definitivamente"
+          message={
+            deleteTarget.kind === 'campaign'
+              ? `¿Eliminar para siempre la campaña "${deleteTarget.name}" y TODOS sus anuncios (archivos incluidos)? No se puede deshacer.`
+              : `¿Eliminar para siempre el anuncio "${deleteTarget.name}" y su archivo? No se puede deshacer.`
+          }
+          confirmLabel={deleting ? 'Eliminando...' : 'Eliminar definitivamente'}
+          onConfirm={handlePermanentDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

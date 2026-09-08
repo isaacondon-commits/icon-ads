@@ -350,6 +350,8 @@ export const api = {
   getArchivedCampaigns: () => request<ArchivedCampaign[]>('/api/campaigns/archived'),
   getArchivedAds: () => request<ArchivedAd[]>('/api/ads/archived'),
   restoreAd: (id: number) => request<Ad>(`/api/ads/${id}/restore`, { method: 'PATCH' }),
+  permanentDeleteAd: (id: number) => request<void>(`/api/ads/${id}/permanent`, { method: 'DELETE' }),
+  permanentDeleteCampaign: (id: number) => request<void>(`/api/campaigns/${id}/permanent`, { method: 'DELETE' }),
 
   // Sync intervals (#14)
   getSyncIntervals: () => request<SyncInterval[]>('/api/stats/sync-intervals'),
