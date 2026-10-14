@@ -160,7 +160,7 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
 
       {/* Tucán flotando */}
       <img src="/monitor/toucan.png" alt="" aria-hidden="true"
-        className="tv-anim pointer-events-none absolute right-[4%] top-24 -z-10 hidden w-[min(34vw,440px)] opacity-90 drop-shadow-[0_0_40px_rgba(56,189,248,0.45)] md:block"
+        className="tv-anim pointer-events-none absolute right-[4%] top-44 -z-10 hidden w-[min(34vw,440px)] opacity-90 drop-shadow-[0_0_40px_rgba(56,189,248,0.45)] md:block"
         style={{ animation: 'tv-float 7s ease-in-out infinite' }} />
 
       <div className="relative px-6 pb-10 pt-5 sm:px-10">
@@ -205,27 +205,9 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
           </div>
         </header>
 
-        {/* Tablet destacada */}
-        <section className="mt-10 min-h-[300px] max-w-4xl">
-          {loading ? (
-            <p className="text-white/60">Cargando flota…</p>
-          ) : error ? (
-            <p className="text-rose-300">{error}</p>
-          ) : !selected ? (
-            <p className="text-white/60">No hay tablets registradas.</p>
-          ) : (
-            <Hero e={selected} canManage={canManage} actions={actions} />
-          )}
-        </section>
-
-        {!loading && !error && entries.length > 0 && (
-          <FleetList entries={entries} search={search} selectedId={selected?.id ?? null} onSelect={select}
-            canManage={canManage} actions={actions} />
-        )}
-
-        {/* Controles de flota */}
+        {/* Controles de flota (arriba, antes de la tablet destacada) */}
         {canManage && (
-          <footer className="mt-8 flex flex-wrap items-center gap-3 rounded-3xl bg-white/[0.05] p-4 ring-1 ring-white/10 backdrop-blur-xl">
+          <section className="mt-6 max-w-5xl flex flex-wrap items-center gap-3 rounded-3xl bg-white/[0.05] p-4 ring-1 ring-white/10 backdrop-blur-xl">
             <span className="mr-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200/70">Flota</span>
             <div className="flex min-w-[260px] flex-1 items-center gap-3">
               <Ico d={ICONS.sun} className="h-4 w-4 text-amber-200" />
@@ -257,8 +239,27 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
                 {fleet.resettingCircuit ? 'Reseteando…' : 'Resetear disyuntor'}
               </TvButton>
             )}
-          </footer>
+          </section>
         )}
+
+        {/* Tablet destacada */}
+        <section className="mt-9 min-h-[300px] max-w-4xl">
+          {loading ? (
+            <p className="text-white/60">Cargando flota…</p>
+          ) : error ? (
+            <p className="text-rose-300">{error}</p>
+          ) : !selected ? (
+            <p className="text-white/60">No hay tablets registradas.</p>
+          ) : (
+            <Hero e={selected} canManage={canManage} actions={actions} />
+          )}
+        </section>
+
+        {!loading && !error && entries.length > 0 && (
+          <FleetList entries={entries} search={search} selectedId={selected?.id ?? null} onSelect={select}
+            canManage={canManage} actions={actions} />
+        )}
+
       </div>
     </div>
   );
