@@ -216,3 +216,8 @@ html .text-red-500, html .text-red-600, html .text-red-700 { color: var(--danger
 html .text-emerald-600, html .text-emerald-700, html .text-green-600 { color: var(--ok); }
 html .text-amber-600, html .text-amber-700 { color: var(--warn); }
 html .border-red-200, html .border-red-300 { border-color: var(--danger-border); }
+
+/* Mapa GPS: tiles de OpenStreetMap oscurecidos para la paleta (sin depender
+   de un proveedor de mapas oscuros pago). */
+.ia-dark-tiles { filter: invert(1) hue-rotate(195deg) brightness(.85) contrast(.9) saturate(.6); }
+.leaflet-container { background: var(--bg); }

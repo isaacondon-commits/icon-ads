@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn, BtnLink } from '@/components/ui/buttons';
 import { api, ApkStatus } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 
@@ -47,13 +49,9 @@ export default function ApkPage() {
   const behind = status ? status.totalTablets - status.upToDate : 0;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-xl font-bold">APK Android</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          Versión publicada y estado del despliegue en la flota.
-        </p>
-      </div>
+    <PageShell title="APK Android" subtitle="Versión publicada y estado del despliegue en la flota."
+      actions={<Btn icon="refresh" onClick={load}>Actualizar</Btn>}>
+      <div className="max-w-4xl space-y-6">
 
       {/* Versión publicada */}
       <div className="card p-6">
@@ -66,9 +64,7 @@ export default function ApkPage() {
             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>código {pub.versionCode}</span>
             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>subida {timeAgo(pub.uploadedAt)}</span>
             {pub.url && (
-              <a href={pub.url} className="text-sm text-blue-600 hover:underline" target="_blank" rel="noreferrer">
-                descargar .apk
-              </a>
+              <BtnLink size="sm" icon="download" v="accent" href={pub.url} external>Descargar .apk</BtnLink>
             )}
           </div>
         ) : (
@@ -81,11 +77,9 @@ export default function ApkPage() {
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="font-semibold">Despliegue en la flota</h2>
           <div className="flex items-center gap-3">
-            <button onClick={handleForce} disabled={forcing || !pub?.versionName}
-              className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-medium">
-              {forcing ? 'Empujando...' : 'Forzar actualización en toda la flota'}
-            </button>
-            <button onClick={load} className="text-xs text-blue-600 hover:underline">actualizar</button>
+            <Btn size="sm" icon="download" v="warn" onClick={handleForce} disabled={forcing || !pub?.versionName}>
+              {forcing ? 'Empujando…' : 'Forzar actualización en toda la flota'}
+            </Btn>
           </div>
         </div>
         {status && (
@@ -96,9 +90,9 @@ export default function ApkPage() {
             </div>
             <div className="space-y-2">
               {status.versions.map((v) => (
-                <div key={v.version} className="rounded-lg border p-3" style={{ borderColor: 'var(--border-md)' }}>
+                <div key={v.version} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${v.upToDate ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                    <span className="h-2 w-2 rounded-full" style={{ background: v.upToDate ? 'var(--ok)' : 'var(--warn)' }} />
                     <span className="font-medium text-sm">
                       {v.version === 'desconocida' ? 'Versión desconocida' : `v${v.version}`}
                     </span>
@@ -116,6 +110,7 @@ export default function ApkPage() {
           </>
         )}
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

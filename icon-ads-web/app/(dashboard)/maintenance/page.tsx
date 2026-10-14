@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, Tablet } from '@/lib/api';
 
 type MaintenanceStatus = 'scheduled' | 'overdue' | 'stale' | 'ok';
@@ -59,9 +61,7 @@ export default function MaintenancePage() {
   const filtered = filter === 'all' ? tablets : tablets.filter((t) => t.maintenanceStatus === filter);
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-1">Mantenimiento preventivo</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Tablets que requieren atención o tienen mantenimiento programado.</p>
+    <PageShell title="Mantenimiento preventivo" subtitle="Tablets que requieren atención o tienen mantenimiento programado.">
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -74,7 +74,7 @@ export default function MaintenancePage() {
           <button
             key={k.key}
             onClick={() => setFilter(filter === k.key ? 'all' : k.key)}
-            className={`card p-5 text-left transition-all ${filter === k.key ? 'ring-2 ring-blue-500' : ''}`}
+            className={`card p-5 text-left transition-all hover:bg-[var(--surface-2)] ${filter === k.key ? 'ring-2 ring-[var(--accent)]' : ''}`}
           >
             <p className={`text-3xl font-bold tabular-nums ${k.color}`}>{counts[k.key]}</p>
             <p className="text-xs font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
@@ -89,7 +89,7 @@ export default function MaintenancePage() {
           <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-md)' }}>
             <p className="text-sm font-medium">{filter === 'all' ? 'Todas las tablets' : statusLabel(filter as MaintenanceStatus).label} ({filtered.length})</p>
             {filter !== 'all' && (
-              <button onClick={() => setFilter('all')} className="text-xs" style={{ color: 'var(--text-muted)' }}>Ver todas</button>
+              <Btn size="sm" v="ghost" onClick={() => setFilter('all')}>Ver todas</Btn>
             )}
           </div>
           <table className="w-full text-sm">
@@ -153,6 +153,6 @@ export default function MaintenancePage() {
           </table>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

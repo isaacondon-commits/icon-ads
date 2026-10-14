@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn, IconBtn } from '@/components/ui/buttons';
 import { api, Tablet, TabletDetail, SyncLog } from '@/lib/api';
 
 const MAX_SLOTS = 5;
@@ -68,8 +70,7 @@ export default function TabletComparePage() {
   const isOnline = (t: TabletDetail) => t.lastSync ? (now - new Date(t.lastSync).getTime()) < 10 * 60000 : false;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Comparar tablets</h1>
+    <PageShell title="Comparar tablets" subtitle={`Elegí de 2 a ${MAX_SLOTS} tablets y comparalas lado a lado.`}>
 
       <div className="card p-6 mb-6">
         <div className="flex flex-wrap gap-4 items-end">
@@ -84,33 +85,15 @@ export default function TabletComparePage() {
                     .map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
                 {slots.length > 2 && (
-                  <button
-                    onClick={() => removeSlot(i)}
-                    className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
-                    title="Quitar"
-                  >
-                    ×
-                  </button>
+                  <IconBtn icon="x" v="danger" label="Quitar" onClick={() => removeSlot(i)} />
                 )}
               </div>
             </div>
           ))}
           {slots.length < MAX_SLOTS && (
-            <button
-              onClick={addSlot}
-              className="px-3 py-2 border border-dashed rounded-lg text-sm font-medium text-gray-500 hover:text-gray-700"
-              style={{ borderColor: 'var(--border-md)' }}
-            >
-              + Agregar tablet
-            </button>
+            <Btn icon="plus" onClick={addSlot}>Agregar tablet</Btn>
           )}
-          <button
-            onClick={compare}
-            disabled={!canCompare || loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
-          >
-            {loading ? 'Cargando...' : 'Comparar'}
-          </button>
+          <Btn v="primary" onClick={compare} disabled={!canCompare || loading}>{loading ? 'Cargando…' : 'Comparar'}</Btn>
         </div>
       </div>
 
@@ -118,7 +101,7 @@ export default function TabletComparePage() {
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
+              <tr className="border-b border-[var(--divider)]">
                 <th className="text-left px-4 py-3 text-xs font-medium w-36" style={{ color: 'var(--text-muted)' }}>Métrica</th>
                 {data.map((d) => (
                   <th key={d.detail.id} className="px-4 py-3 text-center font-semibold whitespace-nowrap">{d.detail.name}</th>
@@ -141,6 +124,6 @@ export default function TabletComparePage() {
           </table>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

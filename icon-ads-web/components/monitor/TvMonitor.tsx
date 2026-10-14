@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BandwidthStatus, TabletMonitorEntry } from '@/lib/api';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
+import FilterBar from '@/components/FilterBar';
+import { applyFilter, type Filter } from '@/lib/filterEngine';
+import { monitorFilterConfig } from '@/lib/monitorFilters';
+
+const LS_MONITOR_FILTERS = 'monitor_filters_v1';
 
 // Monitor con la paleta "ICON" (clase .ia-theme en globals.css, tomada de
 // paleta-propuesta.png): barra superior, barra de controles de la flota y la
@@ -112,7 +117,7 @@ function Btn({ icon, v = 'neutral', onClick, disabled, title, children }: {
 }
 
 // Columnas de la lista: miniatura · tablet · conexión · repr. · playlist · equipo · acciones
-const ROW_GRID = 'grid grid-cols-[72px_minmax(240px,1.5fr)_100px_70px_minmax(130px,1fr)_170px_360px] items-center gap-x-5';
+const ROW_GRID = 'grid grid-cols-[72px_minmax(240px,1.5fr)_100px_70px_minmax(130px,1fr)_170px_336px] items-center gap-x-4';
 
 const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors disabled:opacity-40';
 
@@ -321,6 +326,10 @@ function FleetList({ entries, search, canManage, actions, onExportCsv, onCreate 
   const [tab, setTab] = useState<TabId>('all');
   const [page, setPage] = useState(1);
   // Filtros que tenía la página Tablets: por playlist y por zona.
+  // Filtro avanzado ('Agregar filtro' sobre cualquier campo), persistido.
+  const [advFilters, setAdvFilters] = useState<Filter[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_MONITOR_FILTERS) ?? '[]'); } catch { return []; }
+  });
   const [playlistF, setPlaylistF] = useState('');
   const [zoneF, setZoneF] = useState('');
   const NONE = '__none__';
@@ -332,7 +341,10 @@ function FleetList({ entries, search, canManage, actions, onExportCsv, onCreate 
 
   const q = search.trim().toLowerCase();
   const tabDef = TABS.find((t) => t.id === tab)!;
-  const filtered = entries.filter((e) => tabDef.match(e) && byPlaylist(e) && byZone(e) && (!q || [e.name, e.zone, e.driverName, e.licensePlate, e.playlist?.name, e.deviceId]
+  // eslint-disable-next-line react-hooks/purity -- filtros de "última sincronía" comparan contra la hora actual
+  const nowMs = Date.now();
+  const byAdv = (e: TabletMonitorEntry) => advFilters.every((f) => applyFilter(monitorFilterConfig, f, e, nowMs));
+  const filtered = entries.filter((e) => tabDef.match(e) && byPlaylist(e) && byZone(e) && byAdv(e) && (!q || [e.name, e.zone, e.driverName, e.licensePlate, e.playlist?.name, e.deviceId]
     .some((v) => (v ?? '').toLowerCase().includes(q))));
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
@@ -406,6 +418,13 @@ function FleetList({ entries, search, canManage, actions, onExportCsv, onCreate 
             </button>
           )}
         </div>
+      </div>
+
+      {/* Filtro avanzado */}
+      <div className="border-b border-[var(--divider)] px-5 py-2.5">
+        <FilterBar config={monitorFilterConfig} rows={entries} filters={advFilters}
+          onChange={(next) => { setAdvFilters(next); setPage(1); }} storageKey={LS_MONITOR_FILTERS}
+          filteredCount={filtered.length} total={entries.length} />
       </div>
 
       {/* Filas compactas: una línea por tablet, columnas con un solo encabezado */}

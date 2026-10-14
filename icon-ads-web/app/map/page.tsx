@@ -77,8 +77,11 @@ export default function MapPage() {
         zoomControl: true,
       });
 
+      // OpenStreetMap con la capa de calles oscurecida por CSS (clase
+      // ia-dark-tiles, ver abajo) para que combine con la paleta del panel.
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        className: 'ia-dark-tiles',
         maxZoom: 19,
       }).addTo(map);
 
@@ -242,44 +245,47 @@ export default function MapPage() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
+    <div className="flex h-screen bg-[var(--bg)] text-white overflow-hidden">
       {/* ── Sidebar panel ── */}
-      <div className="w-72 flex-shrink-0 flex flex-col bg-gray-900 border-r border-gray-800 overflow-hidden">
+      <div className="w-72 flex-shrink-0 flex flex-col bg-[var(--sidebar)] border-r border-[var(--divider)] overflow-hidden">
         {/* Header */}
-        <div className="p-4 border-b border-gray-800">
+        <div className="p-4 border-b border-[var(--divider)]">
           <div className="flex items-center justify-between mb-1">
-            <Link href="/dashboard" className="text-xs text-gray-500 hover:text-gray-300">← Panel</Link>
+            <Link href="/dashboard" className="text-xs text-gray-500 hover:text-[var(--text)]">← Panel</Link>
             <span className="text-xs text-gray-500">{lastRefresh ? lastRefresh.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</span>
           </div>
-          <h1 className="font-bold text-lg">Mapa GPS</h1>
+          <div className="flex items-center gap-2">
+            <img src="/monitor/toucan.png" alt="" className="h-7 w-auto" />
+            <h1 className="font-bold text-lg">Mapa GPS</h1>
+          </div>
           <div className="flex gap-3 mt-1 text-sm">
-            <span className="text-green-400">● {onlineCount} online</span>
+            <span className="text-[var(--ok)]">● {onlineCount} online</span>
             <span className="text-gray-500">{tablets.length - onlineCount} offline</span>
-            <span className="text-blue-400">📍 {withGps}</span>
+            <span className="text-[var(--accent)]">📍 {withGps}</span>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="p-3 border-b border-gray-800 space-y-2">
+        <div className="p-3 border-b border-[var(--divider)] space-y-2">
           {/* Filter */}
           <div className="flex gap-1 flex-wrap">
             {(['all', 'online', 'offline', 'no-playlist'] as Filter[]).map((f) => (
               <button key={f} onClick={() => setFilter(f)}
-                className={`text-xs px-2 py-1 rounded font-medium transition-colors ${filter === f ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+                className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${filter === f ? 'bg-[var(--accent-strong)] text-white' : 'bg-[var(--surface-2)] text-gray-400 hover:bg-[var(--surface-hover)]'}`}>
                 {f === 'all' ? 'Todos' : f === 'online' ? 'Online' : f === 'offline' ? 'Offline' : 'Sin playlist'}
               </button>
             ))}
           </div>
           {/* Action buttons */}
           <div className="flex gap-2">
-            <button onClick={centerMvd} className="flex-1 text-xs px-2 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300">
+            <button onClick={centerMvd} className="flex-1 text-xs px-2 py-1.5 rounded-full bg-[var(--surface-2)] hover:bg-[var(--surface-hover)] text-gray-300">
               🎯 Montevideo
             </button>
             <button onClick={() => setShowHeatmap((v) => !v)}
-              className={`flex-1 text-xs px-2 py-1.5 rounded font-medium transition-colors ${showHeatmap ? 'bg-yellow-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>
+              className={`flex-1 text-xs px-2 py-1.5 rounded-full font-medium transition-colors ${showHeatmap ? 'bg-[var(--warn)] text-[#1a1200]' : 'bg-[var(--surface-2)] text-gray-400 hover:bg-[var(--surface-hover)]'}`}>
               🔥 Heatmap
             </button>
-            <button onClick={refresh} className="text-xs px-2 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300">
+            <button onClick={refresh} className="text-xs px-2 py-1.5 rounded-full bg-[var(--surface-2)] hover:bg-[var(--surface-hover)] text-gray-300">
               ↻
             </button>
           </div>
@@ -306,16 +312,16 @@ export default function MapPage() {
                     markersRef.current[t.id]?.openPopup();
                   }
                 }}
-                className={`w-full text-left px-4 py-3 border-b border-gray-800 hover:bg-gray-800 transition-colors ${selectedId === t.id ? 'bg-gray-800' : ''}`}
+                className={`w-full text-left px-4 py-3 border-b border-[var(--divider)] hover:bg-[var(--surface-hover)] transition-colors ${selectedId === t.id ? 'bg-[var(--surface-2)]' : ''}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'online' ? 'bg-green-400' : 'bg-gray-500'}`} />
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${t.status === 'online' ? 'bg-[var(--ok)]' : 'bg-gray-500'}`} />
                   <span className="font-medium text-sm truncate">{t.name}</span>
-                  {!t.lat && <span className="text-xs text-gray-600 ml-auto">sin GPS</span>}
+                  {!t.lat && <span className="text-xs text-[var(--muted-2)] ml-auto">sin GPS</span>}
                 </div>
                 <div className="ml-4 text-xs text-gray-500 mt-0.5 space-y-0.5">
                   {t.zone && <div>Zona: {t.zone}</div>}
-                  <div>{t.playlist ? t.playlist.name : <span className="text-red-400">Sin playlist</span>}</div>
+                  <div>{t.playlist ? t.playlist.name : <span className="text-[var(--danger)]">Sin playlist</span>}</div>
                   {t.batteryLevel !== null && <div>🔋 {t.batteryLevel}%</div>}
                   <div>▶ {t.todayPlays} plays hoy</div>
                 </div>
@@ -329,7 +335,7 @@ export default function MapPage() {
       <div className="flex-1 relative">
         <div ref={mapRef} className="w-full h-full" />
         {!mapReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-950 z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg)] z-10">
             <div className="text-gray-400 text-sm">Cargando mapa...</div>
           </div>
         )}

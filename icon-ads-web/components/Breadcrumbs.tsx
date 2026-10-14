@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 const LABELS: Record<string, string> = {
   dashboard: 'Atajos', tablets: 'Tablets', campaigns: 'Campañas', clients: 'Clientes',
   ads: 'Anuncios', playlists: 'Playlists', stats: 'Estadísticas', monitor: 'Monitor',
-  logs: 'Logs', calendar: 'Calendario',
+  logs: 'Logs', calendar: 'Calendario', compare: 'Comparar',
 };
 
 export default function Breadcrumbs() {

@@ -7,6 +7,7 @@ import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
+import { AnimatedToucan } from '@/components/ui/PageShell';
 
 type Tab = 'errors' | 'sync' | 'playlist';
 
@@ -212,7 +213,8 @@ export default function TabletDetailPage() {
   const isOnline = offlineMin !== null && offlineMin < 70;
 
   return (
-    <div>
+    <div className="relative isolate">
+      <AnimatedToucan />
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => router.back()} className="text-sm hover:underline flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
           ← Volver
