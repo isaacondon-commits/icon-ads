@@ -9,10 +9,26 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import FilterBar from '@/components/FilterBar';
 import { applyFilter, type Filter } from '@/lib/filterEngine';
 import { monitorFilterConfig } from '@/lib/monitorFilters';
+import { useRole } from '@/lib/roles';
 
 const LS_MONITOR_FILTERS = 'monitor_filters_v1';
 
 const POLL_INTERVAL = 120; // segundos — refresco automático del monitor
+const PAGE_SIZE = 25;
+
+const isLongOffline = (e: TabletMonitorEntry) => e.status === 'offline' && e.offlineMinutes > 120;
+
+// Pestañas como en Anuncios. Las "alert" sólo aparecen (en rojo) si tienen algo.
+const MONITOR_TABS = [
+  { id: 'all', label: 'Todas', match: () => true },
+  { id: 'online', label: 'Online', match: (e: TabletMonitorEntry) => e.status === 'online' },
+  { id: 'offline', label: 'Offline', match: (e: TabletMonitorEntry) => e.status === 'offline' },
+  { id: 'notplaying', label: 'No reproducen', match: (e: TabletMonitorEntry) => e.health === 'no-reproduce' || e.health === 'sin-playlist', alert: true },
+  { id: 'blocked', label: 'Bloqueadas', match: (e: TabletMonitorEntry) => e.health === 'blocked', alert: true },
+  { id: 'lowbat', label: 'Batería baja', match: (e: TabletMonitorEntry) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20, alert: true },
+  { id: 'longoffline', label: 'Offline +2 h', match: isLongOffline, alert: true },
+] as const;
+type MonitorTabId = typeof MONITOR_TABS[number]['id'];
 
 function relativeTime(iso: string | null): string {
   if (!iso) return 'Nunca';
@@ -42,6 +58,9 @@ export default function MonitorPage() {
     try { return JSON.parse(localStorage.getItem(LS_MONITOR_FILTERS) ?? '[]'); } catch { return []; }
   });
   const [mSearch, setMSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<MonitorTabId>('all');
+  const [page, setPage] = useState(1);
+  const { canManage } = useRole();
   const { show } = useToast();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -118,16 +137,14 @@ export default function MonitorPage() {
     const q = mSearch.toLowerCase();
     return !q || e.name.toLowerCase().includes(q) || e.deviceId.toLowerCase().includes(q) || (e.zone ?? '').toLowerCase().includes(q);
   };
-  const filteredEntries = entries.filter((e) => searchFn(e) && mFilters.every((f) => applyFilter(monitorFilterConfig, f, e, now)));
+  const activeTabDef = MONITOR_TABS.find((t) => t.id === activeTab)!;
+  const filteredEntries = entries.filter((e) => activeTabDef.match(e) && searchFn(e) && mFilters.every((f) => applyFilter(monitorFilterConfig, f, e, now)));
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
+  const paged = filteredEntries.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const online = entries.filter((e) => e.status === 'online').length;
-  const offline = entries.length - online;
   const totalPlays = entries.reduce((s, e) => s + e.todayPlays, 0);
-  const alerts = entries.filter((e) => e.status === 'offline' && e.offlineMinutes > 120);
-  const notPlaying = entries.filter((e) => e.health === 'no-reproduce' || e.health === 'sin-playlist');
-  const blocked = entries.filter((e) => e.health === 'blocked');
-  const lowBattery = entries.filter((e) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20);
-  const allBlocked = entries.length > 0 && blocked.length === entries.length;
+  const allBlocked = entries.length > 0 && entries.every((e) => e.health === 'blocked');
 
   const unblock = async (id: number) => {
     setUnblockingId(id);
@@ -179,11 +196,14 @@ export default function MonitorPage() {
           <h1 className="text-2xl font-bold">Monitor en vivo</h1>
           {updatedAt && (
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
-              Actualizado a las {updatedAt.toLocaleTimeString('es-AR')}
+              <span className="font-medium text-emerald-600 dark:text-emerald-400">{online} de {entries.length} online</span>
+              {' · '}{totalPlays.toLocaleString('es-AR')} reproducciones hoy
+              {' · '}actualizado a las {updatedAt.toLocaleTimeString('es-AR')}
             </p>
           )}
         </div>
         <div className="flex items-center gap-3">
+          {canManage && (<>
           <button onClick={() => setConfirmBlockAll(!allBlocked)} disabled={blockingAll}
             title={allBlocked ? 'Todas vuelven a mostrar publicidad' : 'Todas dejan de mostrar publicidad (el kiosco sigue armado)'}
             className={`text-xs px-3 py-1.5 rounded-lg border font-medium disabled:opacity-50 ${
@@ -198,6 +218,7 @@ export default function MonitorPage() {
             className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50">
             {wakingAll ? 'Enviando...' : 'Prender todas'}
           </button>
+          </>)}
           <button onClick={() => { fetchData(); resetCountdown(); }} className="text-sm text-blue-600 hover:underline">
             Actualizar
           </button>
@@ -207,7 +228,8 @@ export default function MonitorPage() {
         </div>
       </div>
 
-      {/* Brillo de toda la flota */}
+      {/* Brillo de toda la flota (sólo admin: cambiarlo es una escritura) */}
+      {canManage && (
       <div className="card p-3 mb-4 flex flex-wrap items-center gap-3">
         <span className="text-sm font-medium">☀ Brillo de la flota</span>
         <button
@@ -242,71 +264,9 @@ export default function MonitorPage() {
           {savingBright ? '…' : 'Fijar'}
         </button>
         <span className="text-[11px] w-full sm:w-auto" style={{ color: 'var(--text-muted)' }}>
-          Fijar aplica un brillo constante a las 12 (anula el horario solar hasta que toques &quot;Auto&quot;).
+          Fijar aplica un brillo constante a toda la flota (anula el horario solar hasta que toques &quot;Auto&quot;).
         </span>
       </div>
-
-      {/* CRÍTICO: online pero sin publicidad */}
-      {notPlaying.length > 0 && (
-        <div className="mb-4 p-3 rounded-xl border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800">
-          <p className="text-sm font-bold text-red-700 dark:text-red-400">
-            🚨 {notPlaying.length} tablet{notPlaying.length > 1 ? 's' : ''} ONLINE pero SIN mostrar publicidad: {notPlaying.map(t => t.name).join(', ')}
-          </p>
-          <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">Tocá &quot;Ver pantalla&quot; en la tablet para ver qué está pasando.</p>
-        </div>
-      )}
-
-      {/* Tablets bloqueadas desde el panel — no muestran publicidad a propósito,
-          pero hay que verlas acá y poder desbloquearlas sin ir a otra pantalla. */}
-      {blocked.length > 0 && (
-        <div className="mb-4 p-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800">
-          <p className="text-sm font-bold text-amber-700 dark:text-amber-400 mb-1.5">
-            🔒 {blocked.length} tablet{blocked.length > 1 ? 's' : ''} BLOQUEADA{blocked.length > 1 ? 'S' : ''} — no muestra{blocked.length > 1 ? 'n' : ''} publicidad
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {blocked.map((t) => (
-              <span key={t.id} className="inline-flex items-center gap-1.5 text-xs bg-white dark:bg-black/20 rounded-full pl-2.5 pr-1 py-1 border border-amber-200 dark:border-amber-800">
-                {t.name}
-                <button
-                  onClick={() => unblock(t.id)}
-                  disabled={unblockingId === t.id}
-                  className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
-                >
-                  {unblockingId === t.id ? 'Desbloqueando...' : 'Desbloquear'}
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Batería baja — hay que llamar al taxista para que la enchufe */}
-      {lowBattery.length > 0 && (
-        <div className="mb-4 p-3 rounded-xl border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800">
-          <p className="text-sm font-bold text-red-700 dark:text-red-400 mb-1">
-            🔋 {lowBattery.length} tablet{lowBattery.length > 1 ? 's' : ''} con batería baja — hablá con el taxista
-          </p>
-          <div className="flex flex-col gap-0.5">
-            {lowBattery.map((t) => (
-              <p key={t.id} className="text-xs text-red-600 dark:text-red-400">
-                <Link href={`/tablets/${t.id}`} className="font-semibold hover:underline">{t.name}</Link>
-                {' '}· {t.batteryLevel}%
-                {t.zone ? ` · ${t.zone}` : ''}
-                {t.driverName ? ` · ${t.driverName}` : ''}
-                {t.licensePlate ? ` · ${t.licensePlate}` : ''}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* #4 — offline >2h alert banner */}
-      {alerts.length > 0 && (
-        <div className="mb-4 p-3 rounded-xl border border-orange-200 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-800">
-          <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
-            ⚠ {alerts.length} tablet{alerts.length > 1 ? 's' : ''} offline &gt;2h: {alerts.map(t => t.name).join(', ')}
-          </p>
-        </div>
       )}
 
       {/* Interruptor maestro: producción congelada */}
@@ -320,13 +280,13 @@ export default function MonitorPage() {
               ? 'Ninguna tablet puede descargar playlists. Siguen reproduciendo su contenido local. Egress de Render ≈ 0.'
               : 'Las tablets pueden descargar playlists (con disyuntor y topes activos).'}
           </span>
-          <button
+          {canManage && <button
             onClick={() => setFreeze(!bw.frozen)}
             disabled={togglingFreeze}
             className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg text-white ${bw.frozen ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-sky-600 hover:bg-sky-700'} disabled:opacity-50`}
           >
             {togglingFreeze ? '…' : bw.frozen ? 'Descongelar producción' : 'Congelar producción'}
-          </button>
+          </button>}
         </div>
       )}
 
@@ -345,7 +305,7 @@ export default function MonitorPage() {
             <span style={{ color: 'var(--text-muted)' }}>
               Mes: <b>{bw.monthGb.toFixed(2)} GB</b> (próx. aviso a los {bw.nextAlertGb} GB)
             </span>
-            {bw.circuitOpen && (
+            {bw.circuitOpen && canManage && (
               <button onClick={doResetCircuit} disabled={resettingCircuit}
                 className="ml-auto text-xs font-medium px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white">
                 {resettingCircuit ? 'Reseteando…' : 'Resetear disyuntor'}
@@ -360,21 +320,49 @@ export default function MonitorPage() {
         </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <SummaryCard label="Online" value={online} color="text-emerald-600" dotColor="bg-emerald-500" />
-        <SummaryCard label="Offline" value={offline} color="text-gray-500" dotColor="bg-gray-400" />
-        <SummaryCard label="Reproducciones hoy" value={totalPlays} color="text-blue-600" dotColor="bg-blue-500" />
+      {/* Estados como pestañas (igual que Anuncios). Las de alerta sólo
+          aparecen, en rojo, cuando tienen algo; al pasar el mouse muestran el
+          detalle. */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {MONITOR_TABS.map((t) => {
+          const count = entries.filter(t.match).length;
+          const isActive = activeTab === t.id;
+          const alertTab = 'alert' in t && t.alert;
+          if (alertTab && count === 0 && !isActive) return null;
+          const isAlert = alertTab && count > 0;
+          const tab = (
+            <button
+              key={t.id}
+              onClick={() => { setActiveTab(t.id); setPage(1); }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                isActive ? (isAlert ? 'bg-red-600 border-red-600 text-white' : 'bg-blue-600 border-blue-600 text-white')
+                  : isAlert ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-300 dark:hover:bg-slate-800'
+              }`}
+            >
+              {isAlert && '⚠ '}{t.label} <span className={isActive ? 'text-white/80' : isAlert ? 'text-red-500' : 'text-gray-400'}>{count}</span>
+            </button>
+          );
+          if (!isAlert) return tab;
+          return (
+            <div key={t.id} className="relative group">
+              {tab}
+              <div role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-80 group-hover:block group-focus-within:block">
+                <MonitorAlertTip tab={t.id} entries={entries.filter(t.match)} />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <FilterBar
         config={monitorFilterConfig}
         rows={entries}
         filters={mFilters}
-        onChange={setMFilters}
+        onChange={(fs) => { setMFilters(fs); setPage(1); }}
         storageKey={LS_MONITOR_FILTERS}
         search={mSearch}
-        onSearch={setMSearch}
+        onSearch={(q) => { setMSearch(q); setPage(1); }}
         filteredCount={filteredEntries.length}
         total={entries.length}
       />
@@ -388,10 +376,22 @@ export default function MonitorPage() {
       ) : filteredEntries.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin resultados con esos filtros.</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredEntries.map((t) => (
-            <TabletCard key={t.id} entry={t} onWake={() => wake(t.id)} waking={wakingId === t.id} />
+        <ul className="card divide-y overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
+          {paged.map((t) => (
+            <TabletRow key={t.id} entry={t} canManage={canManage}
+              onWake={() => wake(t.id)} waking={wakingId === t.id}
+              onUnblock={() => unblock(t.id)} unblocking={unblockingId === t.id} />
           ))}
+        </ul>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <span>{filteredEntries.length} tablets · página {page} de {totalPages}</span>
+          <div className="flex gap-1">
+            <button disabled={page === 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: 'var(--border-md)' }}>‹ Anterior</button>
+            <button disabled={page === totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded border disabled:opacity-40" style={{ borderColor: 'var(--border-md)' }}>Siguiente ›</button>
+          </div>
         </div>
       )}
 
@@ -410,103 +410,158 @@ export default function MonitorPage() {
   );
 }
 
-function SummaryCard({ label, value, color, dotColor }: { label: string; value: number; color: string; dotColor: string }) {
+// Estado de una tablet para la fila: etiqueta, color y tono.
+function tabletState(e: TabletMonitorEntry) {
+  if (e.health === 'blocked') return { label: 'Bloqueada', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300', dot: 'bg-amber-500', warn: true };
+  if (e.health === 'sin-playlist') return { label: 'Sin playlist', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300', dot: 'bg-red-500 animate-pulse', warn: true };
+  if (e.health === 'no-reproduce') {
+    return { label: e.onFallback ? 'No cargó playlist' : 'No reproduce', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300', dot: 'bg-red-500 animate-pulse', warn: true };
+  }
+  if (e.status === 'online') return { label: 'Online', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300', dot: 'bg-emerald-500 animate-pulse', warn: false };
+  if (isLongOffline(e)) return { label: `Offline ${offlineLabel(e.offlineMinutes)}`, cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300', dot: 'bg-orange-500', warn: true };
+  return { label: 'Offline', cls: 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300', dot: 'bg-gray-400', warn: false };
+}
+
+function offlineLabel(min: number) {
+  if (min < 60) return `${min} min`;
+  if (min < 48 * 60) return `${Math.floor(min / 60)} h`;
+  return `${Math.floor(min / 1440)} d`;
+}
+
+function TabletRow({ entry: e, canManage, onWake, waking, onUnblock, unblocking }: {
+  entry: TabletMonitorEntry; canManage: boolean;
+  onWake: () => void; waking: boolean; onUnblock: () => void; unblocking: boolean;
+}) {
+  const st = tabletState(e);
+  const isOnline = e.status === 'online';
+  const iconBtn = 'inline-flex items-center justify-center h-7 w-7 rounded-md border transition-colors disabled:opacity-40';
+  const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
   return (
-    <div className="card p-4 flex items-center gap-3">
-      <div className={`w-3 h-3 rounded-full ${dotColor} flex-shrink-0`} />
-      <div>
-        <p className={`text-2xl font-bold ${color}`}>{value}</p>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</p>
+    <li className={`flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 border-l-4 ${st.warn ? (e.health === 'blocked' ? 'border-l-amber-400' : 'border-l-red-400') : 'border-l-transparent'}`}
+      style={{ borderTopColor: 'var(--border)' }}>
+      {/* Nombre + estado */}
+      <div className="min-w-0 flex-1 basis-56">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${st.dot}`} />
+          <Link href={`/tablets/${e.id}`} className="truncate font-medium hover:underline">{e.name}</Link>
+          <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
+        </div>
+        <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--text-xs)', paddingLeft: '1.125rem' }}>
+          {who || 'Sin zona'}
+        </p>
       </div>
-    </div>
+
+      {/* Conexión + reproducciones */}
+      <div className="w-40 shrink-0 text-xs">
+        <p>
+          <span style={{ color: 'var(--text-muted)' }}>Conexión </span>
+          <span className="font-semibold" style={isOnline ? undefined : { color: 'var(--text-muted)' }}>{relativeTime(e.lastSync)}</span>
+        </p>
+        <p className="mt-0.5">
+          <span className={`font-semibold tabular-nums ${e.todayPlays > 0 ? 'text-blue-600 dark:text-blue-400' : ''}`}
+            style={e.todayPlays === 0 ? { color: 'var(--text-muted)' } : undefined}>{e.todayPlays.toLocaleString('es-AR')}</span>
+          <span style={{ color: 'var(--text-muted)' }}> reproducciones hoy</span>
+        </p>
+      </div>
+
+      {/* Playlist */}
+      <div className="w-40 shrink-0 min-w-0 text-xs">
+        <p style={{ color: 'var(--text-xs)' }}>Playlist</p>
+        <p className={`truncate font-medium ${e.playlist ? '' : 'text-red-600 dark:text-red-400'}`}>{e.playlist?.name ?? 'Sin asignar'}</p>
+      </div>
+
+      {/* Hardware */}
+      <div className="flex w-48 shrink-0 flex-wrap gap-x-2.5 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-xs)' }}>
+        {e.batteryLevel != null && (
+          <span className={e.batteryLevel <= 20 ? 'font-semibold text-red-600 dark:text-red-400' : ''}>🔋 {e.batteryLevel}%</span>
+        )}
+        {e.brightness != null && (
+          <span className={e.brightnessAuto === false ? 'font-medium text-amber-600' : ''}
+            title={e.brightnessAuto === false ? 'Brillo en manual' : 'Brillo automático'}>
+            ☀ {e.brightness}%{e.lux != null ? ` · ${Math.round(e.lux)} lx` : ''}
+          </span>
+        )}
+        {e.lightSensor === false && <span className="font-medium text-red-500" title="Sin sensor de luz">sin sensor</span>}
+        {e.appVersion && <span className="font-mono">v{e.appVersion}</span>}
+        {e.serial && <span className="font-mono" title="Nº de serie del hardware">SN {e.serial}</span>}
+      </div>
+
+      {/* Acciones */}
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <ScreenshotViewer tabletId={e.id} tabletName={e.name} pill />
+        {canManage && e.health === 'blocked' && (
+          <button type="button" onClick={onUnblock} disabled={unblocking}
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300 disabled:opacity-40">
+            {unblocking ? 'Desbloqueando…' : 'Desbloquear'}
+          </button>
+        )}
+        {canManage && (
+          <button type="button" onClick={onWake} disabled={waking}
+            title="Prender: enciende la pantalla aunque el auto esté sin contacto (necesita señal)"
+            className={`${iconBtn} text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30`} style={{ borderColor: 'var(--border-md)' }}>
+            {waking ? '…' : (
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+                <path d="M12 3v8M6.3 7.3a8 8 0 1 0 11.4 0" />
+              </svg>
+            )}
+          </button>
+        )}
+        <Link href={`/tablets/${e.id}`} title="Ver detalle"
+          className={`${iconBtn} text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-slate-700`} style={{ borderColor: 'var(--border-md)' }}>
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </Link>
+      </div>
+    </li>
   );
 }
 
-function TabletCard({ entry, onWake, waking }: { entry: TabletMonitorEntry; onWake: () => void; waking: boolean }) {
-  const isOnline = entry.status === 'online';
-  const isLongOffline = !isOnline && entry.offlineMinutes > 120;
-  const noPlaylist = entry.health === 'sin-playlist';
-  const notPlaying = entry.health === 'no-reproduce' || noPlaylist;
-  const isBlocked = entry.health === 'blocked';
-  const onFallback = entry.health === 'no-reproduce' && entry.onFallback === true;
-  const notPlayingLabel = noPlaylist ? 'SIN PLAYLIST' : onFallback ? 'NO CARGÓ PLAYLIST' : 'NO REPRODUCE';
-
+// Detalle de cada pestaña de alerta, como tooltip.
+function MonitorAlertTip({ tab, entries }: { tab: MonitorTabId; entries: TabletMonitorEntry[] }) {
+  const tones = {
+    red: { box: 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950', title: 'text-red-800 dark:text-red-200', body: 'text-red-700/90 dark:text-red-300/90' },
+    amber: { box: 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950', title: 'text-amber-800 dark:text-amber-200', body: 'text-amber-800/90 dark:text-amber-300/90' },
+  };
+  const n = entries.length;
+  const pl = (one: string, many: string) => (n === 1 ? one : many);
+  const content: Record<string, { tone: keyof typeof tones; title: string; hint: string; line: (e: TabletMonitorEntry) => string }> = {
+    notplaying: {
+      tone: 'red',
+      title: `${n} ${pl('tablet online NO muestra', 'tablets online NO muestran')} publicidad`,
+      hint: 'Tocá "Ver pantalla" en la fila para ver qué está pasando.',
+      line: (e) => `${e.name} — ${tabletState(e).label.toLowerCase()}`,
+    },
+    blocked: {
+      tone: 'amber',
+      title: `${n} ${pl('tablet bloqueada', 'tablets bloqueadas')} desde el panel`,
+      hint: 'No muestran publicidad a propósito. Se desbloquean desde la fila.',
+      line: (e) => e.name,
+    },
+    lowbat: {
+      tone: 'red',
+      title: `${n} ${pl('tablet', 'tablets')} con batería baja`,
+      hint: 'Hablá con el taxista para que la enchufe.',
+      line: (e) => [e.name, `${e.batteryLevel}%`, e.driverName, e.licensePlate].filter(Boolean).join(' · '),
+    },
+    longoffline: {
+      tone: 'amber',
+      title: `${n} ${pl('tablet', 'tablets')} offline hace más de 2 horas`,
+      hint: 'Si están apagadas a propósito, ignoralo.',
+      line: (e) => `${e.name} — ${offlineLabel(e.offlineMinutes)}`,
+    },
+  };
+  const c = content[tab];
+  if (!c) return null;
+  const t = tones[c.tone];
   return (
-    <Link href={`/tablets/${entry.id}`} className="block">
-      <div className={`card p-4 flex flex-col gap-3 hover:border-blue-400 transition-colors cursor-pointer ${isBlocked ? 'border-amber-400 dark:border-amber-600' : notPlaying ? 'border-red-400 dark:border-red-600' : isLongOffline ? 'border-orange-300 dark:border-orange-700' : ''}`}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">{entry.name}</p>
-            {entry.zone && <p className="text-xs truncate" style={{ color: 'var(--text-xs)' }}>{entry.zone}</p>}
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <span className={`w-2 h-2 rounded-full ${isBlocked ? 'bg-amber-500' : notPlaying ? 'bg-red-500 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : isLongOffline ? 'bg-orange-500' : 'bg-gray-400'}`} />
-            <span className={`text-xs font-medium ${isBlocked ? 'text-amber-600' : notPlaying ? 'text-red-600' : isOnline ? 'text-emerald-600' : isLongOffline ? 'text-orange-500' : ''}`}
-              style={!isOnline && !isLongOffline && !notPlaying && !isBlocked ? { color: 'var(--text-muted)' } : undefined}>
-              {isBlocked ? '🔒 BLOQUEADA' : notPlaying ? notPlayingLabel : isOnline ? 'online' : isLongOffline ? `${Math.floor(entry.offlineMinutes / 60)}h offline` : 'offline'}
-            </span>
-          </div>
-        </div>
-
-        {/* #27 — Quick stats widget */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg p-2" style={{ background: 'var(--bg)' }}>
-            <p className="text-[10px] leading-tight" style={{ color: 'var(--text-xs)' }}>Última conexión</p>
-            <p className="font-semibold mt-0.5" style={{ color: isOnline ? 'inherit' : 'var(--text-muted)' }}>
-              {relativeTime(entry.lastSync)}
-            </p>
-          </div>
-          <div className="rounded-lg p-2" style={{ background: 'var(--bg)' }}>
-            <p className="text-[10px] leading-tight" style={{ color: 'var(--text-xs)' }}>Reproducciones hoy</p>
-            <p className={`font-semibold mt-0.5 ${entry.todayPlays > 0 ? 'text-blue-600' : ''}`}
-              style={entry.todayPlays === 0 ? { color: 'var(--text-muted)' } : undefined}>
-              {entry.todayPlays}
-            </p>
-          </div>
-        </div>
-
-        <div className="pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
-          <p className="text-[10px]" style={{ color: 'var(--text-xs)' }}>Playlist</p>
-          <p className="text-xs font-medium truncate mt-0.5">
-            {entry.playlist?.name ?? <span style={{ color: 'var(--text-muted)' }}>Sin asignar</span>}
-          </p>
-        </div>
-
-        {/* Acciones (fuera del Link) */}
-        <div className="pt-1 border-t flex items-center gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-          <ScreenshotViewer tabletId={entry.id} tabletName={entry.name} />
-          <button
-            onClick={onWake}
-            disabled={waking}
-            title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)"
-            className="text-xs px-2.5 py-1 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50"
-          >
-            {waking ? '...' : 'Prender'}
-          </button>
-        </div>
-
-        {/* Salud del hardware */}
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pt-1 border-t" style={{ borderColor: 'var(--border)', color: 'var(--text-xs)' }}>
-          {entry.batteryLevel != null && (
-            <span className={entry.batteryLevel <= 20 ? 'text-red-500 font-medium' : ''}>🔋 {entry.batteryLevel}%</span>
-          )}
-          {entry.brightness != null && (
-            <span className={entry.brightnessAuto === false ? 'text-amber-500 font-medium' : ''}
-              title={entry.brightnessAuto === false ? 'Brillo en manual — debería estar en automático' : 'Brillo automático'}>
-              ☀ {entry.brightness}% {entry.brightnessAuto === false ? '(manual)' : entry.brightnessAuto ? '(auto)' : ''}
-              {entry.lux != null && ` · ${Math.round(entry.lux)} lx`}
-            </span>
-          )}
-          {entry.lightSensor === false && (
-            <span className="text-red-500 font-medium" title="La tablet no tiene sensor de luz — el brillo automático queda al máximo">
-              sin sensor de luz
-            </span>
-          )}
-          {entry.appVersion && <span className="font-mono">v{entry.appVersion}</span>}
-          {entry.serial && <span className="font-mono" title="Nº de serie del hardware">SN {entry.serial}</span>}
-        </div>
-      </div>
-    </Link>
+    <div className={`rounded-xl border p-3 text-sm shadow-lg ${t.box}`}>
+      <p className={`font-semibold ${t.title}`}>{c.title}</p>
+      <ul className={`mt-1 space-y-0.5 ${t.body}`}>
+        {entries.slice(0, 12).map((e) => <li key={e.id}>· {c.line(e)}</li>)}
+        {n > 12 && <li>… y {n - 12} más</li>}
+      </ul>
+      <p className={`mt-1.5 text-xs ${t.body}`}>{c.hint}</p>
+    </div>
   );
 }
