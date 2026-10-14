@@ -106,7 +106,7 @@ function Btn({ icon, v = 'neutral', onClick, disabled, title, children }: {
 }
 
 // Columnas de la lista: miniatura · tablet · conexión · repr. · playlist · equipo · acciones
-const ROW_GRID = 'grid grid-cols-[56px_minmax(200px,1.4fr)_110px_80px_minmax(130px,1fr)_170px_360px] items-center gap-x-5';
+const ROW_GRID = 'grid grid-cols-[72px_minmax(200px,1.4fr)_110px_80px_minmax(130px,1fr)_170px_360px] items-center gap-x-5';
 
 const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors disabled:opacity-40';
 
@@ -154,7 +154,19 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
   const bw = fleet.bw;
 
   return (
-    <div className="ia-theme relative -m-4 sm:-m-6 lg:-m-8 min-h-screen bg-[var(--bg)] text-[var(--text)]">
+    <div className="ia-theme relative isolate -m-4 sm:-m-6 lg:-m-8 min-h-screen overflow-x-clip bg-[var(--bg)] text-[var(--text)]">
+      <style>{`
+        @keyframes ia-float { 0%,100% { transform: translateY(0) rotate(-3deg) } 50% { transform: translateY(-14px) rotate(2deg) } }
+        @keyframes ia-glow { 0%,100% { opacity: .35 } 50% { opacity: .6 } }
+        @media (prefers-reduced-motion: reduce) { .ia-anim { animation: none !important } }
+      `}</style>
+      {/* Tucán animado, detrás del texto arriba a la derecha */}
+      <div aria-hidden="true" className="pointer-events-none absolute right-6 top-2 -z-10 hidden md:block">
+        <div className="ia-anim absolute inset-6 rounded-full bg-[var(--accent-strong)] blur-3xl"
+          style={{ animation: 'ia-glow 6s ease-in-out infinite' }} />
+        <img src="/monitor/toucan.png" alt="" className="ia-anim relative w-[260px] opacity-35 lg:w-[300px]"
+          style={{ animation: 'ia-float 7s ease-in-out infinite' }} />
+      </div>
       <div className="px-6 pb-10 pt-5 sm:px-10">
         {/* Barra superior */}
         <header className="flex flex-wrap items-center gap-3">
@@ -373,17 +385,17 @@ function FleetList({ entries, search, canManage, actions }: {
                 return (
                   <li key={e.id}
                     className={`${ROW_GRID} group/row border-b border-l-[3px] border-b-[var(--divider)] border-l-transparent px-5 py-2.5 text-sm transition-colors last:border-b-0 hover:border-l-[var(--accent-strong)] hover:bg-[var(--surface-2)]`}>
-                    {/* Miniatura chica con el número */}
-                    <div className="relative h-10 w-14 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg)] transition-colors group-hover/row:border-[var(--accent)]">
-                      <span className="absolute left-1.5 top-1.5 h-1 w-1 rounded-full bg-[var(--muted-2)]" />
-                      <span className="absolute bottom-0.5 right-1.5 text-lg font-bold leading-none text-[var(--muted-2)]">{tabletNumber(e.name)}</span>
+                    {/* Miniatura: logo de ICON + número de la tablet */}
+                    <div className="relative flex h-11 w-[4.5rem] items-center gap-1 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg)] pl-1.5 transition-colors group-hover/row:border-[var(--accent)]">
+                      <img src="/monitor/toucan.png" alt="" aria-hidden="true" className="h-5 w-auto shrink-0 opacity-90" />
+                      <span className="text-base font-bold leading-none text-[var(--text-2)]">{tabletNumber(e.name)}</span>
                     </div>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <Link href={`/tablets/${e.id}`} className="truncate font-semibold hover:text-[var(--accent)]">{e.name}</Link>
-                        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-px text-xs text-[var(--text-2)]">
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: DOT[st.tone] }} />
+                        <Link href={`/tablets/${e.id}`} className="shrink-0 whitespace-nowrap font-semibold hover:text-[var(--accent)]">{e.name}</Link>
+                        <span className="inline-flex min-w-0 items-center gap-1.5 truncate whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-px text-xs text-[var(--text-2)]">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: DOT[st.tone] }} />
                           {st.label}
                         </span>
                       </div>

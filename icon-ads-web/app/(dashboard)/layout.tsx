@@ -63,7 +63,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <Sidebar open={drawerOpen} onNavigate={() => setDrawerOpen(false)} />
 
-      <div className="flex-1 min-w-0 flex flex-col">
+      {/* En el Monitor la columna entera usa la paleta oscura (.ia-theme): si el
+          menú lateral es más alto que la página, no queda una franja clara abajo. */}
+      <div className={`flex-1 min-w-0 flex flex-col ${pathname.startsWith('/monitor') ? 'ia-theme bg-[var(--bg)]' : ''}`}>
         {/* Barra superior sólo en pantallas chicas */}
         <header
           className="lg:hidden sticky top-0 z-20 flex items-center gap-3 h-14 px-4 border-b"
