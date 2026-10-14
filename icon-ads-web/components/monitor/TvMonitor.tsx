@@ -105,6 +105,26 @@ function Btn({ icon, v = 'neutral', onClick, disabled, title, children }: {
   );
 }
 
+// Columnas de la lista: miniatura · tablet · conexión · repr. · playlist · equipo · acciones
+const ROW_GRID = 'grid grid-cols-[56px_minmax(200px,1.4fr)_110px_80px_minmax(130px,1fr)_170px_360px] items-center gap-x-5';
+
+const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors disabled:opacity-40';
+
+function IconBtn({ icon, label, v = 'neutral', onClick, disabled }: {
+  icon: keyof typeof ICONS; label: string; v?: keyof typeof V; onClick: () => void; disabled?: boolean;
+}) {
+  return (
+    <span className="group/ib relative">
+      <button type="button" onClick={onClick} disabled={disabled} aria-label={label} className={`${iconBtn} ${V[v]}`}>
+        <Ico d={ICONS[icon]} />
+      </button>
+      <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-[var(--text)] shadow-lg group-hover/ib:block">
+        {label}
+      </span>
+    </span>
+  );
+}
+
 const chip = 'inline-flex items-center gap-1.5 h-10 px-4 rounded-full border border-[var(--border)] bg-[var(--surface)] text-sm';
 
 function tabletNumber(name: string) {
@@ -289,8 +309,8 @@ function FleetList({ entries, search, canManage, actions }: {
   return (
     <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
       {/* Pestañas */}
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--divider)] px-6 py-5">
-        <h2 className="mr-3 text-2xl font-bold">Flota</h2>
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--divider)] px-5 py-3.5">
+        <h2 className="mr-2 text-xl font-bold">Flota</h2>
         {TABS.map((t) => {
           const count = entries.filter(t.match).length;
           const isActive = tab === t.id;
@@ -299,7 +319,7 @@ function FleetList({ entries, search, canManage, actions }: {
           const isAlert = alertTab && count > 0;
           const btn = (
             <button key={t.id} type="button" onClick={() => { setTab(t.id); setPage(1); }}
-              className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors ${
+              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors ${
                 isActive && !isAlert ? 'border-[var(--accent-strong)] bg-[var(--accent-strong)] text-white'
                   : isAlert ? `border-[var(--danger-border)] text-[var(--danger)] ${isActive ? 'bg-[color-mix(in_srgb,var(--danger)_14%,transparent)]' : 'hover:bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]'}`
                     : 'border-[var(--border)] text-[var(--text-2)] hover:bg-[var(--surface-hover)]'
@@ -330,104 +350,94 @@ function FleetList({ entries, search, canManage, actions }: {
         })}
       </div>
 
-      {/* Filas */}
+      {/* Filas compactas: una línea por tablet, columnas con un solo encabezado */}
       {filtered.length === 0 ? (
         <p className="px-6 py-8 text-sm text-[var(--muted)]">{q ? 'Ninguna tablet coincide con la búsqueda.' : 'No hay tablets en esta pestaña.'}</p>
       ) : (
-        <ul>
-          {paged.map((e) => {
-            const st = stateOf(e);
-            const isBlocked = e.health === 'blocked';
-            const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
-            return (
-              <li key={e.id}
-                className="group/row border-b border-l-[3px] border-b-[var(--divider)] border-l-transparent px-6 py-5 transition-colors last:border-b-0 hover:border-l-[var(--accent-strong)] hover:bg-[var(--surface-2)]">
-                <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
-                  {/* Miniatura con el número */}
-                  <div className="relative aspect-[16/9] w-36 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] transition-colors group-hover/row:border-[var(--accent)]">
-                    <span className="absolute left-3 top-3 h-1.5 w-1.5 rounded-full bg-[var(--muted-2)]" />
-                    <span className="absolute -bottom-1.5 right-2 text-6xl font-bold leading-none text-[var(--muted-2)] opacity-60">{tabletNumber(e.name)}</span>
-                  </div>
+        <div className="overflow-x-auto">
+          <div className="min-w-[1080px]">
+            <div className={`${ROW_GRID} border-b border-[var(--divider)] px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-2)]`}>
+              <span />
+              <span>Tablet</span>
+              <span>Conexión</span>
+              <span>Hoy</span>
+              <span>Playlist</span>
+              <span>Equipo</span>
+              <span className="text-right">Acciones</span>
+            </div>
+            <ul>
+              {paged.map((e) => {
+                const st = stateOf(e);
+                const isBlocked = e.health === 'blocked';
+                const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
+                return (
+                  <li key={e.id}
+                    className={`${ROW_GRID} group/row border-b border-l-[3px] border-b-[var(--divider)] border-l-transparent px-5 py-2.5 text-sm transition-colors last:border-b-0 hover:border-l-[var(--accent-strong)] hover:bg-[var(--surface-2)]`}>
+                    {/* Miniatura chica con el número */}
+                    <div className="relative h-10 w-14 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg)] transition-colors group-hover/row:border-[var(--accent)]">
+                      <span className="absolute left-1.5 top-1.5 h-1 w-1 rounded-full bg-[var(--muted-2)]" />
+                      <span className="absolute bottom-0.5 right-1.5 text-lg font-bold leading-none text-[var(--muted-2)]">{tabletNumber(e.name)}</span>
+                    </div>
 
-                  <div className="min-w-0 flex-1 basis-52">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span className="truncate text-lg font-bold">{e.name}</span>
-                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-0.5 text-sm text-[var(--text-2)]">
-                        <span className="h-2 w-2 rounded-full" style={{ background: DOT[st.tone] }} />
-                        {st.label}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate text-sm text-[var(--muted)]">{who || 'Sin zona asignada'}</p>
-                  </div>
-
-                  <dl className="grid shrink-0 grid-cols-2 gap-x-10 gap-y-2 text-sm sm:grid-cols-4">
-                    <div>
-                      <dt className="text-[var(--muted)]">Última conexión</dt>
-                      <dd className="font-bold">{relativeTime(e.lastSync)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[var(--muted)]">Reproducciones hoy</dt>
-                      <dd className="font-bold tabular-nums">{e.todayPlays.toLocaleString('es-AR')}</dd>
-                    </div>
-                    <div className="max-w-[12rem]">
-                      <dt className="text-[var(--muted)]">Playlist</dt>
-                      <dd className="truncate font-bold" style={e.playlist ? undefined : { color: 'var(--danger)' }}>{e.playlist?.name ?? 'Sin asignar'}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[var(--muted)]">Equipo</dt>
-                      <dd className="flex items-center gap-3 font-semibold">
-                        <span className="inline-flex items-center gap-1" style={{ color: e.batteryLevel != null ? batteryColor(e.batteryLevel) : 'var(--muted)' }}>
-                          <Ico d={ICONS.battery} className="h-3.5 w-3.5" />
-                          {e.batteryLevel != null ? `${e.batteryLevel}%` : '—%'}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Link href={`/tablets/${e.id}`} className="truncate font-semibold hover:text-[var(--accent)]">{e.name}</Link>
+                        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-px text-xs text-[var(--text-2)]">
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: DOT[st.tone] }} />
+                          {st.label}
                         </span>
-                        {e.brightness != null && (
-                          <span className="inline-flex items-center gap-1" style={{ color: 'var(--warn)' }}>
-                            <Ico d={ICONS.sun} className="h-3.5 w-3.5" />
-                            {e.brightness}%
-                          </span>
-                        )}
-                        {e.appVersion && <span className="font-mono font-normal text-[var(--muted)]">v{e.appVersion}</span>}
-                      </dd>
+                      </div>
+                      <p className="truncate text-xs text-[var(--muted)]">{who || 'Sin zona asignada'}</p>
                     </div>
-                  </dl>
-                </div>
 
-                {/* Acciones de la fila */}
-                <div className="mt-4 flex flex-wrap items-center gap-2.5 sm:pl-[11rem]">
-                  <ScreenshotViewer tabletId={e.id} tabletName={e.name} variant="tvsm" />
-                  {canManage && (
-                    <>
-                      <Btn icon="power" onClick={() => actions.wake(e.id)} disabled={actions.wakingId === e.id}
-                        title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)">
-                        {actions.wakingId === e.id ? 'Enviando…' : 'Prender pantalla'}
-                      </Btn>
-                      <Btn icon="sync" onClick={() => actions.forceSync(e.id)} disabled={actions.syncingId === e.id}
-                        title="Fuerza a la tablet a sincronizar ahora">
-                        {actions.syncingId === e.id ? 'Sincronizando…' : 'Forzar sync'}
-                      </Btn>
-                      <Btn icon={isBlocked ? 'unlock' : 'lock'} v={isBlocked ? 'ok' : 'neutral'}
-                        onClick={() => actions.toggleBlock(e)} disabled={actions.blockingId === e.id}
-                        title={isBlocked ? 'Vuelve a mostrar publicidad' : 'Frena la publicidad sin desarmar el kiosco'}>
-                        {actions.blockingId === e.id ? 'Aplicando…' : isBlocked ? 'Desbloquear' : 'Bloquear'}
-                      </Btn>
-                      <Link href={`/tablets/${e.id}?editar=1`} className={`${pill} ${V.neutral}`}>
-                        <Ico d={ICONS.edit} />
-                        Editar
+                    <span className="font-semibold">{relativeTime(e.lastSync)}</span>
+                    <span className="font-semibold tabular-nums">{e.todayPlays.toLocaleString('es-AR')}</span>
+                    <span className="truncate font-semibold" style={e.playlist ? undefined : { color: 'var(--danger)' }} title={e.playlist?.name}>
+                      {e.playlist?.name ?? 'Sin asignar'}
+                    </span>
+
+                    <span className="flex items-center gap-2.5 text-xs font-semibold">
+                      <span className="inline-flex items-center gap-1" style={{ color: e.batteryLevel != null ? batteryColor(e.batteryLevel) : 'var(--muted)' }}>
+                        <Ico d={ICONS.battery} className="h-3.5 w-3.5" />
+                        {e.batteryLevel != null ? `${e.batteryLevel}%` : '—%'}
+                      </span>
+                      {e.brightness != null && (
+                        <span className="inline-flex items-center gap-1" style={{ color: 'var(--warn)' }}>
+                          <Ico d={ICONS.sun} className="h-3.5 w-3.5" />
+                          {e.brightness}%
+                        </span>
+                      )}
+                      {e.appVersion && <span className="font-mono font-normal text-[var(--muted)]">v{e.appVersion}</span>}
+                    </span>
+
+                    {/* Acciones: "Ver pantalla" con texto; el resto, ícono con su nombre al pasar el mouse */}
+                    <div className="flex items-center justify-end gap-1.5">
+                      <ScreenshotViewer tabletId={e.id} tabletName={e.name} variant="tvsm" />
+                      {canManage && (
+                        <>
+                          <IconBtn icon="power" label={actions.wakingId === e.id ? 'Enviando…' : 'Prender pantalla'}
+                            onClick={() => actions.wake(e.id)} disabled={actions.wakingId === e.id} />
+                          <IconBtn icon="sync" label={actions.syncingId === e.id ? 'Sincronizando…' : 'Forzar sync'}
+                            onClick={() => actions.forceSync(e.id)} disabled={actions.syncingId === e.id} />
+                          <IconBtn icon={isBlocked ? 'unlock' : 'lock'} v={isBlocked ? 'ok' : 'neutral'}
+                            label={isBlocked ? 'Desbloquear' : 'Bloquear'}
+                            onClick={() => actions.toggleBlock(e)} disabled={actions.blockingId === e.id} />
+                          <Link href={`/tablets/${e.id}?editar=1`} title="Editar" aria-label="Editar" className={`${iconBtn} ${V.neutral}`}>
+                            <Ico d={ICONS.edit} />
+                          </Link>
+                          <IconBtn icon="trash" v="danger" label="Eliminar" onClick={() => actions.remove(e)} />
+                        </>
+                      )}
+                      <Link href={`/tablets/${e.id}`} title="Ver detalle" aria-label="Ver detalle" className={`${iconBtn} border-transparent text-[var(--accent)] hover:bg-[var(--surface-hover)]`}>
+                        <Ico d={ICONS.arrow} />
                       </Link>
-                      <Btn icon="trash" v="danger" onClick={() => actions.remove(e)} title="Elimina la tablet del sistema">
-                        Eliminar
-                      </Btn>
-                    </>
-                  )}
-                  <Link href={`/tablets/${e.id}`} className="ml-auto inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent)] hover:underline">
-                    Ver detalle
-                    <Ico d={ICONS.arrow} className="h-4 w-4" />
-                  </Link>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
       )}
 
       {totalPages > 1 && (
