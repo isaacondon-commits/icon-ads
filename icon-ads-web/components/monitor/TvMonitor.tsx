@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { BandwidthStatus, TabletMonitorEntry } from '@/lib/api';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
 
-// Monitor estilo Smart TV: el video de ICON de fondo con el tucán flotando,
-// los controles de la flota y la lista de tablets (pestañas con alertas, una
-// fila por tablet con todas sus acciones), en una paleta oscura propia (azul
-// noche + cian del logo), independiente del tema claro/oscuro del panel.
+// Monitor con la paleta "ICON" (clase .ia-theme en globals.css, tomada de
+// paleta-propuesta.png): barra superior, barra de controles de la flota y la
+// lista de tablets (pestañas con alertas, una fila por tablet con todas sus
+// acciones). Independiente del tema claro/oscuro del resto del panel.
 
 export type TvActions = {
   wake: (id: number) => void; wakingId: number | null;
@@ -46,67 +46,74 @@ function relativeTime(iso: string | null): string {
   return `hace ${Math.floor(diff / 86400)} d`;
 }
 
-type Tone = 'ok' | 'bad' | 'blocked' | 'off';
+type Tone = 'ok' | 'bad' | 'blocked' | 'off' | 'idle';
 function stateOf(e: TabletMonitorEntry): { label: string; tone: Tone } {
   if (e.health === 'blocked') return { label: 'Bloqueada', tone: 'blocked' };
   if (e.health === 'sin-playlist') return { label: 'Sin playlist', tone: 'bad' };
   if (e.health === 'no-reproduce') return { label: e.onFallback ? 'No cargó playlist' : 'No reproduce', tone: 'bad' };
   if (e.status === 'online') return { label: 'En línea', tone: 'ok' };
   if (e.offlineMinutes > 48 * 60) return { label: `Apagada hace ${Math.floor(e.offlineMinutes / 1440)} d`, tone: 'off' };
-  if (e.offlineMinutes > 60) return { label: `Apagada hace ${Math.floor(e.offlineMinutes / 60)} h`, tone: 'off' };
-  return { label: 'Fuera de línea', tone: 'off' };
+  if (e.offlineMinutes > 120) return { label: `Apagada hace ${Math.floor(e.offlineMinutes / 60)} h`, tone: 'off' };
+  return { label: 'Fuera de línea', tone: 'idle' };
 }
 
-const TONE = {
-  ok: { dot: 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]', pill: 'bg-emerald-400/15 text-emerald-200 ring-emerald-300/30', card: 'from-sky-500/35 via-blue-700/25 to-[#06101f]' },
-  bad: { dot: 'bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.9)] animate-pulse', pill: 'bg-rose-400/15 text-rose-200 ring-rose-300/30', card: 'from-rose-500/35 via-fuchsia-900/25 to-[#06101f]' },
-  blocked: { dot: 'bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.8)]', pill: 'bg-amber-300/15 text-amber-100 ring-amber-200/30', card: 'from-amber-400/30 via-orange-900/20 to-[#06101f]' },
-  off: { dot: 'bg-slate-400', pill: 'bg-white/10 text-slate-300 ring-white/15', card: 'from-slate-500/25 via-slate-800/30 to-[#06101f]' },
-} as const;
+// Color del punto de estado (variables de la paleta).
+const DOT: Record<Tone, string> = {
+  ok: 'var(--ok)', bad: 'var(--danger)', blocked: 'var(--warn)', off: 'var(--danger)', idle: 'var(--muted-2)',
+};
 
 const ICONS = {
-  screen: 'M3 5h18v12H3zM8 21h8M12 17v4',
   power: 'M12 3v8M6.3 7.3a8 8 0 1 0 11.4 0',
-  sync: 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4',
+  sync: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
   lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
   unlock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2',
   edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
-  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
   sun: 'M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
+  battery: 'M8 4h8v17H8zM10 2h4',
+  warn: 'M12 4 2.5 20h19zM12 10v4M12 17h.01',
+  arrow: 'M5 12h14M13 6l6 6-6 6',
 } as const;
 
-function Ico({ d, className = 'h-4 w-4' }: { d: string; className?: string }) {
+function Ico({ d, className = 'h-4 w-4', style }: { d: string; className?: string; style?: React.CSSProperties }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className={className} style={style} fill="none" stroke="currentColor" strokeWidth={1.8}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={d} />
     </svg>
   );
 }
 
-const glassBtn = 'inline-flex items-center gap-2 h-10 px-4 rounded-full text-sm font-medium text-white/90 bg-white/[0.08] ring-1 ring-white/15 backdrop-blur-md transition hover:bg-white/[0.16] hover:text-white disabled:opacity-40';
+// Botones: base con borde + variantes de la imagen.
+const pill = 'inline-flex items-center gap-2 h-10 px-4 rounded-full border text-sm font-medium whitespace-nowrap transition-colors disabled:opacity-40';
+const V = {
+  neutral: 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-hover)]',
+  primary: 'border-[var(--accent-strong)] bg-[var(--accent-strong)] text-white hover:bg-[var(--accent-hover)] hover:border-[var(--accent-hover)]',
+  danger: 'border-[var(--danger-border)] bg-transparent text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]',
+  ok: 'border-[color-mix(in_srgb,var(--ok)_40%,transparent)] bg-[color-mix(in_srgb,var(--ok)_10%,transparent)] text-[var(--ok)] hover:bg-[color-mix(in_srgb,var(--ok)_18%,transparent)]',
+} as const;
 
-function TvButton({ icon, children, onClick, disabled, tone = 'glass', title }: {
-  icon: keyof typeof ICONS; children: React.ReactNode; onClick: () => void; disabled?: boolean;
-  tone?: 'glass' | 'danger' | 'success'; title?: string;
+function Btn({ icon, v = 'neutral', onClick, disabled, title, children }: {
+  icon: keyof typeof ICONS; v?: keyof typeof V; onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
 }) {
-  const cls = tone === 'danger'
-    ? 'inline-flex items-center gap-2 h-10 px-4 rounded-full text-sm font-medium text-rose-200 bg-rose-500/10 ring-1 ring-rose-300/25 backdrop-blur-md transition hover:bg-rose-500/25 disabled:opacity-40'
-    : tone === 'success'
-      ? 'inline-flex items-center gap-2 h-10 px-4 rounded-full text-sm font-medium text-emerald-100 bg-emerald-500/15 ring-1 ring-emerald-300/30 backdrop-blur-md transition hover:bg-emerald-500/25 disabled:opacity-40'
-      : glassBtn;
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={title} className={cls}>
+    <button type="button" onClick={onClick} disabled={disabled} title={title} className={`${pill} ${V[v]}`}>
       <Ico d={ICONS[icon]} />
       {children}
     </button>
   );
 }
 
+const chip = 'inline-flex items-center gap-1.5 h-10 px-4 rounded-full border border-[var(--border)] bg-[var(--surface)] text-sm';
+
 function tabletNumber(name: string) {
   const m = name.match(/(\d+)\s*$/);
   return m ? m[1].padStart(2, '0') : name.slice(0, 2).toUpperCase();
+}
+
+function batteryColor(n: number) {
+  return n <= 20 ? 'var(--danger)' : n <= 50 ? 'var(--warn)' : 'var(--ok)';
 }
 
 export default function TvMonitor({ entries, loading, error, countdown, onRefresh, canManage, actions, fleet }: Props) {
@@ -127,122 +134,103 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
   const bw = fleet.bw;
 
   return (
-    <div className="tv-root relative isolate -m-4 sm:-m-6 lg:-m-8 min-h-screen overflow-hidden bg-[#030812] text-white">
-      <style>{`
-        @keyframes tv-float { 0%,100% { transform: translateY(0) rotate(-2deg) } 50% { transform: translateY(-16px) rotate(1.5deg) } }
-        @keyframes tv-glow { 0%,100% { opacity: .55 } 50% { opacity: .95 } }
-        @keyframes tv-drift { 0% { transform: scale(1.08) translateX(0) } 100% { transform: scale(1.08) translateX(-2%) } }
-        @media (prefers-reduced-motion: reduce) { .tv-anim { animation: none !important } }
-      `}</style>
-
-      {/* Fondo: el video de ICON sólo detrás de la parte de arriba (tipo TV);
-          más abajo, azul noche liso para que la lista se lea bien. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 -z-20 h-[100vh] overflow-hidden">
-        <video className="tv-anim h-full w-full object-cover opacity-45"
-          style={{ animation: 'tv-drift 30s ease-in-out infinite alternate' }}
-          src="/monitor/bg.mp4" poster="/monitor/bg-poster.jpg" autoPlay muted loop playsInline aria-hidden="true" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#030812] via-[#030812]/85 to-[#030812]/30" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#030812] via-[#030812]/30 to-transparent" />
-      </div>
-      <div className="pointer-events-none absolute -right-40 -top-40 -z-10 h-[520px] w-[520px] rounded-full bg-sky-500/20 blur-3xl tv-anim"
-        style={{ animation: 'tv-glow 7s ease-in-out infinite' }} />
-
-      <div className="relative px-6 pb-10 pt-5 sm:px-10">
+    <div className="ia-theme relative -m-4 sm:-m-6 lg:-m-8 min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      <div className="px-6 pb-10 pt-5 sm:px-10">
         {/* Barra superior */}
-        <header className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <img src="/monitor/toucan.png" alt="" className="h-8 w-auto" />
+        <header className="flex flex-wrap items-center gap-3">
+          <div className="mr-3 flex items-center gap-3">
+            <img src="/monitor/toucan.png" alt="" className="h-9 w-auto" />
             <div className="leading-tight">
-              <p className="text-sm font-bold tracking-wide"><span className="text-sky-300">ICON</span><span className="text-sky-100">ADS</span></p>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-sky-200/60">Monitor en vivo</p>
+              <p className="text-base font-bold tracking-wide text-[var(--accent)]">ICONADS</p>
+              <p className="text-[11px] uppercase tracking-[0.25em] text-[var(--muted)]">Monitor en vivo</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full bg-white/[0.07] px-3 py-1.5 ring-1 ring-white/10">
-              <b className="text-emerald-300">{online}</b><span className="text-white/60"> de {entries.length} en línea</span>
+          <span className={chip}>
+            <b style={{ color: online === 0 ? 'var(--danger)' : 'var(--ok)' }}>{online}</b>
+            <span className="text-[var(--text-2)]">de {entries.length} en línea</span>
+          </span>
+          <span className={chip}>
+            <b>{totalPlays.toLocaleString('es-AR')}</b>
+            <span className="text-[var(--text-2)]">reproducciones hoy</span>
+          </span>
+          {bw && (
+            <span className={chip}>
+              <span className="h-2 w-2 rounded-full" style={{ background: bw.frozen ? 'var(--accent)' : 'var(--ok)' }} />
+              <span className="text-[var(--text-2)]">{bw.frozen ? 'Producción congelada' : 'Producción activa'}</span>
             </span>
-            <span className="rounded-full bg-white/[0.07] px-3 py-1.5 ring-1 ring-white/10">
-              <b className="text-sky-300">{totalPlays.toLocaleString('es-AR')}</b><span className="text-white/60"> reproducciones hoy</span>
-            </span>
-            {bw && (
-              <span className={`rounded-full px-3 py-1.5 ring-1 ${bw.frozen ? 'bg-sky-400/15 text-sky-100 ring-sky-300/30' : 'bg-emerald-400/10 text-emerald-200 ring-emerald-300/25'}`}>
-                {bw.frozen ? '🧊 Producción congelada' : '● Producción activa'}
-              </span>
-            )}
-            {bw?.circuitOpen && (
-              <span className="rounded-full bg-rose-500/20 px-3 py-1.5 font-semibold text-rose-100 ring-1 ring-rose-300/40">Disyuntor abierto</span>
-            )}
-          </div>
+          )}
+          {bw?.circuitOpen && (
+            <span className={`${chip} border-[var(--danger-border)] text-[var(--danger)]`}>Disyuntor abierto</span>
+          )}
 
           <div className="ml-auto flex items-center gap-3">
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar tablet, zona, taxista…"
-              className="h-10 w-56 rounded-full bg-white/[0.08] px-4 text-sm text-white placeholder:text-white/40 ring-1 ring-white/15 backdrop-blur-md outline-none focus:ring-sky-300/60" />
-            <button type="button" onClick={onRefresh} title="Actualizar ahora" className={`${glassBtn} px-3`}>
+              className="h-11 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted-2)] focus:border-[var(--accent)]" />
+            <button type="button" onClick={onRefresh} title="Actualizar ahora"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 text-sm text-[var(--text)] hover:bg-[var(--surface-hover)]">
               <Ico d={ICONS.refresh} />
-              <span className="tabular-nums text-xs text-white/60">{countdown}s</span>
+              <span className="tabular-nums">{countdown}s</span>
             </button>
             <div className="hidden text-right leading-tight sm:block">
-              <p className="text-2xl font-light tabular-nums">{clock?.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', hour12: false }) ?? '--:--'}</p>
-              <p className="text-[11px] capitalize text-white/50">{clock?.toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'short' }) ?? ''}</p>
+              <p className="font-mono text-3xl tabular-nums">{clock?.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', hour12: false }) ?? '--:--'}</p>
+              <p className="text-xs capitalize text-[var(--muted)]">{clock?.toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'short' }) ?? ''}</p>
             </div>
           </div>
         </header>
 
-        {/* Controles de flota + tucán */}
-        <div className="mt-6 flex items-center gap-6">
+        {/* Controles de la flota */}
         {canManage && (
-          <section className="flex flex-1 flex-wrap items-center gap-3 rounded-3xl bg-white/[0.05] p-4 ring-1 ring-white/10 backdrop-blur-xl">
-            <span className="mr-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200/70">Flota</span>
-            <div className="flex min-w-[260px] flex-1 items-center gap-3">
-              <Ico d={ICONS.sun} className="h-4 w-4 text-amber-200" />
-              <button type="button" onClick={() => fleet.commitBrightness('auto')} disabled={fleet.savingBright}
-                className={`h-8 rounded-full px-3 text-xs font-medium ring-1 transition disabled:opacity-40 ${fleet.brightAuto ? 'bg-sky-400 text-[#031022] ring-sky-300' : 'bg-white/[0.08] text-white/80 ring-white/15 hover:bg-white/15'}`}>
-                Auto (solar)
-              </button>
-              <input type="range" min={5} max={100} step={5} value={fleet.brightPct} disabled={fleet.savingBright}
-                onChange={(ev) => fleet.setBrightPct(Number(ev.target.value))}
-                onPointerUp={() => fleet.commitBrightness(fleet.brightPct)}
-                onKeyUp={(ev) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) fleet.commitBrightness(fleet.brightPct); }}
-                className="flex-1 accent-sky-400" aria-label="Brillo de la flota" />
-              <span className="w-12 text-right text-sm tabular-nums">{fleet.brightAuto ? 'auto' : `${fleet.brightPct}%`}</span>
-            </div>
-            <TvButton icon="power" onClick={fleet.onWakeAll} disabled={fleet.wakingAll}>
+          <section className="mt-6 inline-flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-5 py-4">
+            <span className="text-sm font-semibold uppercase tracking-[0.3em] text-[var(--muted)]">Flota</span>
+            <Ico d={ICONS.sun} className="h-5 w-5" style={{ color: 'var(--warn)' }} />
+            <button type="button" onClick={() => fleet.commitBrightness('auto')} disabled={fleet.savingBright}
+              className={`${pill} ${fleet.brightAuto ? V.primary : V.neutral}`}>
+              Auto (solar)
+            </button>
+            <input type="range" min={5} max={100} step={5} value={fleet.brightPct} disabled={fleet.savingBright}
+              onChange={(ev) => fleet.setBrightPct(Number(ev.target.value))}
+              onPointerUp={() => fleet.commitBrightness(fleet.brightPct)}
+              onKeyUp={(ev) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(ev.key)) fleet.commitBrightness(fleet.brightPct); }}
+              className="w-48 accent-[var(--accent)]" aria-label="Brillo de la flota" />
+            <span className="w-12 text-sm font-semibold tabular-nums" style={{ color: 'var(--warn)' }}>
+              {fleet.brightAuto ? 'auto' : `${fleet.brightPct}%`}
+            </span>
+            <Btn icon="power" v="primary" onClick={fleet.onWakeAll} disabled={fleet.wakingAll}>
               {fleet.wakingAll ? 'Enviando…' : 'Prender todas'}
-            </TvButton>
-            <TvButton icon={fleet.allBlocked ? 'unlock' : 'lock'} tone={fleet.allBlocked ? 'success' : 'glass'} onClick={fleet.onBlockAll} disabled={fleet.blockingAll}>
+            </Btn>
+            <Btn icon={fleet.allBlocked ? 'unlock' : 'lock'} v={fleet.allBlocked ? 'ok' : 'neutral'} onClick={fleet.onBlockAll} disabled={fleet.blockingAll}>
               {fleet.blockingAll ? 'Aplicando…' : fleet.allBlocked ? 'Desbloquear todas' : 'Bloquear todas'}
-            </TvButton>
+            </Btn>
             {bw && (
-              <TvButton icon="lock" onClick={fleet.onFreezeToggle} disabled={fleet.togglingFreeze}
+              <Btn icon="lock" onClick={fleet.onFreezeToggle} disabled={fleet.togglingFreeze}
                 title={bw.frozen ? 'Las tablets vuelven a poder descargar playlists' : 'Ninguna tablet descarga; siguen reproduciendo lo que tienen'}>
                 {fleet.togglingFreeze ? '…' : bw.frozen ? 'Descongelar producción' : 'Congelar producción'}
-              </TvButton>
+              </Btn>
             )}
             {bw?.circuitOpen && (
-              <TvButton icon="refresh" tone="danger" onClick={fleet.onResetCircuit} disabled={fleet.resettingCircuit}>
+              <Btn icon="refresh" v="danger" onClick={fleet.onResetCircuit} disabled={fleet.resettingCircuit}>
                 {fleet.resettingCircuit ? 'Reseteando…' : 'Resetear disyuntor'}
-              </TvButton>
+              </Btn>
             )}
           </section>
         )}
-          <img src="/monitor/toucan.png" alt="" aria-hidden="true"
-            className="tv-anim pointer-events-none hidden w-32 shrink-0 drop-shadow-[0_0_30px_rgba(56,189,248,0.45)] md:block lg:w-40"
-            style={{ animation: 'tv-float 7s ease-in-out infinite' }} />
-        </div>
 
-        {!loading && !error && entries.length > 0 && (
+        {loading ? (
+          <p className="mt-8 text-[var(--muted)]">Cargando flota…</p>
+        ) : error ? (
+          <p className="mt-8 text-[var(--danger)]">{error}</p>
+        ) : entries.length === 0 ? (
+          <p className="mt-8 text-[var(--muted)]">No hay tablets registradas.</p>
+        ) : (
           <FleetList entries={entries} search={search} canManage={canManage} actions={actions} />
         )}
-
       </div>
     </div>
   );
 }
 
-
-
-// ── Lista de la flota (la idea de la vista clásica, en estilo TV) ───────────
+// ── Lista de la flota ────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 25;
 
@@ -284,25 +272,6 @@ const TAB_TIPS: Record<string, { title: (n: number) => string; hint: string; lin
   },
 };
 
-const smBtn = 'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium whitespace-nowrap ring-1 backdrop-blur-md transition disabled:opacity-40';
-const SM_TONE = {
-  glass: 'text-white/85 bg-white/[0.07] ring-white/15 hover:bg-white/[0.15] hover:text-white',
-  success: 'text-emerald-100 bg-emerald-500/15 ring-emerald-300/30 hover:bg-emerald-500/25',
-  danger: 'text-rose-200 bg-rose-500/10 ring-rose-300/25 hover:bg-rose-500/25',
-} as const;
-
-function SmButton({ icon, tone = 'glass', onClick, disabled, title, children }: {
-  icon: keyof typeof ICONS; tone?: keyof typeof SM_TONE; onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
-}) {
-  return (
-    <button type="button" onClick={(ev) => { ev.stopPropagation(); onClick(); }} disabled={disabled} title={title}
-      className={`${smBtn} ${SM_TONE[tone]}`}>
-      <Ico d={ICONS[icon]} className="h-3.5 w-3.5" />
-      {children}
-    </button>
-  );
-}
-
 function FleetList({ entries, search, canManage, actions }: {
   entries: TabletMonitorEntry[]; search: string; canManage: boolean; actions: TvActions;
 }) {
@@ -318,10 +287,10 @@ function FleetList({ entries, search, canManage, actions }: {
   const paged = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
   return (
-    <section className="mt-6 rounded-3xl bg-[#071225]/70 ring-1 ring-white/10 backdrop-blur-xl">
+    <section className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
       {/* Pestañas */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-4">
-        <h2 className="mr-2 text-lg font-semibold">Flota</h2>
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--divider)] px-6 py-5">
+        <h2 className="mr-3 text-2xl font-bold">Flota</h2>
         {TABS.map((t) => {
           const count = entries.filter(t.match).length;
           const isActive = tab === t.id;
@@ -330,13 +299,14 @@ function FleetList({ entries, search, canManage, actions }: {
           const isAlert = alertTab && count > 0;
           const btn = (
             <button key={t.id} type="button" onClick={() => { setTab(t.id); setPage(1); }}
-              className={`h-8 rounded-full px-3.5 text-sm font-medium ring-1 transition ${
-                isActive
-                  ? (isAlert ? 'bg-rose-500 text-white ring-rose-400' : 'bg-sky-400 text-[#031022] ring-sky-300')
-                  : isAlert ? 'bg-rose-500/10 text-rose-200 ring-rose-400/40 hover:bg-rose-500/20'
-                    : 'bg-white/[0.05] text-white/70 ring-white/10 hover:bg-white/[0.12] hover:text-white'
+              className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors ${
+                isActive && !isAlert ? 'border-[var(--accent-strong)] bg-[var(--accent-strong)] text-white'
+                  : isAlert ? `border-[var(--danger-border)] text-[var(--danger)] ${isActive ? 'bg-[color-mix(in_srgb,var(--danger)_14%,transparent)]' : 'hover:bg-[color-mix(in_srgb,var(--danger)_8%,transparent)]'}`
+                    : 'border-[var(--border)] text-[var(--text-2)] hover:bg-[var(--surface-hover)]'
               }`}>
-              {isAlert && '⚠ '}{t.label} <span className={isActive ? 'opacity-70' : isAlert ? 'text-rose-300' : 'text-white/40'}>{count}</span>
+              {isAlert && <Ico d={ICONS.warn} className="h-4 w-4" />}
+              {t.label}
+              <span className={isActive && !isAlert ? 'text-white/80' : isAlert ? '' : 'text-[var(--muted)]'}>{count}</span>
             </button>
           );
           if (!isAlert) return btn;
@@ -346,13 +316,13 @@ function FleetList({ entries, search, canManage, actions }: {
             <div key={t.id} className="group relative">
               {btn}
               <div role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-80 group-hover:block group-focus-within:block">
-                <div className="rounded-2xl bg-[#0b1830]/95 p-3 text-sm shadow-2xl ring-1 ring-rose-300/30 backdrop-blur-xl">
-                  <p className="font-semibold text-rose-200">{tip.title(list.length)}</p>
-                  <ul className="mt-1 space-y-0.5 text-white/75">
+                <div className="rounded-xl border border-[var(--danger-border)] bg-[var(--surface-2)] p-3 text-sm shadow-2xl">
+                  <p className="font-semibold text-[var(--danger)]">{tip.title(list.length)}</p>
+                  <ul className="mt-1 space-y-0.5 text-[var(--text-2)]">
                     {list.slice(0, 12).map((e) => <li key={e.id}>· {tip.line(e)}</li>)}
                     {list.length > 12 && <li>… y {list.length - 12} más</li>}
                   </ul>
-                  <p className="mt-1.5 text-xs text-white/50">{tip.hint}</p>
+                  <p className="mt-1.5 text-xs text-[var(--muted)]">{tip.hint}</p>
                 </div>
               </div>
             </div>
@@ -362,84 +332,96 @@ function FleetList({ entries, search, canManage, actions }: {
 
       {/* Filas */}
       {filtered.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-white/50">{q ? 'Ninguna tablet coincide con la búsqueda.' : 'No hay tablets en esta pestaña.'}</p>
+        <p className="px-6 py-8 text-sm text-[var(--muted)]">{q ? 'Ninguna tablet coincide con la búsqueda.' : 'No hay tablets en esta pestaña.'}</p>
       ) : (
-        <ul className="divide-y divide-white/[0.06]">
+        <ul>
           {paged.map((e) => {
             const st = stateOf(e);
             const isBlocked = e.health === 'blocked';
             const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
             return (
-              <li key={e.id} className="px-5 py-4 transition hover:bg-white/[0.03]">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-                  {/* Miniatura tipo TV */}
-                  <div className={`relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br ring-1 ${TONE[st.tone].card} ring-white/10`}>
-                    <span className="absolute -bottom-2 right-1 text-5xl font-black leading-none text-white/[0.12]">{tabletNumber(e.name)}</span>
-                    <span className={`absolute left-2 top-2 h-2 w-2 rounded-full ${TONE[st.tone].dot}`} />
+              <li key={e.id}
+                className="group/row border-b border-l-[3px] border-b-[var(--divider)] border-l-transparent px-6 py-5 transition-colors last:border-b-0 hover:border-l-[var(--accent-strong)] hover:bg-[var(--surface-2)]">
+                <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+                  {/* Miniatura con el número */}
+                  <div className="relative aspect-[16/9] w-36 shrink-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] transition-colors group-hover/row:border-[var(--accent)]">
+                    <span className="absolute left-3 top-3 h-1.5 w-1.5 rounded-full bg-[var(--muted-2)]" />
+                    <span className="absolute -bottom-1.5 right-2 text-6xl font-bold leading-none text-[var(--muted-2)] opacity-60">{tabletNumber(e.name)}</span>
                   </div>
 
                   <div className="min-w-0 flex-1 basis-52">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-base font-semibold">{e.name}</span>
-                      <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${TONE[st.tone].pill}`}>{st.label}</span>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="truncate text-lg font-bold">{e.name}</span>
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-0.5 text-sm text-[var(--text-2)]">
+                        <span className="h-2 w-2 rounded-full" style={{ background: DOT[st.tone] }} />
+                        {st.label}
+                      </span>
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-white/45">{who || 'Sin zona asignada'}</p>
+                    <p className="mt-1 truncate text-sm text-[var(--muted)]">{who || 'Sin zona asignada'}</p>
                   </div>
 
-                  <dl className="grid shrink-0 grid-cols-2 gap-x-8 gap-y-1 text-xs sm:grid-cols-4">
+                  <dl className="grid shrink-0 grid-cols-2 gap-x-10 gap-y-2 text-sm sm:grid-cols-4">
                     <div>
-                      <dt className="text-white/40">Última conexión</dt>
-                      <dd className={`font-semibold ${e.status === 'online' ? 'text-white/90' : 'text-white/55'}`}>{relativeTime(e.lastSync)}</dd>
+                      <dt className="text-[var(--muted)]">Última conexión</dt>
+                      <dd className="font-bold">{relativeTime(e.lastSync)}</dd>
                     </div>
                     <div>
-                      <dt className="text-white/40">Reproducciones hoy</dt>
-                      <dd className={`font-semibold tabular-nums ${e.todayPlays > 0 ? 'text-sky-300' : 'text-white/55'}`}>{e.todayPlays.toLocaleString('es-AR')}</dd>
+                      <dt className="text-[var(--muted)]">Reproducciones hoy</dt>
+                      <dd className="font-bold tabular-nums">{e.todayPlays.toLocaleString('es-AR')}</dd>
                     </div>
-                    <div className="max-w-[10rem]">
-                      <dt className="text-white/40">Playlist</dt>
-                      <dd className={`truncate font-semibold ${e.playlist ? 'text-white/90' : 'text-rose-300'}`}>{e.playlist?.name ?? 'Sin asignar'}</dd>
+                    <div className="max-w-[12rem]">
+                      <dt className="text-[var(--muted)]">Playlist</dt>
+                      <dd className="truncate font-bold" style={e.playlist ? undefined : { color: 'var(--danger)' }}>{e.playlist?.name ?? 'Sin asignar'}</dd>
                     </div>
                     <div>
-                      <dt className="text-white/40">Equipo</dt>
-                      <dd className="flex gap-2 text-white/70">
-                        {e.batteryLevel != null && <span className={e.batteryLevel <= 20 ? 'font-semibold text-rose-300' : ''}>🔋 {e.batteryLevel}%</span>}
-                        {e.brightness != null && <span>☀ {e.brightness}%</span>}
-                        {e.appVersion && <span className="font-mono">v{e.appVersion}</span>}
-                        {e.batteryLevel == null && e.brightness == null && !e.appVersion && <span>—</span>}
+                      <dt className="text-[var(--muted)]">Equipo</dt>
+                      <dd className="flex items-center gap-3 font-semibold">
+                        <span className="inline-flex items-center gap-1" style={{ color: e.batteryLevel != null ? batteryColor(e.batteryLevel) : 'var(--muted)' }}>
+                          <Ico d={ICONS.battery} className="h-3.5 w-3.5" />
+                          {e.batteryLevel != null ? `${e.batteryLevel}%` : '—%'}
+                        </span>
+                        {e.brightness != null && (
+                          <span className="inline-flex items-center gap-1" style={{ color: 'var(--warn)' }}>
+                            <Ico d={ICONS.sun} className="h-3.5 w-3.5" />
+                            {e.brightness}%
+                          </span>
+                        )}
+                        {e.appVersion && <span className="font-mono font-normal text-[var(--muted)]">v{e.appVersion}</span>}
                       </dd>
                     </div>
                   </dl>
                 </div>
 
-                {/* Acciones de la fila, todas juntas */}
-                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[8.5rem]">
+                {/* Acciones de la fila */}
+                <div className="mt-4 flex flex-wrap items-center gap-2.5 sm:pl-[11rem]">
                   <ScreenshotViewer tabletId={e.id} tabletName={e.name} variant="tvsm" />
                   {canManage && (
                     <>
-                      <SmButton icon="power" onClick={() => actions.wake(e.id)} disabled={actions.wakingId === e.id}
+                      <Btn icon="power" onClick={() => actions.wake(e.id)} disabled={actions.wakingId === e.id}
                         title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)">
                         {actions.wakingId === e.id ? 'Enviando…' : 'Prender pantalla'}
-                      </SmButton>
-                      <SmButton icon="sync" onClick={() => actions.forceSync(e.id)} disabled={actions.syncingId === e.id}
+                      </Btn>
+                      <Btn icon="sync" onClick={() => actions.forceSync(e.id)} disabled={actions.syncingId === e.id}
                         title="Fuerza a la tablet a sincronizar ahora">
                         {actions.syncingId === e.id ? 'Sincronizando…' : 'Forzar sync'}
-                      </SmButton>
-                      <SmButton icon={isBlocked ? 'unlock' : 'lock'} tone={isBlocked ? 'success' : 'glass'}
+                      </Btn>
+                      <Btn icon={isBlocked ? 'unlock' : 'lock'} v={isBlocked ? 'ok' : 'neutral'}
                         onClick={() => actions.toggleBlock(e)} disabled={actions.blockingId === e.id}
                         title={isBlocked ? 'Vuelve a mostrar publicidad' : 'Frena la publicidad sin desarmar el kiosco'}>
                         {actions.blockingId === e.id ? 'Aplicando…' : isBlocked ? 'Desbloquear' : 'Bloquear'}
-                      </SmButton>
-                      <Link href={`/tablets/${e.id}?editar=1`} className={`${smBtn} ${SM_TONE.glass}`}>
-                        <Ico d={ICONS.edit} className="h-3.5 w-3.5" />
+                      </Btn>
+                      <Link href={`/tablets/${e.id}?editar=1`} className={`${pill} ${V.neutral}`}>
+                        <Ico d={ICONS.edit} />
                         Editar
                       </Link>
-                      <SmButton icon="trash" tone="danger" onClick={() => actions.remove(e)} title="Elimina la tablet del sistema">
+                      <Btn icon="trash" v="danger" onClick={() => actions.remove(e)} title="Elimina la tablet del sistema">
                         Eliminar
-                      </SmButton>
+                      </Btn>
                     </>
                   )}
-                  <Link href={`/tablets/${e.id}`} className="ml-auto text-xs text-sky-300/80 hover:text-sky-200 hover:underline">
-                    Ver detalle →
+                  <Link href={`/tablets/${e.id}`} className="ml-auto inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent)] hover:underline">
+                    Ver detalle
+                    <Ico d={ICONS.arrow} className="h-4 w-4" />
                   </Link>
                 </div>
               </li>
@@ -449,11 +431,11 @@ function FleetList({ entries, search, canManage, actions }: {
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-sm text-white/60">
+        <div className="flex items-center justify-between border-t border-[var(--divider)] px-6 py-3 text-sm text-[var(--muted)]">
           <span>{filtered.length} tablets · página {curPage} de {totalPages}</span>
           <div className="flex gap-2">
-            <button type="button" disabled={curPage === 1} onClick={() => setPage(curPage - 1)} className={`${smBtn} ${SM_TONE.glass}`}>‹ Anterior</button>
-            <button type="button" disabled={curPage === totalPages} onClick={() => setPage(curPage + 1)} className={`${smBtn} ${SM_TONE.glass}`}>Siguiente ›</button>
+            <button type="button" disabled={curPage === 1} onClick={() => setPage(curPage - 1)} className={`${pill} ${V.neutral}`}>‹ Anterior</button>
+            <button type="button" disabled={curPage === totalPages} onClick={() => setPage(curPage + 1)} className={`${pill} ${V.neutral}`}>Siguiente ›</button>
           </div>
         </div>
       )}

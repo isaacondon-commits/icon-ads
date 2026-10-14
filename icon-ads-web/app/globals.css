@@ -27,6 +27,45 @@
   --sidebar-hover: #0f172a;
 }
 
+/* Paleta "ICON" (paleta-propuesta, oct-2026). Se aplica con la clase .ia-theme
+   a las partes rediseñadas (menú lateral y Monitor); el resto del panel sigue
+   con el tema claro/oscuro de arriba. Los alias del final (--card, --border-md,
+   --text-muted…) hacen que los componentes viejos que usan esos nombres
+   también tomen la paleta cuando quedan dentro de .ia-theme. */
+.ia-theme {
+  /* Base */
+  --bg:            #070B16;
+  --sidebar:       #0A101E;
+  --surface:       #0F1728;
+  --surface-2:     #152038;
+  --surface-hover: #1A2742;
+  --border:        #22304A;
+  --divider:       #1B2740;
+  --text:          #EAF1FB;
+  --text-2:        #C9D3E6;
+  --muted:         #8D9BB8;
+  --muted-2:       #5E6C88;
+
+  /* Acento */
+  --accent:        #4FB3FF;
+  --accent-strong: #1E5BD8;
+  --accent-hover:  #2A6AEB;
+
+  /* Estados */
+  --ok:            #34D399;
+  --warn:          #FBBF24;
+  --danger:        #F87171;
+  --danger-border: #4A2530;
+
+  /* Alias para componentes existentes */
+  --card:          var(--surface);
+  --border-md:     var(--border);
+  --text-muted:    var(--muted);
+  --text-xs:       var(--muted-2);
+  --sidebar-hover: var(--surface-hover);
+  color: var(--text);
+}
+
 body {
   background: var(--bg);
   color: var(--text);

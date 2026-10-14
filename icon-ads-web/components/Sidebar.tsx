@@ -10,6 +10,37 @@ import { api, Notifications } from '@/lib/api';
 
 const SEV_ICON: Record<string, string> = { critical: '🚨', warning: '⚠️', info: 'ℹ️' };
 
+// Íconos de línea por sección (paleta-propuesta). Si una ruta no tiene, se usa
+// el genérico.
+const NAV_ICONS: Record<string, string> = {
+  '/dashboard': 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  '/monitor': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  '/map': 'M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  '/clients': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+  '/campaigns': 'M12 3l9 9-9 9-9-9z',
+  '/ads': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  '/playlists': 'M4 6h16M4 12h16M4 18h16',
+  '/tablets': 'M5 5h14v14H5z',
+  '/tablets/compare': 'M3 6h18v12H3zM3 12h18',
+  '/apk': 'M12 4v12M7 11l5 5 5-5M5 20h14',
+  '/maintenance': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1',
+  '/stats': 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  '/logs': 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
+  '/calendar': 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  '/settings': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+  '/profile': 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+};
+const NAV_ICON_DEFAULT = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z';
+
+function NavIcon({ href }: { href: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.7}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={NAV_ICONS[href] ?? NAV_ICON_DEFAULT} />
+    </svg>
+  );
+}
+
 // Secciones que sólo ve un admin/superadmin (supervisor y operator no).
 const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk']);
 
@@ -139,17 +170,17 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 w-60 flex flex-col transition duration-200 lg:static lg:z-auto lg:min-h-screen lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      className={`ia-theme fixed inset-y-0 left-0 z-40 w-60 flex flex-col border-r border-[var(--divider)] transition duration-200 lg:static lg:z-auto lg:min-h-screen lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}
       style={{ background: 'var(--sidebar)' }}
     >
-      <div className="px-6 py-5 border-b border-gray-800">
+      <div className="px-5 py-5 border-b border-[var(--divider)]">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white">
+          <div className="w-10 h-10 rounded-xl bg-[var(--accent-strong)] flex items-center justify-center font-bold text-sm text-white">
             IA
           </div>
           <div>
-            <p className="font-semibold text-sm text-white">Icon Ads</p>
-            <p className="text-xs text-gray-400">Panel admin</p>
+            <p className="font-semibold text-[15px] text-[var(--text)]">Icon Ads</p>
+            <p className="text-xs text-[var(--muted)]">Panel admin</p>
           </div>
         </div>
       </div>
@@ -163,10 +194,10 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
             <div key={group.id}>
               <button
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center gap-2 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300 transition-colors"
+                className="group/hdr w-full flex items-center gap-2 px-3 pt-2 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted-2)] hover:text-[var(--muted)] transition-colors"
               >
-                <span className={`text-[10px] transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
                 <span className="flex-1 text-left">{group.label}</span>
+                <span className={`text-[10px] opacity-0 transition group-hover/hdr:opacity-100 ${open ? 'rotate-90' : ''}`}>▸</span>
               </button>
               {open && (
                 <div className="space-y-0.5 mt-0.5">
@@ -183,16 +214,16 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
                         href={link.href}
                         onClick={() => onNavigate?.()}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                          active ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                          active ? 'bg-[var(--accent-strong)] text-white font-medium' : 'text-[var(--text-2)] hover:text-[var(--text)]'
                         }`}
                         style={!active ? { ['--hover-bg' as string]: 'var(--sidebar-hover)' } : undefined}
                         onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--sidebar-hover)'; }}
                         onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = ''; }}
                       >
-                        <span className="text-base">{link.icon}</span>
+                        <NavIcon href={link.href} />
                         <span className="flex-1">{link.label}</span>
                         {badge && (
-                          <span className="text-xs font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                          <span className="text-[11px] font-bold bg-[var(--danger)] text-[#3a0d12] rounded-full min-w-[22px] h-[20px] flex items-center justify-center px-1.5">
                             {badge > 99 ? '99+' : badge}
                           </span>
                         )}
@@ -206,12 +237,12 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
         })}
       </nav>
 
-      <div className="px-3 py-4 border-t border-gray-800 space-y-1">
+      <div className="px-3 py-4 border-t border-[var(--divider)] space-y-1">
         {/* #26 — Notification bell */}
         <div className="relative">
           <button
             onClick={() => setShowNotif((s) => !s)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = '')}
           >
@@ -281,7 +312,7 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
         {/* Dark mode toggle (#1) */}
         <button
           onClick={toggle}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
           style={{}}
           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = '')}
@@ -290,11 +321,11 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
           {theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
         </button>
         <div className="px-3 py-2">
-          <p className="text-xs font-medium text-white truncate">{user?.name}</p>
-          <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+          <p className="text-xs font-medium text-[var(--text)] truncate">{user?.name}</p>
+          <p className="text-xs text-[var(--muted-2)] truncate">{user?.email}</p>
           {user?.role && (
             <span className={`text-xs px-1.5 py-0.5 rounded font-medium mt-1 inline-block ${
-              user.role === 'superadmin' ? 'bg-violet-900 text-violet-200' : 'bg-gray-800 text-gray-400'
+              user.role === 'superadmin' ? 'bg-[var(--surface-2)] text-[var(--accent)]' : 'bg-[var(--surface-2)] text-[var(--muted)]'
             }`}>
               {user.role}
             </span>
@@ -302,7 +333,7 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
         </div>
         <button
           onClick={logout}
-          className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+          className="w-full text-left px-3 py-2 rounded-lg text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = '')}
         >

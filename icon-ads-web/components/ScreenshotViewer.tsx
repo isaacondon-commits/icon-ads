@@ -69,7 +69,7 @@ export default function ScreenshotViewer({ tabletId, tabletName, pill = false, v
       <button
         onClick={openAndCapture}
         className={tvsm
-          ? 'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold whitespace-nowrap bg-white text-[#031022] transition hover:bg-sky-100'
+          ? 'inline-flex items-center gap-2 h-10 px-4 rounded-full border text-sm font-medium whitespace-nowrap transition-colors border-[color-mix(in_srgb,var(--accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] text-[var(--accent)] hover:bg-[color-mix(in_srgb,var(--accent)_16%,transparent)]'
           : tv
           ? 'inline-flex items-center gap-2 h-10 px-5 rounded-full text-sm font-semibold bg-white text-[#031022] shadow-[0_0_30px_rgba(125,211,252,0.35)] transition hover:bg-sky-100'
           : pill
