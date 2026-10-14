@@ -8,7 +8,7 @@ const PptxGenJS = require('pptxgenjs');
 const multer = require('multer');
 const { z } = require('zod');
 const prisma = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const apiKeyOrAuth = require('../middleware/apiKeyOrAuth');
 const { audit } = require('../lib/auditLog');
 const r2 = require('../lib/r2');
@@ -16,6 +16,7 @@ const firebaseAdmin = require('../lib/firebase-admin');
 const forceApkFlags = require('../lib/forceApkFlags');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
+const { isAdPlayable } = require('../lib/campaignSchedule');
 
 const apkUpload = multer({
   storage: multer.memoryStorage(),
@@ -212,11 +213,11 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
     const id = Number(req.params.id);
     const pl = await prisma.playlist.findUnique({
       where: { id },
-      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
+      include: { playlistAds: { include: { ad: { include: { campaign: true } } }, orderBy: { order: 'asc' } } },
     });
     if (!pl) return res.status(404).json({ error: 'No existe' });
     const ads = pl.playlistAds
-      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus === 'approved')
+      .filter(({ ad }) => isAdPlayable(ad))
       .map(({ ad }) => ad);
     const seen = new Set();
     const uniq = ads.filter((a) => (seen.has(a.filename) ? false : seen.add(a.filename)));
@@ -302,7 +303,7 @@ router.get('/alerts', apiKeyOrAuth, async (req, res, next) => {
 // POST /api/admin/alerts/:alertId/ack — marca una alerta como leída.
 //   alertId numérico = esa; 'all' = todas las pendientes.
 // (param 'alertId', no 'id', para saltear el validador numérico de router.param)
-router.post('/alerts/:alertId/ack', apiKeyOrAuth, async (req, res, next) => {
+router.post('/alerts/:alertId/ack', apiKeyOrAuth.anyRole, async (req, res, next) => {
   try {
     const a = req.params.alertId;
     if (a === 'all') {
@@ -361,7 +362,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
       prisma.playlist.findMany({
         select: {
           id: true, name: true, version: true,
-          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true } } } },
+          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true, campaign: { select: { active: true, deletedAt: true, startDate: true, endDate: true } } } } } },
         },
       }),
       prisma.metric.count(),
@@ -406,9 +407,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
     const rows = tablets.map((t) => {
       const pl = t.playlistId ? plById[t.playlistId] : null;
       const ads = pl?.playlistAds?.map((pa) => pa.ad) ?? [];
-      const playable = ads.filter((a) =>
-        a.active && !a.deletedAt && a.approvalStatus === 'approved'
-        && (!a.startsAt || new Date(a.startsAt) <= now) && (!a.endsAt || new Date(a.endsAt) >= now));
+      const playable = ads.filter((a) => isAdPlayable(a, new Date(now)));
       return {
         id: t.id, name: t.name,
         manualStatus: t.manualStatus,
@@ -570,7 +569,7 @@ router.get('/stats/zones', requireAuth, async (req, res, next) => {
 });
 
 // GET /api/admin/backup — full JSON export of key data (#42)
-router.get('/backup', requireAuth, async (req, res, next) => {
+router.get('/backup', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const [clients, campaigns, ads, playlists, tablets] = await Promise.all([
       prisma.client.findMany({ where: { deletedAt: null } }),
@@ -733,7 +732,7 @@ router.get('/export/pptx', requireAuth, async (req, res, next) => {
 });
 
 // POST /api/admin/demo-seed — seed demo data for testing (#63)
-router.post('/demo-seed', requireAuth, async (req, res, next) => {
+router.post('/demo-seed', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const existing = await prisma.client.findFirst({ where: { email: 'demo@iconads.com' } });
     if (existing) return res.status(409).json({ message: 'Demo data already seeded', clientId: existing.id });
@@ -775,7 +774,7 @@ router.post('/demo-seed', requireAuth, async (req, res, next) => {
 });
 
 // GET /api/admin/api-keys — list public API keys (#70)
-router.get('/api-keys', requireAuth, async (req, res, next) => {
+router.get('/api-keys', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const keys = await prisma.apiKey.findMany({ orderBy: { createdAt: 'desc' } });
     res.json(keys.map((k) => ({ ...k, key: k.key.slice(0, 14) + '...' })));
@@ -783,7 +782,7 @@ router.get('/api-keys', requireAuth, async (req, res, next) => {
 });
 
 // POST /api/admin/api-keys — create a new API key (#70)
-router.post('/api-keys', requireAuth, async (req, res, next) => {
+router.post('/api-keys', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
@@ -794,7 +793,7 @@ router.post('/api-keys', requireAuth, async (req, res, next) => {
 });
 
 // DELETE /api/admin/api-keys/:id — revoke an API key (#70)
-router.delete('/api-keys/:id', requireAuth, async (req, res, next) => {
+router.delete('/api-keys/:id', requireAuth, requireAdmin, async (req, res, next) => {
   try {
     await prisma.apiKey.update({ where: { id: Number(req.params.id) }, data: { active: false } });
     res.json({ ok: true });

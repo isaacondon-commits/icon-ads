@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const sharp = require('sharp');
 const prisma = require('../lib/prisma');
+const { remoteFileSize } = require('../lib/adFileSize');
 const r2 = require('../lib/r2');
 const supabaseStorage = require('../lib/supabase-storage');
 const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
@@ -187,8 +188,10 @@ router.post('/confirm', async (req, res, next) => {
     }).parse(req.body);
     const filename = path.basename(key);
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
+    // El archivo ya está en storage: un HEAD da su peso sin bajarlo.
+    const fileSize = await remoteFileSize(publicUrl);
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl: publicUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus,
+      data: { campaignId, name, type, fileUrl: publicUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
@@ -250,7 +253,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus,
+      data: { campaignId, name, type, fileUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize: fileBuffer.length,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },

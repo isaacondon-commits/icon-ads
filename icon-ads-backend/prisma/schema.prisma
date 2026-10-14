@@ -101,6 +101,9 @@ model Ad {
   fileUrl        String       @map("file_url")
   thumbnailUrl   String?      @map("thumbnail_url")
   filename       String
+  // Peso del archivo en bytes (para mostrar cuánto pesa cada campaña). Se
+  // completa al subir; los anuncios viejos se rellenan con un HEAD a R2.
+  fileSize       Int?         @map("file_size")
   durationS      Int          @map("duration_s")
   active         Boolean      @default(true)
   approvalStatus String       @default("approved") @map("approval_status")
@@ -277,6 +280,9 @@ model Metric {
   @@index([tabletId])
   @@index([campaignId])
   @@index([playedAt])
+  // Clave natural: un reenvío del mismo lote no duplica filas. Declarado acá
+  // para que un `prisma db push` nunca lo borre.
+  @@unique([tabletId, adId, playedAt], map: "metrics_natural_key")
   @@map("metrics")
 }
 

@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForCampaignId } = require('../lib/bumpPlaylists');
+const { isCampaignExpired, campaignEndsAt } = require('../lib/campaignSchedule');
 const { purgeAd } = require('../lib/purgeAd');
 const pdf = require('../lib/pdfHelper');
 
@@ -52,10 +53,11 @@ function dedupeAdditionalClientIds(additionalClientIds, clientId) {
 router.post('/archive-expired', async (req, res, next) => {
   try {
     const now = new Date();
-    const result = await prisma.campaign.updateMany({
-      where: { endDate: { lt: now }, deletedAt: null },
-      data: { active: false, deletedAt: now },
-    });
+    // El día de fin es inclusive: vencida = endDate + 24 h ya pasó.
+    const where = { endDate: { lte: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, deletedAt: null };
+    const toArchive = await prisma.campaign.findMany({ where, select: { id: true } });
+    const result = await prisma.campaign.updateMany({ where, data: { active: false, deletedAt: now } });
+    for (const c of toArchive) await bumpPlaylistsForCampaignId(c.id);
     res.json({ archived: result.count });
   } catch (err) { next(err); }
 });
@@ -77,6 +79,48 @@ router.get('/archived', async (req, res, next) => {
   }
 });
 
+// Peso de cada campaña: suma de file_size de sus anuncios no borrados.
+// sizeUnknown = anuncios sin peso registrado todavía (se rellenan solos).
+async function campaignSizes(campaignIds) {
+  if (!campaignIds.length) return {};
+  const [sums, unknown] = await Promise.all([
+    prisma.ad.groupBy({
+      by: ['campaignId'],
+      where: { campaignId: { in: campaignIds }, deletedAt: null },
+      _sum: { fileSize: true },
+      _count: { _all: true },
+    }),
+    prisma.ad.groupBy({
+      by: ['campaignId'],
+      where: { campaignId: { in: campaignIds }, deletedAt: null, fileSize: null },
+      _count: { _all: true },
+    }),
+  ]);
+  const unknownMap = Object.fromEntries(unknown.map((u) => [u.campaignId, u._count._all]));
+  return Object.fromEntries(sums.map((s) => [s.campaignId, {
+    adsCount: s._count._all,
+    sizeBytes: s._sum.fileSize ?? 0,
+    sizeUnknown: unknownMap[s.campaignId] ?? 0,
+  }]));
+}
+
+// Estado visible: vencida (pasó el día de fin) > pausada > programada (no
+// empezó) > activa. Una vencida no se reproduce aunque figure active.
+function withSchedule(c, sizes, now = new Date()) {
+  const expired = isCampaignExpired(c, now);
+  const status = expired ? 'expired'
+    : !c.active ? 'paused'
+      : new Date(c.startDate) > now ? 'scheduled'
+        : 'active';
+  return {
+    ...c,
+    ...(sizes[c.id] ?? { adsCount: 0, sizeBytes: 0, sizeUnknown: 0 }),
+    status,
+    expired,
+    endsAt: campaignEndsAt(c),
+  };
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const campaigns = await prisma.campaign.findMany({
@@ -87,7 +131,9 @@ router.get('/', async (req, res, next) => {
       },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(campaigns);
+    const sizes = await campaignSizes(campaigns.map((c) => c.id));
+    const now = new Date();
+    res.json(campaigns.map((c) => withSchedule(c, sizes, now)));
   } catch (err) {
     next(err);
   }
@@ -297,6 +343,8 @@ router.put('/:id', async (req, res, next) => {
       campaign = await prisma.campaign.update({ where: { id, deletedAt: null }, data, include: CAMPAIGN_CLIENT_INCLUDE });
     }
     await audit(req, 'UPDATE', 'campaign', campaign.id, `Updated "${campaign.name}"`);
+    // Cambiar fechas cambia qué anuncios entran al paquete -> re-descarga.
+    if (body.startDate || body.endDate) await bumpPlaylistsForCampaignId(campaign.id);
     res.json(campaign);
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
@@ -344,8 +392,14 @@ router.delete('/:id/permanent', async (req, res, next) => {
 // PATCH /:id/reactivate (#34)
 router.patch('/:id/reactivate', async (req, res, next) => {
   try {
-    const campaign = await prisma.campaign.update({ where: { id: Number(req.params.id) }, data: { active: true, deletedAt: null } });
+    // Sale del archivo; si ya está vencida vuelve PAUSADA (no se puede reproducir
+    // hasta que le extiendan la fecha de fin y la reanuden).
+    const id = Number(req.params.id);
+    const current = await prisma.campaign.findUnique({ where: { id }, select: { endDate: true } });
+    if (!current) return res.status(404).json({ error: 'Campaign not found' });
+    const campaign = await prisma.campaign.update({ where: { id }, data: { active: !isCampaignExpired(current), deletedAt: null } });
     await audit(req, 'REACTIVATE', 'campaign', campaign.id, `Reactivated "${campaign.name}"`);
+    await bumpPlaylistsForCampaignId(campaign.id);
     res.json(campaign);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });
@@ -370,6 +424,12 @@ router.patch('/:id/pause', async (req, res, next) => {
 router.patch('/:id/resume', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
+    const current = await prisma.campaign.findUnique({ where: { id }, select: { endDate: true } });
+    if (!current) return res.status(404).json({ error: 'Campaign not found' });
+    if (isCampaignExpired(current)) {
+      const fin = new Date(current.endDate).toLocaleDateString('es-UY', { timeZone: 'America/Montevideo' });
+      return res.status(400).json({ error: `La campaña venció el ${fin}. Extendé la fecha de fin (Editar) para poder reanudarla.` });
+    }
     const approvedAds = await prisma.ad.count({
       where: { campaignId: id, active: true, deletedAt: null, approvalStatus: 'approved' },
     });
@@ -378,6 +438,8 @@ router.patch('/:id/resume', async (req, res, next) => {
     }
     const campaign = await prisma.campaign.update({ where: { id }, data: { active: true } });
     await audit(req, 'RESUME', 'campaign', campaign.id, `Resumed "${campaign.name}"`);
+    // Sus anuncios vuelven a entrar al paquete -> re-descarga.
+    await bumpPlaylistsForCampaignId(campaign.id);
     res.json(campaign);
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Campaign not found' });
@@ -413,6 +475,7 @@ router.post('/:id/clone', async (req, res, next) => {
             type: ad.type,
             fileUrl: ad.fileUrl,
             filename: ad.filename,
+            fileSize: ad.fileSize ?? null,
             durationS: ad.durationS,
             active: ad.active,
             approvalStatus: ad.approvalStatus,

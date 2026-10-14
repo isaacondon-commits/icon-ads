@@ -125,50 +125,42 @@ const MIGRATIONS = [
   // v28 — interruptor maestro "producción congelada". Arranca en '1' (congelado)
   // si la clave no existe. Sólo se descongela seteándola en '0' explícitamente.
   { name: 'fleet_frozen.default', sql: `INSERT INTO system_config (key, value) VALUES ('fleet_frozen', '1') ON CONFLICT (key) DO NOTHING` },
+  // v29 — peso del archivo de cada anuncio (bytes), para el peso por campaña.
+  { name: 'ads.file_size', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS file_size INT` },
 ];
 
-// One-shot: vacía metrics si todavía no tiene el índice único. Data de prueba,
-// inflada ~150x por reenvíos duplicados y sin forma barata de separar real de
-// duplicado en las horas pico. El candado es el propio índice: una vez creado
-// (sobre la tabla ya vacía), esto no vuelve a tocar nada en deploys futuros.
-// NO afecta playlists, anuncios, campañas ni tablets — sólo el log de plays.
-//
-// Se borra por tandas (DELETE ... LIMIT) en vez de TRUNCATE: las 12 tablets
-// insertan cada 10 s y TRUNCATE necesita un ACCESS EXCLUSIVE lock que no llega
-// a conseguir -> se abortaba y el índice nunca se creaba. El DELETE por lotes
-// toma locks de fila, no choca con los INSERT, y cada lote es rápido.
-async function cleanMetricsOnce() {
+// Garantiza el índice único metrics_natural_key (tablet_id, ad_id, played_at)
+// SIN borrar métricas reales. Antes, si el índice faltaba, se VACIABA la tabla
+// (pensado como one-shot para la inflación de sept-2026) — y como el
+// `db push --accept-data-loss` del build de Render borraba el índice en cada
+// deploy, cada deploy vaciaba las métricas. Ahora: si falta, se intenta crear;
+// si hay duplicados que lo impiden, se borran SÓLO los duplicados (se queda la
+// fila más vieja) y se reintenta.
+async function ensureMetricsIndex() {
+  const create = () => prisma.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)`,
+  );
   try {
     const idx = await prisma.$queryRawUnsafe(
       `SELECT 1 FROM pg_indexes WHERE indexname = 'metrics_natural_key' LIMIT 1`,
     );
-    if (Array.isArray(idx) && idx.length > 0) return; // ya limpio + indexado
-
-    // 1) Achicar el grueso por tandas. Corta cuando lo que queda es chico
-    //    (sólo filas reales recientes + algún duplicado nuevo suelto).
-    let total = 0;
-    for (let i = 0; i < 5000; i++) {
-      const n = Number(await prisma.$executeRawUnsafe(
-        `DELETE FROM metrics WHERE id IN (SELECT id FROM metrics LIMIT 50000)`,
-      ));
-      total += n;
-      if (n < 5000) break;
+    if (Array.isArray(idx) && idx.length > 0) return;
+    try {
+      await create();
+      console.log('[migrate] metrics_natural_key — creado');
+      return;
+    } catch (err) {
+      console.warn(`[migrate] metrics_natural_key — no se pudo crear (${err.message}); quitando duplicados`);
     }
-    // 2) Dedup puntual sobre el remanente (ya es una tabla chica).
     const deduped = Number(await prisma.$executeRawUnsafe(
       `DELETE FROM metrics a USING metrics b
        WHERE a.id > b.id AND a.tablet_id = b.tablet_id
          AND a.ad_id = b.ad_id AND a.played_at = b.played_at`,
     ));
-    console.log(`[migrate] metrics — limpieza one-shot: ${total} borradas por tanda + ${deduped} duplicados del remanente`);
-
-    // 3) El candado: con la tabla ya sin duplicados, crear el índice único.
-    await prisma.$executeRawUnsafe(
-      `CREATE UNIQUE INDEX IF NOT EXISTS metrics_natural_key ON metrics (tablet_id, ad_id, played_at)`,
-    );
-    console.log('[migrate] metrics_natural_key — creado tras la limpieza');
+    await create();
+    console.log(`[migrate] metrics_natural_key — creado tras quitar ${deduped} duplicados (sin borrar métricas reales)`);
   } catch (err) {
-    console.error(`[migrate] metrics limpieza one-shot — FAILED: ${err.message}`);
+    console.error(`[migrate] metrics_natural_key — FAILED: ${err.message}`);
   }
 }
 
@@ -255,11 +247,9 @@ async function runStartupMigrations() {
   }
   await hardenPublicSchema();
   await autoBlockFleetOnce();
-  // Limpieza pesada del histórico de metrics: en segundo plano para no
-  // demorar el arranque del server (Render marca el deploy como fallido si
-  // tarda mucho en abrir el puerto). Se reintenta en cada deploy hasta que
-  // exista el índice único.
-  cleanMetricsOnce().catch((e) => console.error('[migrate] cleanMetricsOnce:', e.message));
+  // En segundo plano para no demorar el arranque (Render marca el deploy como
+  // fallido si tarda mucho en abrir el puerto).
+  ensureMetricsIndex().catch((e) => console.error('[migrate] ensureMetricsIndex:', e.message));
 }
 
 module.exports = runStartupMigrations;

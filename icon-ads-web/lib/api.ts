@@ -550,6 +550,13 @@ export interface Campaign {
   budget?: number | null; observations?: string | null; targetImpressions?: number | null;
   deletedAt?: string; createdAt: string; updatedAt: string;
   _count?: { metrics: number };
+  // Calculados por GET /api/campaigns: peso total de sus anuncios (bytes),
+  // cuántos anuncios aún no tienen peso registrado, y estado de vigencia.
+  adsCount?: number; sizeBytes?: number; sizeUnknown?: number;
+  status?: 'active' | 'paused' | 'scheduled' | 'expired';
+  expired?: boolean;
+  /** Fin real de la vigencia: final del día de endDate. */
+  endsAt?: string;
   // Clients tied to the campaign besides the billing client (clientId/client) —
   // contract/certificate/payment-link PDFs keep using clientId only (#multi-client).
   additionalClients?: { clientId: number; client: { id: number; name: string } }[];

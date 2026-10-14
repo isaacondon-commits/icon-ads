@@ -18,6 +18,7 @@ const { sendAlert } = require('../lib/alerts');
 const freezeState = require('../lib/freezeState');
 const r2 = require('../lib/r2');
 const zipDispatch = require('../lib/zipDispatch');
+const { isAdPlayable } = require('../lib/campaignSchedule');
 
 // Sirve un ZIP que ya está en disco. Si R2 está configurado con URL pública, lo
 // sube a R2 y responde un 302 (Render manda ~200 bytes; la tablet baja de R2,
@@ -366,7 +367,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: tablet.playlistId },
-      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
+      include: { playlistAds: { include: { ad: { include: { campaign: true } } }, orderBy: { order: 'asc' } } },
     });
     if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 
@@ -374,11 +375,14 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const cacheDir = path.join(__dirname, '../../cache');
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Sólo anuncios activos, no borrados y aprobados. Se dedupe por filename para
-    // que un mismo archivo no entre dos veces al ZIP (aunque el anuncio esté
-    // repetido en la lista, cosa que sí se refleja en adsPayload/orden).
+    // Sólo anuncios reproducibles: activos, aprobados, dentro de su ventana y con
+    // la campaña activa y VIGENTE (una campaña vencida o pausada no entra al
+    // paquete). Se dedupe por filename para que un mismo archivo no entre dos
+    // veces al ZIP (aunque el anuncio esté repetido en la lista, cosa que sí se
+    // refleja en adsPayload/orden).
+    const now = new Date();
     const activeAds = playlist.playlistAds
-      .filter(({ ad }) => ad.active && !ad.deletedAt && ad.approvalStatus === 'approved')
+      .filter(({ ad }) => isAdPlayable(ad, now))
       .map(({ ad, order }) => ({ ad, order }));
 
     const adsPayload = activeAds.map(({ ad, order }) => ({

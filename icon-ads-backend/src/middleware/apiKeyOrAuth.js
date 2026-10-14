@@ -13,8 +13,18 @@ function safeEqual(a, b) {
 //   - process.env.PUBLISH_API_KEY  (una sola, para el script de publicación —
 //     se setea en el dashboard de Render, no necesita tocar la DB ni el panel)
 //   - una fila activa de la tabla api_keys (generada desde /api-control)
-// Se usa sólo en los endpoints de APK; el resto del panel sigue siendo sólo-JWT.
-async function apiKeyOrAuth(req, res, next) {
+// Con JWT, los GET quedan abiertos a cualquier rol (operator lee), pero toda
+// escritura (bloquear flota, congelar, borrar tablets, publicar APK…) exige
+// admin/superadmin. `apiKeyOrAuth.anyRole` es la variante sin ese chequeo,
+// para acciones inocuas (p. ej. marcar una alerta como leída).
+const ADMIN_ROLES = ['admin', 'superadmin'];
+
+function apiKeyOrAuth(req, res, next) {
+  return authenticate(req, res, next, { adminForWrites: true });
+}
+apiKeyOrAuth.anyRole = (req, res, next) => authenticate(req, res, next, { adminForWrites: false });
+
+async function authenticate(req, res, next, { adminForWrites }) {
   const apiKey = req.headers['x-api-key'];
   if (apiKey) {
     if (process.env.PUBLISH_API_KEY && safeEqual(apiKey, process.env.PUBLISH_API_KEY)) {
@@ -36,10 +46,13 @@ async function apiKeyOrAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
   } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  if (adminForWrites && req.method !== 'GET' && !ADMIN_ROLES.includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Acceso denegado: se requiere rol de administrador' });
+  }
+  next();
 }
 
 module.exports = apiKeyOrAuth;

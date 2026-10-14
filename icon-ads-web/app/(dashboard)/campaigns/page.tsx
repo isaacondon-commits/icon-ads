@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, Campaign, Client, CampaignTemplate, Favorite } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
+import CampaignActions from '@/components/CampaignActions';
 import { useRole } from '@/lib/roles';
 
 const PAGE_SIZE = 10;
@@ -17,17 +18,134 @@ function calendarUrl(c: Campaign) {
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}`;
 }
 
-function daysLeft(endDate: string) {
-  return Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000);
+// El día de fin es inclusive: la campaña corre hasta el final de ese día. El
+// backend lo manda calculado en `endsAt`; si falta, endDate + 24 h.
+function endsAtMs(c: Campaign) {
+  return c.endsAt ? new Date(c.endsAt).getTime() : new Date(c.endDate).getTime() + 86400000;
 }
 
-function DaysLeftBadge({ endDate, active }: { endDate: string; active: boolean }) {
-  if (!active) return null;
-  const days = daysLeft(endDate);
-  if (days < 0) return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300 font-medium">Vencida</span>;
-  if (days <= 3) return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300 font-medium animate-pulse">⚠ {days}d</span>;
+function daysLeft(c: Campaign) {
+  return Math.ceil((endsAtMs(c) - Date.now()) / 86400000);
+}
+
+function campaignStatus(c: Campaign): NonNullable<Campaign['status']> {
+  if (c.status) return c.status;
+  if (endsAtMs(c) <= Date.now()) return 'expired';
+  if (!c.active) return 'paused';
+  return new Date(c.startDate).getTime() > Date.now() ? 'scheduled' : 'active';
+}
+
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return '0 MB';
+  const KB = 1024, MB = KB * 1024, GB = MB * 1024;
+  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`;
+  if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / KB))} KB`;
+}
+
+function SizeInfo({ c, compact = false }: { c: Campaign; compact?: boolean }) {
+  const ads = c.adsCount ?? 0;
+  const unknown = c.sizeUnknown ?? 0;
+  const label = `${ads} anuncio${ads === 1 ? '' : 's'}`;
+  if (ads === 0) return <span className="text-xs" style={{ color: 'var(--text-xs)' }}>Sin anuncios</span>;
+  return (
+    <span className={compact ? 'text-xs' : 'block'} title={unknown ? `${unknown} anuncio(s) sin peso registrado todavía — se completa solo` : undefined}>
+      <span className="font-semibold tabular-nums">{formatBytes(c.sizeBytes ?? 0)}{unknown > 0 ? '+' : ''}</span>
+      <span className={compact ? 'ml-1' : 'block text-xs'} style={{ color: 'var(--text-xs)' }}>{compact ? `· ${label}` : label}</span>
+    </span>
+  );
+}
+
+const STATUS_STYLE: Record<NonNullable<Campaign['status']>, { label: string; cls: string; dot: string }> = {
+  active: { label: 'Activa', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300', dot: 'bg-emerald-500' },
+  paused: { label: 'Pausada', cls: 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300', dot: 'bg-gray-400' },
+  scheduled: { label: 'Programada', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', dot: 'bg-blue-500' },
+  expired: { label: 'Vencida', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300', dot: 'bg-red-500' },
+};
+
+function StatusBadge({ c }: { c: Campaign }) {
+  const s = STATUS_STYLE[campaignStatus(c)];
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${s.cls}`}
+      title={campaignStatus(c) === 'expired' ? 'Venció: ya no se reproduce en las tablets' : undefined}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
+  );
+}
+
+function DaysLeftBadge({ c }: { c: Campaign }) {
+  const status = campaignStatus(c);
+  if (status === 'expired') {
+    return <span className="text-xs font-medium text-red-600 dark:text-red-400">Venció hace {Math.max(0, -daysLeft(c))}d</span>;
+  }
+  if (status === 'paused') return null;
+  const days = daysLeft(c);
+  if (days <= 3) return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-300 font-medium animate-pulse">⚠ {days === 1 ? 'último día' : `${days}d`}</span>;
   if (days <= 14) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300 font-medium">{days}d</span>;
   return <span className="text-xs font-medium" style={{ color: 'var(--text-xs)' }}>{days}d</span>;
+}
+
+// Carteles arriba de la lista: campañas vencidas (ya no se reproducen) y las
+// que vencen en los próximos 3 días.
+function ScheduleAlerts({ campaigns, canManage, onExtend, onArchiveExpired, archiving }: {
+  campaigns: Campaign[]; canManage: boolean; onExtend: (c: Campaign) => void;
+  onArchiveExpired: () => void; archiving: boolean;
+}) {
+  const expired = campaigns.filter((c) => campaignStatus(c) === 'expired');
+  const soon = campaigns.filter((c) => campaignStatus(c) === 'active' && daysLeft(c) <= 3);
+  if (!expired.length && !soon.length) return null;
+  return (
+    <div className="space-y-3 mb-5">
+      {expired.length > 0 && (
+        <div role="alert" className="rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-white text-sm font-bold">!</span>
+              <div className="min-w-0">
+                <p className="font-semibold text-red-800 dark:text-red-200">
+                  {expired.length === 1 ? '1 campaña vencida' : `${expired.length} campañas vencidas`} — no se están reproduciendo
+                </p>
+                <p className="text-sm text-red-700/80 dark:text-red-300/80">
+                  Se desactivaron solas al terminar su fecha de fin. Extendé la fecha para volver a pasarlas, o archivalas.
+                </p>
+              </div>
+            </div>
+            {canManage && (
+              <button onClick={onArchiveExpired} disabled={archiving}
+                className="h-8 px-3 rounded-md text-sm font-medium border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50">
+                {archiving ? 'Archivando…' : 'Archivar todas'}
+              </button>
+            )}
+          </div>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {expired.map((c) => (
+              <li key={c.id} className="inline-flex items-center gap-2 rounded-lg bg-white/70 dark:bg-slate-900/50 border border-red-200 dark:border-red-900 pl-3 pr-1 py-1 text-sm">
+                <span className="font-medium">{c.name}</span>
+                <span className="text-xs text-red-600 dark:text-red-400">fin {new Date(c.endDate).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}</span>
+                {canManage && (
+                  <button onClick={() => onExtend(c)} className="h-6 px-2 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700">Extender</button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {soon.length > 0 && (
+        <div role="status" className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-4 flex items-start gap-3">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white text-sm font-bold">⏳</span>
+          <div className="min-w-0">
+            <p className="font-semibold text-amber-800 dark:text-amber-200">
+              {soon.length === 1 ? '1 campaña vence' : `${soon.length} campañas vencen`} en los próximos 3 días
+            </p>
+            <p className="text-sm text-amber-700/90 dark:text-amber-300/80">
+              {soon.map((c) => `${c.name} (${daysLeft(c) === 1 ? 'hoy es el último día' : `${daysLeft(c)} días`})`).join(' · ')}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // #10 — campaign progress timeline
@@ -94,7 +212,7 @@ export default function CampaignsPage() {
     setLoading(false);
   };
 
-  const { canCreateContent } = useRole();
+  const { canCreateContent, canManage } = useRole();
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
 
@@ -261,12 +379,33 @@ export default function CampaignsPage() {
       if (c.active) await api.pauseCampaign(c.id);
       else await api.resumeCampaign(c.id);
       load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error');
     } finally {
       setTogglingId(null);
     }
   };
 
   const favSet = new Set(favorites.filter((f) => f.entityType === 'campaign').map((f) => f.entityId));
+
+  const renderActions = (c: Campaign) => (
+    <CampaignActions
+      active={c.active}
+      expired={campaignStatus(c) === 'expired'}
+      canManage={canManage}
+      busyToggle={togglingId === c.id}
+      busyClone={cloningId === c.id}
+      onToggle={() => handleToggle(c)}
+      onEdit={() => openEdit(c)}
+      onClone={() => handleClone(c)}
+      onTransfer={() => { setTransferTarget(c); setTransferClientId(''); }}
+      onDelete={() => setDeleteTarget(c)}
+      onPay={c.budget ? () => handleMercadoPago(c.id) : undefined}
+      calendarHref={calendarUrl(c)}
+      certificateHref={api.getCertificateUrl(c.id)}
+      contractHref={api.getContractUrl(c.id)}
+    />
+  );
 
   return (
     <div>
@@ -311,6 +450,11 @@ export default function CampaignsPage() {
         />
       </div>
 
+      {!loading && (
+        <ScheduleAlerts campaigns={campaigns} canManage={canManage} onExtend={openEdit}
+          onArchiveExpired={handleArchiveExpired} archiving={archivingExpired} />
+      )}
+
       {loading ? (
         <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
       ) : filtered.length === 0 ? (
@@ -338,22 +482,17 @@ export default function CampaignsPage() {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button onClick={() => handleToggleFavorite(c)} className={`text-base leading-none ${isFav ? 'text-amber-400' : 'text-gray-300 hover:text-amber-300'}`}>{isFav ? '★' : '☆'}</button>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>{c.active ? 'Activa' : 'Pausada'}</span>
+                    <StatusBadge c={c} />
                   </div>
                 </div>
                 <div className="mb-2"><Timeline start={c.startDate} end={c.endDate} /></div>
-                <div className="flex items-center justify-between text-xs mb-3">
-                  <DaysLeftBadge endDate={c.endDate} active={c.active} />
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <DaysLeftBadge c={c} />
                   <span className="font-mono" style={{ color: 'var(--text-muted)' }}>${roi}</span>
                 </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs border-t pt-2" style={{ borderColor: 'var(--border)' }}>
-                  <button onClick={() => handleToggle(c)} disabled={togglingId === c.id} className={`hover:underline disabled:opacity-40 ${c.active ? 'text-amber-600' : 'text-emerald-600'}`}>{togglingId === c.id ? '...' : c.active ? 'Pausar' : 'Reanudar'}</button>
-                  <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline">Editar</button>
-                  <button onClick={() => handleClone(c)} disabled={cloningId === c.id} className="text-violet-600 hover:underline disabled:opacity-40">{cloningId === c.id ? '...' : 'Clonar'}</button>
-                  <a href={calendarUrl(c)} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline" title="Agregar al Google Calendar">Cal.</a>
-                  <a href={api.getCertificateUrl(c.id)} className="text-violet-600 hover:underline">Cert.</a>
-                  <a href={api.getContractUrl(c.id)} className="text-emerald-600 hover:underline">Contrato</a>
-                  <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline">Eliminar</button>
+                <div className="mb-3"><SizeInfo c={c} compact /></div>
+                <div className="border-t pt-3" style={{ borderColor: 'var(--border-md)' }}>
+                  {renderActions(c)}
                 </div>
               </div>
             );
@@ -369,6 +508,7 @@ export default function CampaignsPage() {
                 <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Progreso</th>
                 <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Vence</th>
                 <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Estado</th>
+                <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Peso</th>
                 <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>ROI est.</th>
                 <th className="text-left px-5 py-3 font-medium" style={{ color: 'var(--text-muted)' }}>Editado</th>
                 <th className="px-5 py-3" />
@@ -394,12 +534,13 @@ export default function CampaignsPage() {
                       <Timeline start={c.startDate} end={c.endDate} />
                     </td>
                     <td className="px-5 py-3">
-                      <DaysLeftBadge endDate={c.endDate} active={c.active} />
+                      <DaysLeftBadge c={c} />
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
-                        {c.active ? 'Activa' : 'Pausada'}
-                      </span>
+                      <StatusBadge c={c} />
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      <SizeInfo c={c} />
                     </td>
                     <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
                       <div className="font-mono">${roi}</div>
@@ -453,39 +594,7 @@ export default function CampaignsPage() {
                         >
                           {favSet.has(c.id) ? '★' : '☆'}
                         </button>
-                        <button
-                          onClick={() => handleToggle(c)}
-                          disabled={togglingId === c.id}
-                          className={`text-xs hover:underline disabled:opacity-40 ${c.active ? 'text-amber-600' : 'text-emerald-600'}`}
-                        >
-                          {togglingId === c.id ? '...' : c.active ? 'Pausar' : 'Reanudar'}
-                        </button>
-                        {/* #9 — clone campaign */}
-                        <button
-                          onClick={() => handleClone(c)}
-                          disabled={cloningId === c.id}
-                          className="text-violet-600 hover:underline text-xs disabled:opacity-40"
-                          title="Clonar campaña con todos sus anuncios"
-                        >
-                          {cloningId === c.id ? '...' : 'Clonar'}
-                        </button>
-                        {/* #18 — transfer */}
-                        <button
-                          onClick={() => { setTransferTarget(c); setTransferClientId(''); }}
-                          className="text-cyan-600 hover:underline text-xs"
-                          title="Transferir a otro cliente"
-                        >
-                          Transferir
-                        </button>
-                        <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
-                        {/* #60 — Google Calendar link */}
-                        <a href={calendarUrl(c)} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline text-xs" title="Agregar al Google Calendar">Cal.</a>
-                        {/* #51 #56 — PDF docs */}
-                        <a href={api.getCertificateUrl(c.id)} className="text-violet-600 hover:underline text-xs" title="Certificado de reproducciones PDF">Cert.</a>
-                        <a href={api.getContractUrl(c.id)} className="text-emerald-600 hover:underline text-xs" title="Contrato digital PDF">Contrato</a>
-                        {/* #54 — Mercado Pago */}
-                        {c.budget && <button onClick={() => handleMercadoPago(c.id)} className="text-sky-600 hover:underline text-xs" title="Generar link de pago Mercado Pago">MP Pago</button>}
-                        <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Eliminar</button>
+                        {renderActions(c)}
                       </div>
                     </td>
                   </tr>

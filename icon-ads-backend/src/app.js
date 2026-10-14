@@ -40,6 +40,8 @@ const firebaseAdmin = require('./lib/firebase-admin');
 const { withCache } = require('./lib/cache');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
 const syslog = require('./lib/systemLog');
+const { checkCampaignSchedule } = require('./lib/campaignSchedule');
+const { backfillAdSizes } = require('./lib/adFileSize');
 
 const app = express();
 
@@ -467,14 +469,24 @@ setInterval(async () => {
   }
 }, 24 * 60 * 60 * 1000);
 
+// Campañas vencidas: se desactivan solas y dejan de reproducirse (las playlists
+// afectadas suben de versión). También detecta campañas que arrancan y anuncios
+// que entran/salen de su ventana. Cada 5 min + al arrancar.
+setInterval(checkCampaignSchedule, 5 * 60 * 1000);
+setTimeout(checkCampaignSchedule, 30 * 1000);
+
+// Peso de los anuncios viejos (sin file_size): HEAD a la URL pública, una vez.
+setTimeout(() => backfillAdSizes().catch((e) => console.warn('[ad-size]', e.message)), 60 * 1000);
+
 // #4 — Daily auto-archive expired campaigns (opt-in via settings)
 setInterval(async () => {
   try {
     const cfg = await prisma.systemConfig.findUnique({ where: { key: 'auto_archive_expired' } });
     if (cfg?.value !== 'true') return;
     const now = new Date();
+    // El día de fin es inclusive: vence al terminar ese día (endDate + 24 h).
     const result = await prisma.campaign.updateMany({
-      where: { endDate: { lt: now }, deletedAt: null },
+      where: { endDate: { lte: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, deletedAt: null },
       data: { active: false, deletedAt: now },
     });
     if (result.count > 0) {
