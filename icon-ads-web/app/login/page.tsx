@@ -24,52 +24,44 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-800 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+    <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[var(--bg)] p-4">
+      <style>{`
+        @keyframes ia-float { 0%,100% { transform: translateY(0) rotate(-3deg) } 50% { transform: translateY(-14px) rotate(2deg) } }
+        @keyframes ia-glow { 0%,100% { opacity: .35 } 50% { opacity: .6 } }
+        @media (prefers-reduced-motion: reduce) { .ia-anim { animation: none !important } }
+      `}</style>
+      <div aria-hidden="true" className="ia-anim pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[520px] w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent-strong)] blur-[120px]"
+        style={{ animation: 'ia-glow 6s ease-in-out infinite' }} />
+
+      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-8 shadow-2xl">
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 mb-4">
-            <span className="text-white text-2xl font-bold">IA</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Icon Ads</h1>
-          <p className="text-gray-500 text-sm mt-1">Panel de administración</p>
+          <img src="/monitor/toucan.png" alt="" aria-hidden="true" className="ia-anim mx-auto mb-3 h-20 w-auto drop-shadow-[0_0_24px_rgba(79,179,255,0.45)]"
+            style={{ animation: 'ia-float 7s ease-in-out infinite' }} />
+          <h1 className="text-2xl font-bold tracking-wide text-[var(--accent)]">ICONADS</h1>
+          <p className="mt-1 text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Panel de administración</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="admin@iconads.com"
-            />
+            <label className="mb-1.5 block text-sm font-medium text-[var(--text-2)]">Email</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+              className="input h-11" placeholder="admin@iconads.com" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="••••••••"
-            />
+            <label className="mb-1.5 block text-sm font-medium text-[var(--text-2)]">Contraseña</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
+              className="input h-11" placeholder="••••••••" />
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="rounded-lg border border-[var(--danger-border)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-4 py-3 text-sm text-[var(--danger)]">
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 rounded-lg transition-colors"
-          >
-            {loading ? 'Ingresando...' : 'Ingresar'}
+          <button type="submit" disabled={loading}
+            className="h-11 w-full rounded-full bg-[var(--accent-strong)] font-medium text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50">
+            {loading ? 'Ingresando…' : 'Ingresar'}
           </button>
         </form>
       </div>

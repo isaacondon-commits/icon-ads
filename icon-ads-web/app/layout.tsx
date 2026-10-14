@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className="h-full">
+    <html lang="es" className="h-full dark">
       <body className={`${geist.className} h-full antialiased`}>
         <ThemeProvider>
           <AuthProvider>

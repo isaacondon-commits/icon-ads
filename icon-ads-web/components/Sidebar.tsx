@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useRole } from '@/lib/roles';
-import { useTheme } from '@/lib/theme-context';
 import { api, Notifications } from '@/lib/api';
 
 const SEV_ICON: Record<string, string> = { critical: '🚨', warning: '⚠️', info: 'ℹ️' };
@@ -110,7 +109,6 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { isAdmin } = useRole();
-  const { theme, toggle } = useTheme();
   const [pendingAds, setPendingAds] = useState(0);
   const [notifications, setNotifications] = useState<Notifications | null>(null);
   const [showNotif, setShowNotif] = useState(false);
@@ -309,17 +307,6 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
           )}
         </div>
 
-        {/* Dark mode toggle (#1) */}
-        <button
-          onClick={toggle}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
-          style={{}}
-          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-        >
-          <span>{theme === 'dark' ? '☀' : '☾'}</span>
-          {theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
-        </button>
         <div className="px-3 py-2">
           <p className="text-xs font-medium text-[var(--text)] truncate">{user?.name}</p>
           <p className="text-xs text-[var(--muted-2)] truncate">{user?.email}</p>

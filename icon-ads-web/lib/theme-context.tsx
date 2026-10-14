@@ -1,37 +1,20 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 
+// El panel usa una sola paleta (ICON, oscura — ver globals.css). Se deja el
+// contexto por compatibilidad: siempre 'dark', y toggle no hace nada.
 type Theme = 'light' | 'dark';
-const ThemeContext = createContext<{ theme: Theme; toggle: () => void }>({ theme: 'light', toggle: () => {} });
+const ThemeContext = createContext<{ theme: Theme; toggle: () => void }>({ theme: 'dark', toggle: () => {} });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('light');
-
   useEffect(() => {
-    const stored = localStorage.getItem('theme') as Theme | null;
-    let initial: Theme;
-    if (stored) {
-      initial = stored;
-    } else {
-      const h = new Date().getHours();
-      initial = h >= 20 || h < 8 ? 'dark' : 'light';
-    }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads localStorage/clock on mount to pick initial theme, not a compiler target
-    setTheme(initial);
-    document.documentElement.classList.toggle('dark', initial === 'dark');
+    // La clase .dark activa las variantes dark: de Tailwind que usan las páginas.
+    document.documentElement.classList.add('dark');
+    try { localStorage.removeItem('theme'); } catch { /* ignore */ }
   }, []);
 
-  const toggle = () => {
-    setTheme((prev) => {
-      const next = prev === 'light' ? 'dark' : 'light';
-      localStorage.setItem('theme', next);
-      document.documentElement.classList.toggle('dark', next === 'dark');
-      return next;
-    });
-  };
-
-  return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme: 'dark', toggle: () => {} }}>{children}</ThemeContext.Provider>;
 }
 
 export const useTheme = () => useContext(ThemeContext);
