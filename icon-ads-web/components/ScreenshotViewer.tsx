@@ -6,9 +6,11 @@ import { api } from '@/lib/api';
 // Botón "Ver pantalla" + modal: pide una captura a la tablet, espera a que
 // llegue, y la muestra. On-demand — no es un stream.
 // pill: estilo de botón del Monitor (igual a 'Ver anuncio' en Anuncios).
-// variant 'tv': botón principal blanco del Monitor en modo TV.
-export default function ScreenshotViewer({ tabletId, tabletName, pill = false, variant }: { tabletId: number; tabletName: string; pill?: boolean; variant?: 'tv' }) {
+// variant 'tv' / 'tvsm': botón blanco del Monitor (grande en la tablet
+// destacada, chico en las filas de la lista).
+export default function ScreenshotViewer({ tabletId, tabletName, pill = false, variant }: { tabletId: number; tabletName: string; pill?: boolean; variant?: 'tv' | 'tvsm' }) {
   const tv = variant === 'tv';
+  const tvsm = variant === 'tvsm';
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'waiting' | 'done' | 'error'>('idle');
   const [img, setImg] = useState<string | null>(null);
@@ -66,14 +68,16 @@ export default function ScreenshotViewer({ tabletId, tabletName, pill = false, v
     <>
       <button
         onClick={openAndCapture}
-        className={tv
+        className={tvsm
+          ? 'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold whitespace-nowrap bg-white text-[#031022] transition hover:bg-sky-100'
+          : tv
           ? 'inline-flex items-center gap-2 h-10 px-5 rounded-full text-sm font-semibold bg-white text-[#031022] shadow-[0_0_30px_rgba(125,211,252,0.35)] transition hover:bg-sky-100'
           : pill
           ? 'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50'
           : 'text-xs px-2.5 py-1 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200'}
         title="Capturar lo que muestra la tablet ahora"
       >
-        {(pill || tv) && (
+        {(pill || tv || tvsm) && (
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 5h18v12H3zM8 21h8M12 17v4" />
           </svg>

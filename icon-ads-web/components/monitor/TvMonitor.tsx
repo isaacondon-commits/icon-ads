@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { BandwidthStatus, TabletMonitorEntry } from '@/lib/api';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
 
-// Monitor en "modo Smart TV" (prototipo): fondo con el video de ICON en loop,
-// el tucán flotando, una tablet destacada arriba (como el "hero" de una TV)
-// con todas sus acciones, y la flota en filas horizontales de tarjetas que se
-// recorren con el mouse o con las flechas del teclado. Paleta propia (azul
-// noche + cian del logo), independiente del tema claro/oscuro del panel.
+// Monitor estilo Smart TV: arriba, el video de ICON de fondo con el tucán
+// flotando y la tablet destacada (como el "hero" de una TV) con todas sus
+// acciones; abajo, la lista de la flota de la vista clásica (pestañas con
+// alertas, filas con todas las acciones), todo en la misma paleta oscura
+// (azul noche + cian del logo), independiente del tema claro/oscuro del panel.
 
 export type TvActions = {
   wake: (id: number) => void; wakingId: number | null;
@@ -36,7 +36,6 @@ type Props = {
   canManage: boolean;
   actions: TvActions;
   fleet: TvFleet;
-  onClassic: () => void;
 };
 
 function relativeTime(iso: string | null): string {
@@ -111,13 +110,13 @@ function tabletNumber(name: string) {
   return m ? m[1].padStart(2, '0') : name.slice(0, 2).toUpperCase();
 }
 
-export default function TvMonitor({ entries, loading, error, countdown, onRefresh, canManage, actions, fleet, onClassic }: Props) {
+export default function TvMonitor({ entries, loading, error, countdown, onRefresh, canManage, actions, fleet }: Props) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // null en el primer render: el reloj sólo existe en el navegador (evita
   // diferencias de hidratación entre servidor y cliente).
   const [clock, setClock] = useState<Date | null>(null);
-  const cardRefs = useRef(new Map<number, HTMLButtonElement>());
+  const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const tick = () => setClock(new Date());
@@ -126,72 +125,36 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
     return () => clearInterval(t);
   }, []);
 
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) => [e.name, e.zone, e.driverName, e.licensePlate, e.playlist?.name]
-      .some((v) => (v ?? '').toLowerCase().includes(q)));
-  }, [entries, search]);
-
-  const rows = useMemo(() => {
-    const attention = visible.filter((e) => ['bad', 'blocked'].includes(stateOf(e).tone)
-      || (e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20));
-    const attIds = new Set(attention.map((e) => e.id));
-    return [
-      { key: 'att', title: 'Requieren atención', items: attention },
-      { key: 'on', title: 'En línea', items: visible.filter((e) => !attIds.has(e.id) && e.status === 'online') },
-      { key: 'off', title: 'Fuera de línea', items: visible.filter((e) => !attIds.has(e.id) && e.status !== 'online') },
-    ].filter((r) => r.items.length > 0);
-  }, [visible]);
-
-  const flat = rows.flatMap((r) => r.items);
-  const selected = flat.find((e) => e.id === selectedId) ?? flat[0] ?? null;
-
-  // Navegación tipo control remoto: flechas mueven el foco, Enter abre el detalle.
-  useEffect(() => {
-    const onKey = (ev: KeyboardEvent) => {
-      const tag = (ev.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (!selected || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(ev.key)) return;
-      ev.preventDefault();
-      const r = rows.findIndex((row) => row.items.some((e) => e.id === selected.id));
-      const c = rows[r].items.findIndex((e) => e.id === selected.id);
-      let next: TabletMonitorEntry | undefined;
-      if (ev.key === 'ArrowLeft') next = rows[r].items[c - 1];
-      if (ev.key === 'ArrowRight') next = rows[r].items[c + 1];
-      if (ev.key === 'ArrowUp') next = rows[r - 1]?.items[Math.min(c, rows[r - 1].items.length - 1)];
-      if (ev.key === 'ArrowDown') next = rows[r + 1]?.items[Math.min(c, rows[r + 1].items.length - 1)];
-      if (next) {
-        setSelectedId(next.id);
-        cardRefs.current.get(next.id)?.focus({ preventScroll: true });
-        cardRefs.current.get(next.id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [rows, selected]);
+  // Destacada por defecto: la primera que requiere atención; si no, la primera.
+  const fallback = entries.find((e) => ['bad', 'blocked'].includes(stateOf(e).tone)) ?? entries[0] ?? null;
+  const selected = entries.find((e) => e.id === selectedId) ?? fallback;
+  const select = (e: TabletMonitorEntry) => {
+    setSelectedId(e.id);
+    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const online = entries.filter((e) => e.status === 'online').length;
   const totalPlays = entries.reduce((n, e) => n + e.todayPlays, 0);
   const bw = fleet.bw;
 
   return (
-    <div className="tv-root relative isolate -m-4 sm:-m-6 lg:-m-8 min-h-[calc(100vh)] overflow-hidden bg-[#030812] text-white">
+    <div ref={topRef} className="tv-root relative isolate -m-4 sm:-m-6 lg:-m-8 min-h-screen overflow-hidden bg-[#030812] text-white">
       <style>{`
         @keyframes tv-float { 0%,100% { transform: translateY(0) rotate(-2deg) } 50% { transform: translateY(-16px) rotate(1.5deg) } }
         @keyframes tv-glow { 0%,100% { opacity: .55 } 50% { opacity: .95 } }
         @keyframes tv-drift { 0% { transform: scale(1.08) translateX(0) } 100% { transform: scale(1.08) translateX(-2%) } }
-        .tv-root ::-webkit-scrollbar { height: 6px } .tv-root ::-webkit-scrollbar-thumb { background: rgba(125,211,252,.25); border-radius: 9999px }
-        .tv-root ::-webkit-scrollbar-track { background: transparent }
         @media (prefers-reduced-motion: reduce) { .tv-anim { animation: none !important } }
       `}</style>
 
-      {/* Fondo: video de ICON en loop + velos para legibilidad */}
-      <video className="tv-anim pointer-events-none absolute inset-0 -z-20 h-full w-full object-cover opacity-45"
-        style={{ animation: 'tv-drift 30s ease-in-out infinite alternate' }}
-        src="/monitor/bg.mp4" poster="/monitor/bg-poster.jpg" autoPlay muted loop playsInline aria-hidden="true" />
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-[#030812] via-[#030812]/85 to-[#030812]/30" />
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-t from-[#030812] via-[#030812]/40 to-transparent" />
+      {/* Fondo: el video de ICON sólo detrás de la parte de arriba (tipo TV);
+          más abajo, azul noche liso para que la lista se lea bien. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-20 h-[100vh] overflow-hidden">
+        <video className="tv-anim h-full w-full object-cover opacity-45"
+          style={{ animation: 'tv-drift 30s ease-in-out infinite alternate' }}
+          src="/monitor/bg.mp4" poster="/monitor/bg-poster.jpg" autoPlay muted loop playsInline aria-hidden="true" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#030812] via-[#030812]/85 to-[#030812]/30" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#030812] via-[#030812]/30 to-transparent" />
+      </div>
       <div className="pointer-events-none absolute -right-40 -top-40 -z-10 h-[520px] w-[520px] rounded-full bg-sky-500/20 blur-3xl tv-anim"
         style={{ animation: 'tv-glow 7s ease-in-out infinite' }} />
 
@@ -200,7 +163,7 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
         className="tv-anim pointer-events-none absolute right-[4%] top-24 -z-10 hidden w-[min(34vw,440px)] opacity-90 drop-shadow-[0_0_40px_rgba(56,189,248,0.45)] md:block"
         style={{ animation: 'tv-float 7s ease-in-out infinite' }} />
 
-      <div className="relative px-6 pb-8 pt-5 sm:px-10">
+      <div className="relative px-6 pb-10 pt-5 sm:px-10">
         {/* Barra superior */}
         <header className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2.5">
@@ -235,10 +198,6 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
               <Ico d={ICONS.refresh} />
               <span className="tabular-nums text-xs text-white/60">{countdown}s</span>
             </button>
-            <button type="button" onClick={onClassic} title="Volver a la vista clásica" className={`${glassBtn} px-3`}>
-              <Ico d={ICONS.list} />
-              <span className="hidden lg:inline">Vista clásica</span>
-            </button>
             <div className="hidden text-right leading-tight sm:block">
               <p className="text-2xl font-light tabular-nums">{clock?.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', hour12: false }) ?? '--:--'}</p>
               <p className="text-[11px] capitalize text-white/50">{clock?.toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'short' }) ?? ''}</p>
@@ -246,64 +205,23 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
           </div>
         </header>
 
-        {/* Hero: tablet destacada */}
+        {/* Tablet destacada */}
         <section className="mt-10 min-h-[300px] max-w-4xl">
           {loading ? (
             <p className="text-white/60">Cargando flota…</p>
           ) : error ? (
             <p className="text-rose-300">{error}</p>
           ) : !selected ? (
-            <p className="text-white/60">{search ? 'Ninguna tablet coincide con la búsqueda.' : 'No hay tablets registradas.'}</p>
+            <p className="text-white/60">No hay tablets registradas.</p>
           ) : (
             <Hero e={selected} canManage={canManage} actions={actions} />
           )}
         </section>
 
-        {/* Filas de tarjetas */}
-        <div className="mt-6 space-y-7">
-          {rows.map((row) => (
-            <section key={row.key}>
-              <h2 className="mb-3 flex items-baseline gap-2 text-lg font-semibold">
-                {row.title}
-                <span className="text-sm font-normal text-white/40">{row.items.length}</span>
-              </h2>
-              <div className="-mx-4 flex snap-x scroll-px-4 gap-4 overflow-x-auto px-4 pb-5 pt-3">
-                {row.items.map((e) => {
-                  const st = stateOf(e);
-                  const isSel = selected?.id === e.id;
-                  return (
-                    <button key={e.id} type="button"
-                      ref={(el) => { if (el) cardRefs.current.set(e.id, el); else cardRefs.current.delete(e.id); }}
-                      onClick={() => setSelectedId(e.id)}
-                      onDoubleClick={() => { window.location.href = `/tablets/${e.id}`; }}
-                      onKeyDown={(ev) => { if (ev.key === 'Enter' && isSel) window.location.href = `/tablets/${e.id}`; }}
-                      className={`group relative aspect-video w-60 shrink-0 snap-start overflow-hidden rounded-2xl bg-gradient-to-br text-left ring-1 transition duration-300 outline-none sm:w-64 ${TONE[st.tone].card}
-                        ${isSel ? 'scale-[1.06] ring-2 ring-sky-300 shadow-[0_0_24px_rgba(56,189,248,0.4)]' : 'ring-white/10 hover:scale-[1.03] hover:ring-white/30'}`}>
-                      <span className="pointer-events-none absolute -bottom-4 -right-1 text-[6.5rem] font-black leading-none text-white/[0.07] transition group-hover:text-white/[0.12]">
-                        {tabletNumber(e.name)}
-                      </span>
-                      <span className="absolute left-3 top-3 flex items-center gap-1.5 text-[11px] font-medium text-white/80">
-                        <span className={`h-2 w-2 rounded-full ${TONE[st.tone].dot}`} />
-                        {st.label}
-                      </span>
-                      {e.batteryLevel != null && (
-                        <span className={`absolute right-3 top-3 text-[11px] ${e.batteryLevel <= 20 ? 'font-semibold text-rose-300' : 'text-white/60'}`}>
-                          🔋 {e.batteryLevel}%
-                        </span>
-                      )}
-                      <span className="absolute inset-x-3 bottom-3">
-                        <span className="block truncate text-base font-semibold">{e.name}</span>
-                        <span className="block truncate text-xs text-white/55">
-                          {e.playlist?.name ?? 'Sin playlist'} · {e.todayPlays.toLocaleString('es-AR')} hoy
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
-        </div>
+        {!loading && !error && entries.length > 0 && (
+          <FleetList entries={entries} search={search} selectedId={selected?.id ?? null} onSelect={select}
+            canManage={canManage} actions={actions} />
+        )}
 
         {/* Controles de flota */}
         {canManage && (
@@ -345,6 +263,7 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
     </div>
   );
 }
+
 
 function Hero({ e, canManage, actions }: { e: TabletMonitorEntry; canManage: boolean; actions: TvActions }) {
   const st = stateOf(e);
@@ -408,5 +327,227 @@ function Hero({ e, canManage, actions }: { e: TabletMonitorEntry; canManage: boo
         )}
       </div>
     </div>
+  );
+}
+
+// ── Lista de la flota (la idea de la vista clásica, en estilo TV) ───────────
+
+const PAGE_SIZE = 25;
+
+const isLongOffline = (e: TabletMonitorEntry) => e.status === 'offline' && e.offlineMinutes > 120;
+
+// Pestañas: las "alert" sólo aparecen (en rojo) si tienen algo, y al pasar el
+// mouse muestran el detalle.
+const TABS = [
+  { id: 'all', label: 'Todas', match: () => true },
+  { id: 'online', label: 'En línea', match: (e: TabletMonitorEntry) => e.status === 'online' },
+  { id: 'offline', label: 'Fuera de línea', match: (e: TabletMonitorEntry) => e.status === 'offline' },
+  { id: 'notplaying', label: 'No reproducen', match: (e: TabletMonitorEntry) => e.health === 'no-reproduce' || e.health === 'sin-playlist', alert: true },
+  { id: 'blocked', label: 'Bloqueadas', match: (e: TabletMonitorEntry) => e.health === 'blocked', alert: true },
+  { id: 'lowbat', label: 'Batería baja', match: (e: TabletMonitorEntry) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20, alert: true },
+  { id: 'longoffline', label: 'Apagadas +2 h', match: isLongOffline, alert: true },
+] as const;
+type TabId = typeof TABS[number]['id'];
+
+const TAB_TIPS: Record<string, { title: (n: number) => string; hint: string; line: (e: TabletMonitorEntry) => string }> = {
+  notplaying: {
+    title: (n) => `${n} ${n === 1 ? 'tablet en línea NO muestra' : 'tablets en línea NO muestran'} publicidad`,
+    hint: 'Tocá "Ver pantalla" para ver qué está pasando.',
+    line: (e) => `${e.name} — ${stateOf(e).label.toLowerCase()}`,
+  },
+  blocked: {
+    title: (n) => `${n} ${n === 1 ? 'tablet bloqueada' : 'tablets bloqueadas'} desde el panel`,
+    hint: 'No muestran publicidad a propósito. Se desbloquean desde su fila.',
+    line: (e) => e.name,
+  },
+  lowbat: {
+    title: (n) => `${n} ${n === 1 ? 'tablet' : 'tablets'} con batería baja`,
+    hint: 'Hablá con el taxista para que la enchufe.',
+    line: (e) => [e.name, `${e.batteryLevel}%`, e.driverName, e.licensePlate].filter(Boolean).join(' · '),
+  },
+  longoffline: {
+    title: (n) => `${n} ${n === 1 ? 'tablet apagada' : 'tablets apagadas'} hace más de 2 horas`,
+    hint: 'Si las apagaste a propósito, ignoralo.',
+    line: (e) => `${e.name} — ${stateOf(e).label.replace('Apagada ', '')}`,
+  },
+};
+
+const smBtn = 'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium whitespace-nowrap ring-1 backdrop-blur-md transition disabled:opacity-40';
+const SM_TONE = {
+  glass: 'text-white/85 bg-white/[0.07] ring-white/15 hover:bg-white/[0.15] hover:text-white',
+  success: 'text-emerald-100 bg-emerald-500/15 ring-emerald-300/30 hover:bg-emerald-500/25',
+  danger: 'text-rose-200 bg-rose-500/10 ring-rose-300/25 hover:bg-rose-500/25',
+} as const;
+
+function SmButton({ icon, tone = 'glass', onClick, disabled, title, children }: {
+  icon: keyof typeof ICONS; tone?: keyof typeof SM_TONE; onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
+}) {
+  return (
+    <button type="button" onClick={(ev) => { ev.stopPropagation(); onClick(); }} disabled={disabled} title={title}
+      className={`${smBtn} ${SM_TONE[tone]}`}>
+      <Ico d={ICONS[icon]} className="h-3.5 w-3.5" />
+      {children}
+    </button>
+  );
+}
+
+function FleetList({ entries, search, selectedId, onSelect, canManage, actions }: {
+  entries: TabletMonitorEntry[]; search: string; selectedId: number | null;
+  onSelect: (e: TabletMonitorEntry) => void; canManage: boolean; actions: TvActions;
+}) {
+  const [tab, setTab] = useState<TabId>('all');
+  const [page, setPage] = useState(1);
+
+  const q = search.trim().toLowerCase();
+  const tabDef = TABS.find((t) => t.id === tab)!;
+  const filtered = entries.filter((e) => tabDef.match(e) && (!q || [e.name, e.zone, e.driverName, e.licensePlate, e.playlist?.name, e.deviceId]
+    .some((v) => (v ?? '').toLowerCase().includes(q))));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const curPage = Math.min(page, totalPages);
+  const paged = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+
+  return (
+    <section className="mt-10 rounded-3xl bg-[#071225]/70 ring-1 ring-white/10 backdrop-blur-xl">
+      {/* Pestañas */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-4">
+        <h2 className="mr-2 text-lg font-semibold">Flota</h2>
+        {TABS.map((t) => {
+          const count = entries.filter(t.match).length;
+          const isActive = tab === t.id;
+          const alertTab = 'alert' in t && t.alert;
+          if (alertTab && count === 0 && !isActive) return null;
+          const isAlert = alertTab && count > 0;
+          const btn = (
+            <button key={t.id} type="button" onClick={() => { setTab(t.id); setPage(1); }}
+              className={`h-8 rounded-full px-3.5 text-sm font-medium ring-1 transition ${
+                isActive
+                  ? (isAlert ? 'bg-rose-500 text-white ring-rose-400' : 'bg-sky-400 text-[#031022] ring-sky-300')
+                  : isAlert ? 'bg-rose-500/10 text-rose-200 ring-rose-400/40 hover:bg-rose-500/20'
+                    : 'bg-white/[0.05] text-white/70 ring-white/10 hover:bg-white/[0.12] hover:text-white'
+              }`}>
+              {isAlert && '⚠ '}{t.label} <span className={isActive ? 'opacity-70' : isAlert ? 'text-rose-300' : 'text-white/40'}>{count}</span>
+            </button>
+          );
+          if (!isAlert) return btn;
+          const tip = TAB_TIPS[t.id];
+          const list = entries.filter(t.match);
+          return (
+            <div key={t.id} className="group relative">
+              {btn}
+              <div role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-80 group-hover:block group-focus-within:block">
+                <div className="rounded-2xl bg-[#0b1830]/95 p-3 text-sm shadow-2xl ring-1 ring-rose-300/30 backdrop-blur-xl">
+                  <p className="font-semibold text-rose-200">{tip.title(list.length)}</p>
+                  <ul className="mt-1 space-y-0.5 text-white/75">
+                    {list.slice(0, 12).map((e) => <li key={e.id}>· {tip.line(e)}</li>)}
+                    {list.length > 12 && <li>… y {list.length - 12} más</li>}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-white/50">{tip.hint}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Filas */}
+      {filtered.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-white/50">{q ? 'Ninguna tablet coincide con la búsqueda.' : 'No hay tablets en esta pestaña.'}</p>
+      ) : (
+        <ul className="divide-y divide-white/[0.06]">
+          {paged.map((e) => {
+            const st = stateOf(e);
+            const isSel = e.id === selectedId;
+            const isBlocked = e.health === 'blocked';
+            const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
+            return (
+              <li key={e.id} onClick={() => onSelect(e)}
+                className={`cursor-pointer px-5 py-4 transition ${isSel ? 'bg-sky-400/[0.08] shadow-[inset_3px_0_0_rgba(125,211,252,0.9)]' : 'hover:bg-white/[0.03]'}`}>
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  {/* Miniatura tipo TV */}
+                  <div className={`relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br ring-1 ${TONE[st.tone].card} ${isSel ? 'ring-sky-300/70' : 'ring-white/10'}`}>
+                    <span className="absolute -bottom-2 right-1 text-5xl font-black leading-none text-white/[0.12]">{tabletNumber(e.name)}</span>
+                    <span className={`absolute left-2 top-2 h-2 w-2 rounded-full ${TONE[st.tone].dot}`} />
+                  </div>
+
+                  <div className="min-w-0 flex-1 basis-52">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-base font-semibold">{e.name}</span>
+                      <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${TONE[st.tone].pill}`}>{st.label}</span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-white/45">{who || 'Sin zona asignada'}</p>
+                  </div>
+
+                  <dl className="grid shrink-0 grid-cols-2 gap-x-8 gap-y-1 text-xs sm:grid-cols-4">
+                    <div>
+                      <dt className="text-white/40">Última conexión</dt>
+                      <dd className={`font-semibold ${e.status === 'online' ? 'text-white/90' : 'text-white/55'}`}>{relativeTime(e.lastSync)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-white/40">Reproducciones hoy</dt>
+                      <dd className={`font-semibold tabular-nums ${e.todayPlays > 0 ? 'text-sky-300' : 'text-white/55'}`}>{e.todayPlays.toLocaleString('es-AR')}</dd>
+                    </div>
+                    <div className="max-w-[10rem]">
+                      <dt className="text-white/40">Playlist</dt>
+                      <dd className={`truncate font-semibold ${e.playlist ? 'text-white/90' : 'text-rose-300'}`}>{e.playlist?.name ?? 'Sin asignar'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-white/40">Equipo</dt>
+                      <dd className="flex gap-2 text-white/70">
+                        {e.batteryLevel != null && <span className={e.batteryLevel <= 20 ? 'font-semibold text-rose-300' : ''}>🔋 {e.batteryLevel}%</span>}
+                        {e.brightness != null && <span>☀ {e.brightness}%</span>}
+                        {e.appVersion && <span className="font-mono">v{e.appVersion}</span>}
+                        {e.batteryLevel == null && e.brightness == null && !e.appVersion && <span>—</span>}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+
+                {/* Acciones de la fila, todas juntas */}
+                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[8.5rem]" onClick={(ev) => ev.stopPropagation()}>
+                  <ScreenshotViewer tabletId={e.id} tabletName={e.name} variant="tvsm" />
+                  {canManage && (
+                    <>
+                      <SmButton icon="power" onClick={() => actions.wake(e.id)} disabled={actions.wakingId === e.id}
+                        title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)">
+                        {actions.wakingId === e.id ? 'Enviando…' : 'Prender pantalla'}
+                      </SmButton>
+                      <SmButton icon="sync" onClick={() => actions.forceSync(e.id)} disabled={actions.syncingId === e.id}
+                        title="Fuerza a la tablet a sincronizar ahora">
+                        {actions.syncingId === e.id ? 'Sincronizando…' : 'Forzar sync'}
+                      </SmButton>
+                      <SmButton icon={isBlocked ? 'unlock' : 'lock'} tone={isBlocked ? 'success' : 'glass'}
+                        onClick={() => actions.toggleBlock(e)} disabled={actions.blockingId === e.id}
+                        title={isBlocked ? 'Vuelve a mostrar publicidad' : 'Frena la publicidad sin desarmar el kiosco'}>
+                        {actions.blockingId === e.id ? 'Aplicando…' : isBlocked ? 'Desbloquear' : 'Bloquear'}
+                      </SmButton>
+                      <Link href={`/tablets/${e.id}?editar=1`} className={`${smBtn} ${SM_TONE.glass}`}>
+                        <Ico d={ICONS.edit} className="h-3.5 w-3.5" />
+                        Editar
+                      </Link>
+                      <SmButton icon="trash" tone="danger" onClick={() => actions.remove(e)} title="Elimina la tablet del sistema">
+                        Eliminar
+                      </SmButton>
+                    </>
+                  )}
+                  <Link href={`/tablets/${e.id}`} className="ml-auto text-xs text-sky-300/80 hover:text-sky-200 hover:underline">
+                    Ver detalle →
+                  </Link>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-sm text-white/60">
+          <span>{filtered.length} tablets · página {curPage} de {totalPages}</span>
+          <div className="flex gap-2">
+            <button type="button" disabled={curPage === 1} onClick={() => setPage(curPage - 1)} className={`${smBtn} ${SM_TONE.glass}`}>‹ Anterior</button>
+            <button type="button" disabled={curPage === totalPages} onClick={() => setPage(curPage + 1)} className={`${smBtn} ${SM_TONE.glass}`}>Siguiente ›</button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
