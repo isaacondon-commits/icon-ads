@@ -29,13 +29,8 @@ export default function TabletDetailPage() {
   const [syncs, setSyncs] = useState<SyncLog[]>([]);
   const [uptimePct7d, setUptimePct7d] = useState<number | null>(null);
   const [loadingSync, setLoadingSync] = useState(false);
-  const [msgText, setMsgText] = useState('');
-  const [sendingMsg, setSendingMsg] = useState(false);
-  const [showMsgModal, setShowMsgModal] = useState(false);
   const [playlistVersions, setPlaylistVersions] = useState<PlaylistVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
-  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [togglingBlock, setTogglingBlock] = useState(false);
@@ -89,19 +84,6 @@ export default function TabletDetailPage() {
       .catch(() => {})
       .finally(() => setLoadingVersions(false));
   }, [tab, tablet?.playlistId, playlistVersions.length]);
-
-  const handleSendMessage = async () => {
-    if (!tablet || !msgText.trim()) return;
-    setSendingMsg(true);
-    try {
-      await api.sendTabletMessage(tablet.id, msgText.trim());
-      show('Mensaje enviado — aparecerá en la tablet en el próximo ciclo');
-      setShowMsgModal(false);
-      setMsgText('');
-    } catch (e) {
-      show(e instanceof Error ? e.message : 'Error al enviar', 'error');
-    } finally { setSendingMsg(false); }
-  };
 
   const handleResync = async () => {
     if (!tablet) return;
@@ -207,18 +189,6 @@ export default function TabletDetailPage() {
     } finally { setWaking(false); }
   };
 
-  const handleRegenerateToken = async () => {
-    if (!tablet) return;
-    setRegenerating(true);
-    try {
-      const res = await api.regenerateTabletToken(tablet.id);
-      show(res.message);
-      setShowRegenConfirm(false);
-    } catch (e) {
-      show(e instanceof Error ? e.message : 'Error al regenerar token', 'error');
-    } finally { setRegenerating(false); }
-  };
-
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>;
   if (!tablet) return null;
 
@@ -239,102 +209,61 @@ export default function TabletDetailPage() {
 
       {/* Header card */}
       <div className="card p-6 mb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2.5 mb-1">
               <span className={`w-3 h-3 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-gray-400'}`} />
               <h1 className="text-2xl font-bold">{tablet.name}</h1>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOnline
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300'}`}>
+                {isOnline ? 'Online' : 'Offline'}
+              </span>
+              {tablet.manualStatus === 'bloqueada' && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  🔒 Bloqueada — no muestra publicidad
+                </span>
+              )}
+              {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                  {tablet.onFallback === true
+                    ? 'No cargó su playlist (mostrando respaldo)'
+                    : `No reproduce${tablet.lastAdAgoS != null ? ` (hace ${Math.round(tablet.lastAdAgoS / 60)} min)` : ''}`}
+                </span>
+              )}
             </div>
             <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{tablet.deviceId}</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {tablet.manualStatus === 'bloqueada' && (
-              <span className="text-xs px-2 py-1 rounded-full font-bold bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400">
-                🔒 BLOQUEADA — no muestra publicidad
-              </span>
-            )}
-            {tablet.manualStatus === 'bloqueada' ? (
-              <button
-                onClick={handleToggleBlock}
-                disabled={togglingBlock}
-                title="Vuelve a mostrar publicidad ahora"
-                className="text-xs px-3 py-1.5 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {togglingBlock ? 'Desbloqueando...' : '🔓 DESBLOQUEAR'}
-              </button>
-            ) : (
-              <button
-                onClick={handleToggleBlock}
-                disabled={togglingBlock}
-                title="Frena la publicidad sin desarmar el kiosco"
-                className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300 disabled:opacity-50"
-              >
-                {togglingBlock ? 'Aplicando...' : 'Bloquear'}
-              </button>
-            )}
-            <button
-              onClick={handleWake}
-              disabled={waking}
-              title="Enciende la pantalla y trae el player al frente aunque el auto esté sin contacto (necesita señal / datos móviles)"
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200 disabled:opacity-50"
-            >
-              {waking ? 'Enviando...' : 'Prender pantalla'}
-            </button>
-            {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && (
-              <span className="text-xs px-2 py-1 rounded-full font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400">
-                {tablet.onFallback === true
-                  ? 'NO CARGÓ SU PLAYLIST (mostrando respaldo)'
-                  : `NO REPRODUCE${tablet.lastAdAgoS != null ? ` (hace ${Math.round(tablet.lastAdAgoS / 60)} min)` : ''}`}
-              </span>
-            )}
-            {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && tablet.playlistId && (
-              <button
-                onClick={handleResync}
-                disabled={resyncing}
-                title="Fuerza a la tablet a volver a descargar su playlist ahora"
-                className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 border-amber-300 disabled:opacity-50"
-              >
-                {resyncing ? 'Forzando...' : 'Forzar re-descarga'}
-              </button>
-            )}
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-              {isOnline ? 'online' : 'offline'}
-            </span>
-            <ScreenshotViewer tabletId={tablet.id} tabletName={tablet.name} />
-            <button
-              onClick={() => setShowMsgModal(true)}
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200"
-            >
-              Enviar mensaje
-            </button>
-            <button
-              onClick={handleForceSync}
-              disabled={forcingSync}
-              title="Fuerza a la tablet a sincronizar ahora"
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-violet-50 dark:hover:bg-violet-950 text-violet-600 border-violet-200 disabled:opacity-50"
-            >
-              {forcingSync ? 'Sincronizando...' : 'Forzar sync'}
-            </button>
-            <button
-              onClick={openEdit}
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200"
-            >
-              Editar
-            </button>
-            <button
-              onClick={() => setShowRegenConfirm(true)}
-              title="Invalida el token actual — usar si la tablet se perdió o robó"
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-red-50 dark:hover:bg-red-950 text-red-600 border-red-200"
-            >
-              Regenerar token
-            </button>
-            <button
-              onClick={() => setShowDelete(true)}
-              title="Elimina la tablet del sistema"
-              className="text-xs px-3 py-1.5 rounded-lg border font-medium hover:bg-red-50 dark:hover:bg-red-950 text-red-600 border-red-200"
-            >
-              Eliminar
-            </button>
+        </div>
+
+        {/* Acciones: todas a la vista, mismo estilo que Anuncios / Monitor */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <ScreenshotViewer tabletId={tablet.id} tabletName={tablet.name} pill />
+          <ActionButton icon="power" tone="blue" onClick={handleWake} disabled={waking}
+            title="Enciende la pantalla y trae el player al frente aunque el auto esté sin contacto (necesita señal / datos móviles)">
+            {waking ? 'Enviando…' : 'Prender pantalla'}
+          </ActionButton>
+          <ActionButton icon="sync" onClick={handleForceSync} disabled={forcingSync} title="Fuerza a la tablet a sincronizar ahora">
+            {forcingSync ? 'Sincronizando…' : 'Forzar sync'}
+          </ActionButton>
+          {isOnline && (tablet.playerOk === false || tablet.onFallback === true) && tablet.playlistId && (
+            <ActionButton icon="download" tone="amber" onClick={handleResync} disabled={resyncing}
+              title="Fuerza a la tablet a volver a descargar su playlist ahora">
+              {resyncing ? 'Forzando…' : 'Forzar re-descarga'}
+            </ActionButton>
+          )}
+          {tablet.manualStatus === 'bloqueada' ? (
+            <ActionButton icon="unlock" tone="emerald" onClick={handleToggleBlock} disabled={togglingBlock} title="Vuelve a mostrar publicidad ahora">
+              {togglingBlock ? 'Desbloqueando…' : 'Desbloquear'}
+            </ActionButton>
+          ) : (
+            <ActionButton icon="lock" tone="amber" onClick={handleToggleBlock} disabled={togglingBlock} title="Frena la publicidad sin desarmar el kiosco">
+              {togglingBlock ? 'Aplicando…' : 'Bloquear'}
+            </ActionButton>
+          )}
+          <ActionButton icon="edit" onClick={openEdit}>Editar</ActionButton>
+          <div className="ml-auto">
+            <ActionButton icon="trash" tone="red" onClick={() => setShowDelete(true)} title="Elimina la tablet del sistema">Eliminar</ActionButton>
           </div>
         </div>
 
@@ -556,53 +485,6 @@ export default function TabletDetailPage() {
         )}
       </div>
 
-      {/* Send message modal (#4) */}
-      {showMsgModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="rounded-xl shadow-xl w-full max-w-sm p-6" style={{ background: 'var(--card)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold">Enviar mensaje a {tablet.name}</h2>
-              <button onClick={() => setShowMsgModal(false)} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
-            </div>
-            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-              El mensaje aparece como overlay durante 10 segundos en la próxima consulta de la app (cada 5 min).
-            </p>
-            <textarea
-              className="input w-full mb-3"
-              rows={3}
-              maxLength={200}
-              placeholder="Escribe tu mensaje..."
-              value={msgText}
-              onChange={(e) => setMsgText(e.target.value)}
-              style={{ resize: 'none' }}
-            />
-            <p className="text-xs text-right mb-3" style={{ color: 'var(--text-muted)' }}>{msgText.length}/200</p>
-            <div className="flex gap-2">
-              <button
-                onClick={handleSendMessage}
-                disabled={sendingMsg || !msgText.trim()}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium"
-              >
-                {sendingMsg ? 'Enviando...' : 'Enviar'}
-              </button>
-              <button onClick={() => setShowMsgModal(false)} className="flex-1 border py-2 rounded-lg text-sm" style={{ borderColor: 'var(--border-md)' }}>
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showRegenConfirm && (
-        <ConfirmDialog
-          title="Regenerar token"
-          message="El token actual queda inválido de inmediato. La tablet lo va a detectar solo (401 en su próximo sync) y se re-registra sin intervención, siempre que pueda alcanzar el mismo deviceId. Usar si la tablet se perdió, se robó, o sospechás que el token se filtró."
-          confirmLabel={regenerating ? 'Regenerando...' : 'Regenerar'}
-          onConfirm={handleRegenerateToken}
-          onCancel={() => setShowRegenConfirm(false)}
-        />
-      )}
-
       {showDelete && (
         <ConfirmDialog title="Eliminar tablet" message={`¿Eliminar "${tablet.name}"? Esta acción no se puede deshacer.`}
           confirmLabel="Eliminar" onConfirm={handleDelete} onCancel={() => setShowDelete(false)} />
@@ -683,5 +565,39 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
       {children}
     </div>
+  );
+}
+
+const ACTION_ICONS = {
+  power: 'M12 3v8M6.3 7.3a8 8 0 1 0 11.4 0',
+  sync: 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+  unlock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2',
+  edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+} as const;
+
+const ACTION_TONES = {
+  neutral: 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700',
+  blue: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50',
+  amber: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50',
+  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
+  red: 'border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40',
+} as const;
+
+function ActionButton({ icon, tone = 'neutral', onClick, disabled, title, children }: {
+  icon: keyof typeof ACTION_ICONS; tone?: keyof typeof ACTION_TONES;
+  onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={title}
+      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40 ${ACTION_TONES[tone]}`}
+      style={tone === 'neutral' ? { borderColor: 'var(--border-md)' } : undefined}>
+      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d={ACTION_ICONS[icon]} />
+      </svg>
+      {children}
+    </button>
   );
 }
