@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, Ad, Campaign, StorageStats } from '@/lib/api';
-import { AdList, AdGrid, AdViewer, AdActionHandlers, hasNoCampaign, neverPlayed } from '@/components/AdViews';
+import { AdList, AdViewer, AdActionHandlers, hasNoCampaign, neverPlayed } from '@/components/AdViews';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import { useRole } from '@/lib/roles';
@@ -10,7 +10,7 @@ import { useRole } from '@/lib/roles';
 const MAX_SIZE_MB = 100;
 const ALLOWED_TYPES = ['video/mp4', 'image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 25;
 
 // Estados como pestañas — un anuncio vive en una sola a la vez, así pausar/
 // aprobar/rechazar lo "mueve" de pestaña sin mezclarlo con el resto.
@@ -103,10 +103,6 @@ export default function AdsPage() {
   const [fileError, setFileError] = useState('');
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
-    try { return localStorage.getItem('ads_view') === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
-  });
-  const changeView = (m: 'grid' | 'list') => { setViewMode(m); try { localStorage.setItem('ads_view', m); } catch { /* ignore */ } };
   const [activeTab, setActiveTab] = useState<AdTabId>('active');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -455,8 +451,6 @@ export default function AdsPage() {
         </div>
       </div>
 
-      <AdAlerts ads={ads} onShow={(tab) => { setActiveTab(tab); setPage(1); }} />
-
       {/* Estados como pestañas */}
       <div className="flex flex-wrap gap-2 mb-4">
         {AD_TABS.map((t) => {
@@ -465,7 +459,7 @@ export default function AdsPage() {
           const alertTab = 'alert' in t && t.alert;
           if (alertTab && count === 0 && !isActive) return null;
           const isAlert = alertTab && count > 0;
-          return (
+          const tab = (
             <button
               key={t.id}
               onClick={() => { setActiveTab(t.id); setPage(1); }}
@@ -477,6 +471,16 @@ export default function AdsPage() {
             >
               {isAlert && '⚠ '}{t.label} <span className={isActive ? 'text-white/80' : isAlert ? 'text-red-500' : 'text-gray-400'}>{count}</span>
             </button>
+          );
+          if (!isAlert) return tab;
+          // Al pasar el mouse (o con foco de teclado) muestra el detalle.
+          return (
+            <div key={t.id} className="relative group">
+              {tab}
+              <div role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-80 group-hover:block group-focus-within:block">
+                <AlertTip tab={t.id} ads={ads} />
+              </div>
+            </div>
           );
         })}
       </div>
@@ -527,29 +531,12 @@ export default function AdsPage() {
             {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
-        {/* #33 — grid/list toggle */}
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
-          <button
-            onClick={() => changeView('grid')}
-            className={`px-3 py-2 text-sm ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-          >
-            ⊞ Grilla
-          </button>
-          <button
-            onClick={() => changeView('list')}
-            className={`px-3 py-2 text-sm border-l border-gray-200 ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-          >
-            ≡ Lista
-          </button>
-        </div>
       </div>
 
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
       ) : filtered.length === 0 ? (
         <p className="text-gray-500">{search ? 'Sin resultados.' : `No hay anuncios en "${activeTabDef.label}".`}</p>
-      ) : viewMode === 'grid' ? (
-        <AdGrid ads={paged} h={handlers} />
       ) : (
         <AdList ads={paged} h={handlers} />
       )}
@@ -816,55 +803,39 @@ export default function AdsPage() {
   );
 }
 
-// Carteles arriba de las pestañas: anuncios sin campaña y anuncios aprobados
-// que nunca se reprodujeron (agrupados por motivo).
-function AdAlerts({ ads, onShow }: { ads: Ad[]; onShow: (tab: AdTabId) => void }) {
-  const noCampaign = ads.filter(hasNoCampaign);
+// Detalle de las pestañas de alerta, como tooltip: "Sin campaña" explica qué
+// pasa; "Nunca pasaron" agrupa los anuncios por motivo.
+function AlertTip({ tab, ads }: { tab: AdTabId; ads: Ad[] }) {
+  const box = 'rounded-xl border p-3 text-sm shadow-lg';
+  if (tab === 'nocampaign') {
+    const n = ads.filter(hasNoCampaign).length;
+    return (
+      <div className={`${box} border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950`}>
+        <p className="font-semibold text-red-800 dark:text-red-200">
+          {n === 1 ? '1 anuncio no tiene campaña' : `${n} anuncios no tienen campaña`}
+        </p>
+        <p className="mt-1 text-red-700/90 dark:text-red-300/90">
+          Su campaña fue archivada o eliminada, así que no se reproducen. Asignales una campaña (Editar) o eliminalos.
+        </p>
+      </div>
+    );
+  }
   const never = ads.filter(neverPlayed);
-  if (!noCampaign.length && !never.length) return null;
   const reasons = new Map<string, number>();
   for (const a of never) {
     const label = a.delivery?.issue?.label ?? 'Está en condiciones de pasar pero todavía no se reprodujo';
     reasons.set(label, (reasons.get(label) ?? 0) + 1);
   }
-  const box = 'rounded-xl border p-4 flex flex-wrap items-start justify-between gap-3';
-  const btn = 'h-8 px-3 rounded-md text-sm font-medium border shrink-0';
   return (
-    <div className="space-y-3 mb-5">
-      {noCampaign.length > 0 && (
-        <div role="alert" className={`${box} border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40`}>
-          <div className="flex items-start gap-3 min-w-0">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">!</span>
-            <div className="min-w-0">
-              <p className="font-semibold text-red-800 dark:text-red-200">
-                {noCampaign.length === 1 ? '1 anuncio no tiene campaña' : `${noCampaign.length} anuncios no tienen campaña`}
-              </p>
-              <p className="text-sm text-red-700/80 dark:text-red-300/80">
-                Su campaña fue archivada o eliminada, así que no se reproducen. Asignales una campaña (Editar) o eliminalos.
-              </p>
-            </div>
-          </div>
-          <button onClick={() => onShow('nocampaign')} className={`${btn} border-red-300 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40`}>Ver cuáles</button>
-        </div>
-      )}
-      {never.length > 0 && (
-        <div role="status" className={`${box} border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30`}>
-          <div className="flex items-start gap-3 min-w-0">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm font-bold text-white">⚠</span>
-            <div className="min-w-0">
-              <p className="font-semibold text-amber-800 dark:text-amber-200">
-                {never.length === 1 ? '1 anuncio aprobado nunca se reprodujo' : `${never.length} anuncios aprobados nunca se reprodujeron`}
-              </p>
-              <ul className="mt-1 text-sm text-amber-800/90 dark:text-amber-300/80">
-                {[...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([label, n]) => (
-                  <li key={label}>· {label}: <span className="font-semibold">{n}</span></li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <button onClick={() => onShow('never')} className={`${btn} border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/40`}>Ver cuáles</button>
-        </div>
-      )}
+    <div className={`${box} border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950`}>
+      <p className="font-semibold text-amber-800 dark:text-amber-200">
+        {never.length === 1 ? '1 anuncio aprobado nunca se reprodujo' : `${never.length} anuncios aprobados nunca se reprodujeron`}
+      </p>
+      <ul className="mt-1 space-y-0.5 text-amber-800/90 dark:text-amber-300/90">
+        {[...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([label, n]) => (
+          <li key={label}>· {label}: <span className="font-semibold">{n}</span></li>
+        ))}
+      </ul>
     </div>
   );
 }

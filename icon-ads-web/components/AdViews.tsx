@@ -223,34 +223,6 @@ export function AdList({ ads, h }: { ads: Ad[]; h: AdActionHandlers }) {
   );
 }
 
-/** Grilla: tarjetas con miniatura grande. */
-export function AdGrid({ ads, h }: { ads: Ad[]; h: AdActionHandlers }) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {ads.map((ad) => (
-        <div key={ad.id} className={`card overflow-hidden ${hasNoCampaign(ad) || neverPlayed(ad) ? 'ring-1 ring-red-300 dark:ring-red-800' : ''}`}>
-          <button type="button" onClick={() => h.onView(ad)} className="block w-full" title="Ver anuncio">
-            <Thumb ad={ad} className="h-36 w-full" hoverPlay />
-          </button>
-          <div className="space-y-2 p-4">
-            <div className="flex items-start justify-between gap-2">
-              <p className="truncate text-sm font-medium">{ad.name}</p>
-              <StatusBadge ad={ad} />
-            </div>
-            <div className="flex min-w-0 items-center gap-1.5 text-xs"><CampaignLabel ad={ad} /></div>
-            <DeliveryInfo ad={ad} />
-            <Tags ad={ad} onTag={h.onTag} />
-            <div className="flex flex-wrap items-center gap-1.5 border-t pt-3" style={{ borderColor: 'var(--border-md)' }}>
-              <ViewButton ad={ad} onView={h.onView} />
-              <div className="ml-auto flex items-center gap-1.5"><ManageButtons ad={ad} h={h} /></div>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex justify-between gap-3 py-1.5 text-sm">
