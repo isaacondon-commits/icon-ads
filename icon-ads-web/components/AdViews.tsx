@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Ad, BASE } from '@/lib/api';
 import { Icon } from '@/components/CampaignActions';
+import { VARIANT } from '@/components/ui/buttons';
 
 // Piezas de la página de Anuncios: fila de lista, tarjeta de grilla y el visor
 // "Ver anuncio". Toda la info de entrega (reproducciones, playlists, motivo por
@@ -125,14 +126,14 @@ export type AdActionHandlers = {
   onTag: (tag: string) => void;
 };
 
-const btn = 'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40';
-const btnNeutral = `${btn} text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700`;
-const iconBtn = 'inline-flex items-center justify-center h-7 w-7 rounded-md border transition-colors disabled:opacity-40';
+const btn = 'inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40';
+const btnNeutral = `${btn} ${VARIANT.neutral}`;
+const iconBtn = 'inline-flex items-center justify-center h-8 w-8 rounded-full border transition-colors disabled:opacity-40';
 
 function ViewButton({ ad, onView }: { ad: Ad; onView: (ad: Ad) => void }) {
   return (
     <button type="button" onClick={() => onView(ad)}
-      className={`${btn} border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50`}>
+      className={`${btn} ${VARIANT.accent}`}>
       <Icon name="play" />
       Ver anuncio
     </button>
@@ -147,27 +148,26 @@ function ManageButtons({ ad, h }: { ad: Ad; h: AdActionHandlers }) {
       {ad.approvalStatus === 'pending' && (
         <>
           <button type="button" onClick={() => h.onApprove(ad)} disabled={busy}
-            className={`${btn} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300`}>
+            className={`${btn} ${VARIANT.ok}`}>
             Aprobar
           </button>
-          <button type="button" onClick={() => h.onReject(ad)} disabled={busy} className={btnNeutral} style={{ borderColor: 'var(--border-md)' }}>
+          <button type="button" onClick={() => h.onReject(ad)} disabled={busy} className={btnNeutral}>
             Rechazar
           </button>
         </>
       )}
       {ad.approvalStatus === 'approved' && (
         <button type="button" onClick={() => h.onTogglePause(ad)} disabled={busy} title={ad.active ? 'Pausar' : 'Reanudar'}
-          className={`${iconBtn} ${ad.active ? 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30' : 'text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'}`}
-          style={{ borderColor: 'var(--border-md)' }}>
+          className={`${iconBtn} ${ad.active ? VARIANT.warn : VARIANT.ok}`}>
           <Icon name={ad.active ? 'pause' : 'play'} />
         </button>
       )}
       <button type="button" onClick={() => h.onEdit(ad)} title="Editar"
-        className={`${iconBtn} text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700`} style={{ borderColor: 'var(--border-md)' }}>
+        className={`${iconBtn} ${VARIANT.neutral}`}>
         <Icon name="edit" />
       </button>
       <button type="button" onClick={() => h.onDelete(ad)} title="Eliminar"
-        className={`${iconBtn} text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30`} style={{ borderColor: 'var(--border-md)' }}>
+        className={`${iconBtn} ${VARIANT.danger}`}>
         <Icon name="trash" />
       </button>
     </>

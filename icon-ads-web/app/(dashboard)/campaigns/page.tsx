@@ -5,6 +5,9 @@ import { api, Campaign, Client, CampaignTemplate, Favorite } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import CampaignActions from '@/components/CampaignActions';
+import PageShell from '@/components/ui/PageShell';
+import UiModal, { Field as UiField } from '@/components/ui/Modal';
+import { Btn, ViewToggle } from '@/components/ui/buttons';
 import { useRole } from '@/lib/roles';
 
 const PAGE_SIZE = 10;
@@ -407,40 +410,24 @@ export default function CampaignsPage() {
     />
   );
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Campañas</h1>
-        <div className="flex items-center gap-2">
-          <RefreshButton onClick={refresh} loading={refreshing} />
-          {/* #34 — view toggle */}
-          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
-            {(['table', 'cards'] as const).map((m) => (
-              <button key={m} onClick={() => { setViewMode(m); localStorage.setItem('campaigns_view', m); }}
-                className={`px-2.5 py-1.5 text-sm border-r last:border-0 ${viewMode === m ? 'bg-blue-600 text-white' : ''}`}
-                style={{ borderColor: 'var(--border-md)', color: viewMode === m ? 'white' : 'var(--text-muted)' }}
-                title={m === 'table' ? 'Vista tabla' : 'Vista tarjetas'}>
-                {m === 'table' ? '≡' : '⊞'}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={handleArchiveExpired}
-            disabled={archivingExpired}
-            className="px-4 py-2 rounded-lg text-sm font-medium border disabled:opacity-50"
-            style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}
-            title="Archivar todas las campañas cuya fecha de fin ya pasó"
-          >
-            {archivingExpired ? 'Archivando...' : '📁 Archivar vencidas'}
-          </button>
-          {canCreateContent && (
-            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-              + Nueva campaña
-            </button>
-          )}
-        </div>
-      </div>
+  const activeCount = campaigns.filter((c) => campaignStatus(c) === 'active').length;
 
+  return (
+    <PageShell
+      title="Campañas"
+      subtitle={loading ? 'Cargando…' : `${campaigns.length} campañas · ${activeCount} activas`}
+      actions={(
+        <>
+          <RefreshButton onClick={refresh} loading={refreshing} />
+          <ViewToggle value={viewMode} onChange={(v) => { setViewMode(v as 'table' | 'cards'); localStorage.setItem('campaigns_view', v); }}
+            options={[{ value: 'table', icon: 'list', label: 'Vista tabla' }, { value: 'cards', icon: 'grid', label: 'Vista tarjetas' }]} />
+          <Btn icon="archive" onClick={handleArchiveExpired} disabled={archivingExpired} title="Archivar todas las campañas cuya fecha de fin ya pasó">
+            {archivingExpired ? 'Archivando…' : 'Archivar vencidas'}
+          </Btn>
+          {canCreateContent && <Btn icon="plus" v="primary" onClick={openCreate}>Nueva campaña</Btn>}
+        </>
+      )}
+    >
       <div className="mb-4">
         <input
           className="input max-w-xs"
@@ -771,29 +758,14 @@ export default function CampaignsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" style={{ background: 'var(--card)' }}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-lg">{title}</h2>
-          <button onClick={onClose} className="text-xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
+function Modal(props: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return <UiModal {...props} />;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
-      {children}
-    </div>
-  );
+function Field(props: { label: string; children: React.ReactNode }) {
+  return <UiField {...props} />;
 }

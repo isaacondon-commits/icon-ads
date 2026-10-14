@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api, Playlist, Ad, PlaylistVersion, BASE } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { useRole } from '@/lib/roles';
 
 const PAGE_SIZE = 10;
@@ -125,20 +127,19 @@ export default function PlaylistsPage() {
     } finally { setReverting(null); }
   };
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Playlists</h1>
-        <div className="flex items-center gap-2">
-          <RefreshButton onClick={refresh} loading={refreshing} />
-          {canCreateContent && (
-            <button onClick={() => setShowCreate(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-              + Nueva playlist
-            </button>
-          )}
-        </div>
-      </div>
+  const assignedTablets = playlists.reduce((n, p) => n + (p._count?.tablets ?? 0), 0);
 
+  return (
+    <PageShell
+      title="Playlists"
+      subtitle={loading ? 'Cargando…' : `${playlists.length} playlists · ${assignedTablets} tablets asignadas`}
+      actions={(
+        <>
+          <RefreshButton onClick={refresh} loading={refreshing} />
+          {canCreateContent && <Btn icon="plus" v="primary" onClick={() => setShowCreate(true)}>Nueva playlist</Btn>}
+        </>
+      )}
+    >
       {deleteError && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 flex items-center justify-between">
           <p className="text-sm text-red-600">{deleteError}</p>
@@ -153,10 +154,8 @@ export default function PlaylistsPage() {
       {showCreate && (
         <div className="card p-4 mb-4 flex gap-3 items-center">
           <input className="input flex-1" placeholder="Nombre de la playlist" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreate()} autoFocus />
-          <button onClick={handleCreate} disabled={creating} className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg text-sm font-medium">
-            {creating ? 'Creando...' : 'Crear'}
-          </button>
-          <button onClick={() => setShowCreate(false)} className="border hover:bg-gray-50 dark:hover:bg-gray-800 px-4 py-2 rounded-lg text-sm" style={{ borderColor: 'var(--border-md)' }}>Cancelar</button>
+          <Btn v="primary" onClick={handleCreate} disabled={creating}>{creating ? 'Creando…' : 'Crear'}</Btn>
+          <Btn onClick={() => setShowCreate(false)}>Cancelar</Btn>
         </div>
       )}
 
@@ -195,27 +194,25 @@ export default function PlaylistsPage() {
                         v{p.version} · {p._count?.tablets ?? 0} tablets · editada {new Date(p.updatedAt).toLocaleDateString('es-AR')}
                       </p>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${adCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${adCount > 0 ? 'border-[color-mix(in_srgb,var(--accent)_40%,transparent)] text-[var(--accent)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
                       {adCount} {adCount === 1 ? 'anuncio' : 'anuncios'}
                     </span>
                   </div>
                   <div className="flex gap-2 flex-wrap justify-end">
-                    <button onClick={() => openEditAds(p)} className="text-blue-600 border border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950 px-3 py-1.5 rounded-lg text-xs font-medium">Editar anuncios</button>
-                    {/* #11 — preview */}
-                    <button onClick={() => setPreviewPlaylist(p)} className="text-violet-600 border border-violet-200 hover:bg-violet-50 dark:hover:bg-violet-950 px-3 py-1.5 rounded-lg text-xs font-medium">Vista previa</button>
-                    {/* #17 — version history */}
-                    <button onClick={() => openVersions(p)} className="text-gray-600 border hover:bg-gray-50 dark:hover:bg-gray-800 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ borderColor: 'var(--border-md)' }}>Versiones</button>
-                    <button onClick={() => handleDuplicate(p.id)} disabled={duplicating === p.id} className="text-gray-600 border hover:bg-gray-50 dark:hover:bg-gray-800 px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50" style={{ borderColor: 'var(--border-md)' }}>
-                      {duplicating === p.id ? 'Duplicando...' : 'Duplicar'}
-                    </button>
-                    <button onClick={() => setDeleteTarget(p)} className="text-red-500 border border-red-100 hover:bg-red-50 dark:hover:bg-red-950 px-3 py-1.5 rounded-lg text-xs font-medium">Eliminar</button>
+                    <Btn size="sm" icon="edit" v="accent" onClick={() => openEditAds(p)}>Editar anuncios</Btn>
+                    <Btn size="sm" icon="eye" onClick={() => setPreviewPlaylist(p)}>Vista previa</Btn>
+                    <Btn size="sm" icon="calendar" onClick={() => openVersions(p)}>Versiones</Btn>
+                    <Btn size="sm" icon="copy" onClick={() => handleDuplicate(p.id)} disabled={duplicating === p.id}>
+                      {duplicating === p.id ? 'Duplicando…' : 'Duplicar'}
+                    </Btn>
+                    <Btn size="sm" icon="trash" v="danger" onClick={() => setDeleteTarget(p)}>Eliminar</Btn>
                   </div>
                 </div>
                 {pas.length > 0 ? (
                   <>
                     <div className="flex flex-wrap gap-2">
                       {pas.map((pa) => (
-                        <span key={pa.id} className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>
+                        <span key={pa.id} className="text-xs px-2 py-1 rounded-full" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
                           {pa.order + 1}. {pa.ad.name} <span className="opacity-60">· {pa.ad.durationS}s</span>
                         </span>
                       ))}
@@ -420,6 +417,6 @@ export default function PlaylistsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, Ad, Campaign, StorageStats } from '@/lib/api';
-import { Icon } from '@/components/CampaignActions';
+import PageShell from '@/components/ui/PageShell';
+import { Btn, TabPill } from '@/components/ui/buttons';
 import { AdList, AdViewer, AdActionHandlers, hasNoCampaign, neverPlayed } from '@/components/AdViews';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
@@ -461,23 +462,22 @@ export default function AdsPage() {
     onTag: (t) => { setTagFilter(t); setPage(1); },
   };
 
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Anuncios</h1>
-        <div className="flex items-center gap-2">
-          <RefreshButton onClick={refresh} loading={refreshing} />
-          {canCreateContent && (
-            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-              + Subir anuncio
-            </button>
-          )}
-        </div>
-      </div>
+  const formatTotal = (bytes: number) => bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+  const totalBytes = ads.reduce((n, a) => n + (a.fileSize ?? 0), 0);
 
+  return (
+    <PageShell
+      title="Anuncios"
+      subtitle={loading ? 'Cargando…' : `${ads.length} anuncios · ${formatTotal(totalBytes)}`}
+      actions={(
+        <>
+          <RefreshButton onClick={refresh} loading={refreshing} />
+          {canCreateContent && <Btn icon="plus" v="primary" onClick={openCreate}>Subir anuncio</Btn>}
+        </>
+      )}
+    >
       {/* Estados como pestañas */}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-5">
         {AD_TABS.map((t) => {
           const count = ads.filter(t.match).length;
           const isActive = activeTab === t.id;
@@ -485,17 +485,9 @@ export default function AdsPage() {
           if (alertTab && count === 0 && !isActive) return null;
           const isAlert = alertTab && count > 0;
           const tab = (
-            <button
-              key={t.id}
-              onClick={() => { setActiveTab(t.id); setPage(1); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                isActive ? (isAlert ? 'bg-red-600 border-red-600 text-white' : 'bg-blue-600 border-blue-600 text-white')
-                  : isAlert ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {isAlert && '⚠ '}{t.label} <span className={isActive ? 'text-white/80' : isAlert ? 'text-red-500' : 'text-gray-400'}>{count}</span>
-            </button>
+            <TabPill key={t.id} active={isActive} alert={isAlert} count={count} onClick={() => { setActiveTab(t.id); setPage(1); }}>
+              {t.label}
+            </TabPill>
           );
           if (!isAlert) return tab;
           // Al pasar el mouse (o con foco de teclado) muestra el detalle.
@@ -513,31 +505,25 @@ export default function AdsPage() {
       {/* Aprobar todo — solo en la pestaña Pendientes */}
       {activeTab === 'pending' && ads.some((a) => a.approvalStatus === 'pending') && (
         <div className="mb-4">
-          <button
-            onClick={() => setConfirmApproveAll(true)}
-            disabled={approvingAll}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white"
-          >
-            {approvingAll ? 'Aprobando...' : `Aprobar todo (${ads.filter((a) => a.approvalStatus === 'pending').length})`}
-          </button>
+          <Btn icon="check" v="ok" onClick={() => setConfirmApproveAll(true)} disabled={approvingAll}>
+            {approvingAll ? 'Aprobando…' : `Aprobar todo (${ads.filter((a) => a.approvalStatus === 'pending').length})`}
+          </Btn>
         </div>
       )}
 
       {/* Storage usage bar */}
       {storage && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-4">
-          <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-            <span>{storage.totalMB} MB usados{storage.quotaMB ? ` de ${storage.quotaMB >= 1024 ? `${(storage.quotaMB / 1024).toFixed(1)} GB` : `${storage.quotaMB} MB`}` : ''}</span>
-            <span>{storage.fileCount} archivos{storage.usedPct != null ? ` · ${storage.usedPct}%` : ''}</span>
+        <div className="card mb-4 px-5 py-4">
+          <div className="mb-2 flex justify-between text-xs">
+            <span className="text-[var(--text-2)]"><b className="text-[var(--text)]">{storage.totalMB} MB</b> usados{storage.quotaMB ? ` de ${storage.quotaMB >= 1024 ? `${(storage.quotaMB / 1024).toFixed(1)} GB` : `${storage.quotaMB} MB`}` : ''}</span>
+            <span className="text-[var(--muted)]">{storage.fileCount} archivos{storage.usedPct != null ? ` · ${storage.usedPct}%` : ''}</span>
           </div>
-          <div className="w-full bg-gray-100 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-700 ${(storage.usedPct ?? 0) > 90 ? 'bg-red-500' : (storage.usedPct ?? 0) > 70 ? 'bg-amber-500' : 'bg-blue-500'}`}
-              style={{ width: `${Math.min(100, storage.usedPct ?? 0)}%` }}
-            />
+          <div className="h-1.5 w-full rounded-full bg-[var(--surface-2)]">
+            <div className="h-1.5 rounded-full transition-all duration-700"
+              style={{ width: `${Math.min(100, storage.usedPct ?? 0)}%`, background: (storage.usedPct ?? 0) > 90 ? 'var(--danger)' : (storage.usedPct ?? 0) > 70 ? 'var(--warn)' : 'var(--accent)' }} />
           </div>
           {(storage.usedPct ?? 0) > 90 && (
-            <p className="text-xs text-red-600 mt-1.5">Espacio casi agotado — borrá o pausá anuncios que ya no uses.</p>
+            <p className="mt-1.5 text-xs text-[var(--danger)]">Espacio casi agotado — borrá o pausá anuncios que ya no uses.</p>
           )}
         </div>
       )}
@@ -557,35 +543,31 @@ export default function AdsPage() {
           </select>
         )}
         {canManage && !selected && filtered.length > 0 && (
-          <button onClick={() => setSelected(new Set())}
-            className="ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40">
-            <Icon name="trash" className="w-4 h-4" />
-            Eliminar varios
-          </button>
+          <div className="ml-auto">
+            <Btn icon="trash" v="danger" onClick={() => setSelected(new Set())}>Eliminar varios</Btn>
+          </div>
         )}
       </div>
 
       {selected && (
-        <div className="sticky top-0 z-20 mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 shadow-sm dark:border-red-900 dark:bg-red-950/60">
-          <span className="text-sm font-medium text-red-800 dark:text-red-200">
+        <div className="sticky top-0 z-20 mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-[var(--danger-border)] bg-[var(--surface-2)] px-4 py-2.5 shadow-2xl">
+          <span className="text-sm font-medium text-[var(--text)]">
             {selected.size === 0 ? 'Marcá los anuncios que querés eliminar' : `${selected.size} seleccionado${selected.size === 1 ? '' : 's'}`}
           </span>
           <button onClick={() => setSelected(new Set([...selected, ...paged.map((a) => a.id)]))}
-            className="text-sm text-red-700 hover:underline dark:text-red-300">Marcar esta página ({paged.length})</button>
+            className="text-sm text-[var(--accent)] hover:underline">Marcar esta página ({paged.length})</button>
           {filtered.length > paged.length && (
             <button onClick={() => setSelected(new Set(filtered.map((a) => a.id)))}
-              className="text-sm text-red-700 hover:underline dark:text-red-300">Marcar todos los filtrados ({filtered.length})</button>
+              className="text-sm text-[var(--accent)] hover:underline">Marcar todos los filtrados ({filtered.length})</button>
           )}
           {selected.size > 0 && (
-            <button onClick={() => setSelected(new Set())} className="text-sm text-red-700 hover:underline dark:text-red-300">Desmarcar</button>
+            <button onClick={() => setSelected(new Set())} className="text-sm text-[var(--accent)] hover:underline">Desmarcar</button>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => setSelected(null)}
-              className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-white/60 dark:hover:bg-slate-800" style={{ borderColor: 'var(--border-md)' }}>Cancelar</button>
-            <button onClick={() => setConfirmBulk(true)} disabled={selected.size === 0}
-              className="h-8 px-3 rounded-md bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40">
+            <Btn size="sm" onClick={() => setSelected(null)}>Cancelar</Btn>
+            <Btn size="sm" icon="trash" v="danger" onClick={() => setConfirmBulk(true)} disabled={selected.size === 0}>
               Eliminar {selected.size || ''}
-            </button>
+            </Btn>
           </div>
         </div>
       )}
@@ -600,11 +582,11 @@ export default function AdsPage() {
 
       {/* #8 — pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+        <div className="mt-4 flex items-center justify-between text-sm text-[var(--muted)]">
           <span>{filtered.length} anuncios · página {page} de {totalPages}</span>
-          <div className="flex gap-1">
-            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">‹ Anterior</button>
-            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Siguiente ›</button>
+          <div className="flex gap-2">
+            <Btn size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>‹ Anterior</Btn>
+            <Btn size="sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Siguiente ›</Btn>
           </div>
         </div>
       )}
@@ -645,8 +627,8 @@ export default function AdsPage() {
 
       {/* Upload / edit modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-lg">{editing ? 'Editar anuncio' : 'Subir anuncio'}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
@@ -866,7 +848,7 @@ export default function AdsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

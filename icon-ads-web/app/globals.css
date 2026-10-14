@@ -42,6 +42,12 @@
   color: var(--text);
 }
 
+/* Bordes y divisores sin color explícito: color de la paleta (Tailwind v4 usa
+   currentColor por defecto, que en fondo oscuro da líneas claras). */
+@layer base {
+  *, ::before, ::after, ::backdrop { border-color: var(--border); }
+}
+
 body {
   background: var(--bg);
   color: var(--text);

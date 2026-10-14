@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, Client } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import PageShell from '@/components/ui/PageShell';
+import UiModal, { Field as UiField } from '@/components/ui/Modal';
+import { Btn, BtnLink, IconBtn, ViewToggle } from '@/components/ui/buttons';
 
 const PAGE_SIZE = 10;
 
@@ -73,28 +76,20 @@ export default function ClientsPage() {
     load();
   };
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Clientes</h1>
-        <div className="flex items-center gap-2">
-          {/* #34 — view toggle */}
-          <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
-            {(['table', 'cards'] as const).map((m) => (
-              <button key={m} onClick={() => { setViewMode(m); localStorage.setItem('clients_view', m); }}
-                className={`px-2.5 py-1.5 text-sm border-r last:border-0 ${viewMode === m ? 'bg-blue-600 text-white' : ''}`}
-                style={{ borderColor: 'var(--border-md)', color: viewMode === m ? 'white' : 'var(--text-muted)' }}
-                title={m === 'table' ? 'Vista tabla' : 'Vista tarjetas'}>
-                {m === 'table' ? '≡' : '⊞'}
-              </button>
-            ))}
-          </div>
-          <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-            + Nuevo cliente
-          </button>
-        </div>
-      </div>
+  const activeClients = clients.filter((c) => c.active).length;
 
+  return (
+    <PageShell
+      title="Clientes"
+      subtitle={loading ? 'Cargando…' : `${clients.length} clientes · ${activeClients} activos`}
+      actions={(
+        <>
+          <ViewToggle value={viewMode} onChange={(v) => { setViewMode(v as 'table' | 'cards'); localStorage.setItem('clients_view', v); }}
+            options={[{ value: 'table', icon: 'list', label: 'Vista tabla' }, { value: 'cards', icon: 'grid', label: 'Vista tarjetas' }]} />
+          <Btn icon="plus" v="primary" onClick={openCreate}>Nuevo cliente</Btn>
+        </>
+      )}
+    >
       {/* #6 — search */}
       <div className="mb-4">
         <input
@@ -117,12 +112,12 @@ export default function ClientsPage() {
                 {c.color ? (
                   <div className="w-10 h-10 rounded-lg shrink-0 border border-black/10" style={{ background: c.color }} />
                 ) : (
-                  <div className="w-10 h-10 rounded-lg shrink-0 bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg font-bold" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-2)] text-lg font-bold text-[var(--accent)]">
                     {c.name.charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <Link href={`/clients/${c.id}`} className="font-semibold text-sm text-blue-600 hover:underline truncate block">{c.name}</Link>
+                  <Link href={`/clients/${c.id}`} className="block truncate text-sm font-semibold text-[var(--text)] hover:text-[var(--accent)]">{c.name}</Link>
                   <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.company ?? c.email}</p>
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${c.active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>
@@ -133,19 +128,19 @@ export default function ClientsPage() {
                 {c.phone && <p>{c.phone}</p>}
                 {c.contactName && <p>{c.contactName}{c.contactPhone ? ` · ${c.contactPhone}` : ''}</p>}
               </div>
-              <div className="flex gap-3 text-xs border-t pt-2" style={{ borderColor: 'var(--border)' }}>
-                <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline">Editar</button>
-                <Link href={`/clients/${c.id}`} className="text-violet-600 hover:underline">Perfil</Link>
-                <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline ml-auto">Desactivar</button>
+              <div className="flex items-center gap-1.5 border-t border-[var(--divider)] pt-3">
+                <Btn size="sm" icon="edit" onClick={() => openEdit(c)}>Editar</Btn>
+                <BtnLink size="sm" icon="user" v="accent" href={`/clients/${c.id}`}>Perfil</BtnLink>
+                <span className="ml-auto"><IconBtn icon="x" v="danger" label="Desactivar" onClick={() => setDeleteTarget(c)} /></span>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
+              <tr className="border-b border-[var(--divider)]">
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Nombre</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Email</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Empresa</th>
@@ -157,11 +152,11 @@ export default function ClientsPage() {
             </thead>
             <tbody>
               {paged.map((c) => (
-                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                <tr key={c.id} className="border-b border-[var(--divider)] last:border-b-0">
                   <td className="px-5 py-3 font-medium">
                     <div className="flex items-center gap-2">
                       {c.color && <span className="w-3 h-3 rounded-full shrink-0 border border-black/10" style={{ background: c.color }} />}
-                      <Link href={`/clients/${c.id}`} className="hover:underline text-blue-600">{c.name}</Link>
+                      <Link href={`/clients/${c.id}`} className="font-semibold text-[var(--text)] hover:text-[var(--accent)]">{c.name}</Link>
                     </div>
                   </td>
                   <td className="px-5 py-3 text-gray-500">{c.email}</td>
@@ -176,16 +171,20 @@ export default function ClientsPage() {
                   </td>
                   <td className="px-5 py-3" style={{ color: 'var(--text-muted)' }}>{c.phone ?? '—'}</td>
                   <td className="px-5 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-0.5 text-xs text-[var(--text-2)]">
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: c.active ? 'var(--ok)' : 'var(--muted-2)' }} />
                       {c.active ? 'Activo' : 'Inactivo'}
                     </span>
                   </td>
                   <td className="px-5 py-3 text-xs" style={{ color: 'var(--text-xs)' }}>
                     {new Date(c.updatedAt).toLocaleDateString('es-AR')}
                   </td>
-                  <td className="px-5 py-3 flex gap-3 justify-end">
-                    <button onClick={() => openEdit(c)} className="text-blue-600 hover:underline text-xs">Editar</button>
-                    <button onClick={() => setDeleteTarget(c)} className="text-red-500 hover:underline text-xs">Desactivar</button>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <IconBtn icon="edit" label="Editar" onClick={() => openEdit(c)} />
+                      <IconBtn icon="user" label="Perfil" href={`/clients/${c.id}`} />
+                      <IconBtn icon="x" v="danger" label="Desactivar" onClick={() => setDeleteTarget(c)} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -196,11 +195,11 @@ export default function ClientsPage() {
 
       {/* #8 — pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
+        <div className="mt-4 flex items-center justify-between text-sm text-[var(--muted)]">
           <span>{filtered.length} clientes · página {page} de {totalPages}</span>
-          <div className="flex gap-1">
-            <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">‹ Anterior</button>
-            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Siguiente ›</button>
+          <div className="flex gap-2">
+            <Btn size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>‹ Anterior</Btn>
+            <Btn size="sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>Siguiente ›</Btn>
           </div>
         </div>
       )}
@@ -242,42 +241,21 @@ export default function ClientsPage() {
               </Field>
             </div>
             {error && <p className="text-red-600 text-sm">{error}</p>}
-            <div className="flex gap-2 pt-4 pb-2 sticky bottom-0 bg-white">
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 rounded-lg text-sm font-medium">
-                {saving ? 'Guardando...' : 'Guardar'}
-              </button>
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-200 hover:bg-gray-50 py-2 rounded-lg text-sm">
-                Cancelar
-              </button>
+            <div className="sticky bottom-0 flex gap-2 bg-[var(--surface)] pb-1 pt-4 [&>button]:flex-1 [&>button]:justify-center">
+              <Btn v="primary" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Btn>
+              <Btn onClick={() => setShowModal(false)}>Cancelar</Btn>
             </div>
           </div>
         </Modal>
       )}
-    </div>
+    </PageShell>
   );
 }
 
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0 border-b border-gray-100">
-          <h2 className="font-semibold text-lg">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-        </div>
-        <div className="overflow-y-auto flex-1 px-6 py-4">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
+function Modal(props: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return <UiModal {...props} />;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      {children}
-    </div>
-  );
+function Field(props: { label: string; children: React.ReactNode }) {
+  return <UiField {...props} />;
 }

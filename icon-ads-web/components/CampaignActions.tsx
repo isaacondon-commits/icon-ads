@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { VARIANT } from '@/components/ui/buttons';
 
 // Barra de acciones de una campaña: las dos acciones de todos los días a la
 // vista (Pausar/Reanudar y Editar) y el resto en un menú "Más". El menú se
@@ -33,10 +34,10 @@ export function Icon({ name, className = 'w-3.5 h-3.5' }: { name: IconName; clas
 
 type Tone = 'neutral' | 'amber' | 'emerald' | 'blue';
 const TONES: Record<Tone, string> = {
-  neutral: 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700',
-  amber: 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 border-amber-200 dark:border-amber-800',
-  emerald: 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800',
-  blue: 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 border-blue-200 dark:border-blue-800',
+  neutral: VARIANT.neutral,
+  amber: VARIANT.warn,
+  emerald: VARIANT.ok,
+  blue: VARIANT.accent,
 };
 
 function PillButton({ icon, label, tone = 'neutral', onClick, disabled, title }: {
@@ -44,8 +45,7 @@ function PillButton({ icon, label, tone = 'neutral', onClick, disabled, title }:
 }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled} title={title}
-      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${TONES[tone]}`}
-      style={tone === 'neutral' ? { borderColor: 'var(--border-md)' } : undefined}>
+      className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${TONES[tone]}`}>
       <Icon name={icon} />
       {label}
     </button>
@@ -94,13 +94,12 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
   return (
     <>
       <button ref={btnRef} type="button" onClick={toggle} title="Más acciones" aria-haspopup="menu" aria-expanded={!!pos}
-        className={`inline-flex items-center justify-center h-7 w-7 rounded-md border transition-colors ${TONES.neutral} ${pos ? 'bg-gray-100 dark:bg-slate-700' : ''}`}
-        style={{ borderColor: 'var(--border-md)' }}>
+        className={`inline-flex items-center justify-center h-8 w-8 rounded-full border transition-colors ${TONES.neutral} ${pos ? 'bg-[var(--surface-hover)]' : ''}`}>
         <Icon name="more" className="w-4 h-4" />
       </button>
       {pos && (
-        <div ref={menuRef} role="menu" className="fixed z-50 w-56 py-1 rounded-lg border shadow-lg"
-          style={{ top: pos.top, right: pos.right, background: 'var(--card)', borderColor: 'var(--border-md)' }}>
+        <div ref={menuRef} role="menu" className="fixed z-50 w-60 py-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl"
+          style={{ top: pos.top, right: pos.right }}>
           {items.map((it, i) => {
             if (it.kind === 'separator') return <div key={i} className="my-1 border-t" style={{ borderColor: 'var(--border-md)' }} />;
             const content = (
@@ -121,7 +120,7 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
             }
             return (
               <button key={i} role="menuitem" type="button" onClick={() => { setPos(null); it.onClick(); }}
-                className={`${itemCls} ${it.danger ? 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30' : 'hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
+                className={`${itemCls} ${it.danger ? 'text-[var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]' : 'text-[var(--text)] hover:bg-[var(--surface-hover)]'}`}>
                 {content}
               </button>
             );
