@@ -18,6 +18,10 @@ export type TvActions = {
 };
 
 export type TvFleet = {
+  // Ex página "Tablets": sincronizar todas, exportar CSV y alta manual.
+  syncingAll: boolean; onSyncAll: () => void;
+  onExportCsv: () => void;
+  onCreate?: () => void;
   allBlocked: boolean; blockingAll: boolean; onBlockAll: () => void;
   wakingAll: boolean; onWakeAll: () => void;
   brightAuto: boolean; brightPct: number; savingBright: boolean;
@@ -74,6 +78,8 @@ const ICONS = {
   battery: 'M8 4h8v17H8zM10 2h4',
   warn: 'M12 4 2.5 20h19zM12 10v4M12 17h.01',
   arrow: 'M5 12h14M13 6l6 6-6 6',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  plus: 'M12 5v14M5 12h14',
 } as const;
 
 function Ico({ d, className = 'h-4 w-4', style }: { d: string; className?: string; style?: React.CSSProperties }) {
@@ -106,7 +112,7 @@ function Btn({ icon, v = 'neutral', onClick, disabled, title, children }: {
 }
 
 // Columnas de la lista: miniatura · tablet · conexión · repr. · playlist · equipo · acciones
-const ROW_GRID = 'grid grid-cols-[72px_minmax(200px,1.4fr)_110px_80px_minmax(130px,1fr)_170px_360px] items-center gap-x-5';
+const ROW_GRID = 'grid grid-cols-[72px_minmax(240px,1.5fr)_100px_70px_minmax(130px,1fr)_170px_360px] items-center gap-x-5';
 
 const iconBtn = 'inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors disabled:opacity-40';
 
@@ -231,6 +237,9 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
             <Btn icon="power" v="primary" onClick={fleet.onWakeAll} disabled={fleet.wakingAll}>
               {fleet.wakingAll ? 'Enviando…' : 'Prender todas'}
             </Btn>
+            <Btn icon="sync" onClick={fleet.onSyncAll} disabled={fleet.syncingAll} title="Fuerza a todas las tablets a sincronizar ahora">
+              {fleet.syncingAll ? 'Sincronizando…' : 'Sincronizar todas'}
+            </Btn>
             <Btn icon={fleet.allBlocked ? 'unlock' : 'lock'} v={fleet.allBlocked ? 'ok' : 'neutral'} onClick={fleet.onBlockAll} disabled={fleet.blockingAll}>
               {fleet.blockingAll ? 'Aplicando…' : fleet.allBlocked ? 'Desbloquear todas' : 'Bloquear todas'}
             </Btn>
@@ -255,7 +264,8 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
         ) : entries.length === 0 ? (
           <p className="mt-8 text-[var(--muted)]">No hay tablets registradas.</p>
         ) : (
-          <FleetList entries={entries} search={search} canManage={canManage} actions={actions} />
+          <FleetList entries={entries} search={search} canManage={canManage} actions={actions}
+            onExportCsv={fleet.onExportCsv} onCreate={fleet.onCreate} />
         )}
       </div>
     </div>
@@ -304,15 +314,25 @@ const TAB_TIPS: Record<string, { title: (n: number) => string; hint: string; lin
   },
 };
 
-function FleetList({ entries, search, canManage, actions }: {
+function FleetList({ entries, search, canManage, actions, onExportCsv, onCreate }: {
   entries: TabletMonitorEntry[]; search: string; canManage: boolean; actions: TvActions;
+  onExportCsv: () => void; onCreate?: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('all');
   const [page, setPage] = useState(1);
+  // Filtros que tenía la página Tablets: por playlist y por zona.
+  const [playlistF, setPlaylistF] = useState('');
+  const [zoneF, setZoneF] = useState('');
+  const NONE = '__none__';
+  const playlistOpts = [...new Map(entries.filter((e) => e.playlist).map((e) => [String(e.playlist!.id), e.playlist!.name])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  const zoneOpts = [...new Set(entries.map((e) => e.zone).filter(Boolean) as string[])].sort();
+  const byPlaylist = (e: TabletMonitorEntry) => !playlistF || (playlistF === NONE ? !e.playlist : String(e.playlist?.id) === playlistF);
+  const byZone = (e: TabletMonitorEntry) => !zoneF || (zoneF === NONE ? !e.zone : e.zone === zoneF);
 
   const q = search.trim().toLowerCase();
   const tabDef = TABS.find((t) => t.id === tab)!;
-  const filtered = entries.filter((e) => tabDef.match(e) && (!q || [e.name, e.zone, e.driverName, e.licensePlate, e.playlist?.name, e.deviceId]
+  const filtered = entries.filter((e) => tabDef.match(e) && byPlaylist(e) && byZone(e) && (!q || [e.name, e.zone, e.driverName, e.licensePlate, e.playlist?.name, e.deviceId]
     .some((v) => (v ?? '').toLowerCase().includes(q))));
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const curPage = Math.min(page, totalPages);
@@ -360,6 +380,32 @@ function FleetList({ entries, search, canManage, actions }: {
             </div>
           );
         })}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <select aria-label="Filtrar por playlist" value={playlistF} onChange={(ev) => { setPlaylistF(ev.target.value); setPage(1); }} className="h-9 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-2)] outline-none focus:border-[var(--accent)]">
+            <option value="">Todas las playlists</option>
+            {playlistOpts.map(([id, name]) => (
+              <option key={id} value={id}>{name} · {entries.filter((e) => String(e.playlist?.id) === id).length}</option>
+            ))}
+            <option value={NONE}>(sin playlist) · {entries.filter((e) => !e.playlist).length}</option>
+          </select>
+          {zoneOpts.length > 0 && (
+            <select aria-label="Filtrar por zona" value={zoneF} onChange={(ev) => { setZoneF(ev.target.value); setPage(1); }} className="h-9 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-2)] outline-none focus:border-[var(--accent)]">
+              <option value="">Todas las zonas</option>
+              {zoneOpts.map((z) => <option key={z} value={z}>{z}</option>)}
+              <option value={NONE}>(sin zona)</option>
+            </select>
+          )}
+          <button type="button" onClick={onExportCsv} title="Exportar todas las tablets a CSV" className={`${pill} h-9 ${V.neutral}`}>
+            <Ico d={ICONS.download} />
+            CSV
+          </button>
+          {canManage && onCreate && (
+            <button type="button" onClick={onCreate} title="Dar de alta una tablet a mano (normalmente se registran solas)" className={`${pill} h-9 ${V.primary}`}>
+              <Ico d={ICONS.plus} />
+              Nueva tablet
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filas compactas: una línea por tablet, columnas con un solo encabezado */}

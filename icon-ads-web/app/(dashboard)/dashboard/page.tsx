@@ -125,7 +125,7 @@ export default function DashboardPage() {
       {/* #36 — Quick actions */}
       <div className="flex flex-wrap gap-2 mb-6">
         {[
-          { href: '/tablets', label: '+ Nueva tablet', color: 'border-blue-200 text-blue-700 hover:bg-blue-50' },
+          { href: '/monitor?nueva=1', label: '+ Nueva tablet', color: 'border-blue-200 text-blue-700 hover:bg-blue-50' },
           { href: '/clients', label: '+ Nuevo cliente', color: 'border-violet-200 text-violet-700 hover:bg-violet-50' },
           { href: '/campaigns', label: '+ Nueva campaña', color: 'border-amber-200 text-amber-700 hover:bg-amber-50' },
           { href: '/ads', label: '+ Subir anuncio', color: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' },

@@ -19,7 +19,6 @@ const NAV_ICONS: Record<string, string> = {
   '/campaigns': 'M12 3l9 9-9 9-9-9z',
   '/ads': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   '/playlists': 'M4 6h16M4 12h16M4 18h16',
-  '/tablets': 'M5 5h14v14H5z',
   '/tablets/compare': 'M3 6h18v12H3zM3 12h18',
   '/apk': 'M12 4v12M7 11l5 5 5-5M5 20h14',
   '/maintenance': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1',
@@ -61,7 +60,6 @@ const linkGroups = [
   },
   {
     id: 'tablets', label: 'Tablets', links: [
-      { href: '/tablets', label: 'Tablets', icon: '⊡' },
       { href: '/tablets/compare', label: 'Comparar tablets', icon: '⊟' },
       { href: '/apk', label: 'APK Android', icon: '⬇' },
       { href: '/maintenance', label: 'Mantenimiento', icon: '⚙' },

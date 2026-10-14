@@ -15,9 +15,10 @@ export default function Breadcrumbs() {
 
   if (parts.length <= 1) return null;
 
+  // /tablets ya no es una página: el tramo 'Tablets' lleva al Monitor.
   const crumbs = parts.map((part, i) => ({
-    label: LABELS[part] ?? (isNaN(Number(part)) ? part : `#${part}`),
-    href: '/' + parts.slice(0, i + 1).join('/'),
+    label: i === 0 && part === 'tablets' ? 'Monitor' : LABELS[part] ?? (isNaN(Number(part)) ? part : `#${part}`),
+    href: i === 0 && part === 'tablets' ? '/monitor' : '/' + parts.slice(0, i + 1).join('/'),
     isLast: i === parts.length - 1,
   }));
 

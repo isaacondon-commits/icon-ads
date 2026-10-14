@@ -47,7 +47,7 @@ export default function TabletDetailPage() {
     manualStatus: 'activa', rotated180: false,
   });
 
-  const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/tablets')).finally(() => setLoading(false));
+  const load = () => api.getTablet(Number(id)).then(setTablet).catch(() => router.push('/monitor')).finally(() => setLoading(false));
   const refresh = async () => {
     setRefreshing(true);
     try {
@@ -158,7 +158,7 @@ export default function TabletDetailPage() {
     try {
       await api.deleteTablet(tablet.id);
       show('Tablet eliminada', 'info');
-      router.push('/tablets');
+      router.push('/monitor');
     } catch (e) {
       show(e instanceof Error ? e.message : 'Error al eliminar', 'error');
       setShowDelete(false);

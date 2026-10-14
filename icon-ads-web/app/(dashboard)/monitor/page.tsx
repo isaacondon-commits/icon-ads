@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { api, TabletMonitorEntry } from '@/lib/api';
+import { api, Playlist, TabletMonitorEntry } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useRole } from '@/lib/roles';
 import TvMonitor from '@/components/monitor/TvMonitor';
+import Modal, { Field } from '@/components/ui/Modal';
+import { Btn } from '@/components/ui/buttons';
 
 const POLL_INTERVAL = 120; // segundos — refresco automático del monitor
 
@@ -142,6 +144,59 @@ export default function MonitorPage() {
     } finally { setWakingId(null); }
   };
 
+  // ── Ex página "Tablets" ────────────────────────────────────────────────────
+  const [syncingAll, setSyncingAll] = useState(false);
+  const syncAll = async () => {
+    setSyncingAll(true);
+    try {
+      const r = await api.forceSyncAll();
+      show(r.message);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al forzar sync general', 'error');
+    } finally { setSyncingAll(false); }
+  };
+  const exportCsv = () => { window.open(api.getTabletsCsvUrl(), '_blank'); };
+
+  // Alta manual (las tablets normalmente se registran solas al instalar la app;
+  // esto sirve para pre-cargar una con su Device ID). ?nueva=1 la abre directo.
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ deviceId: '', name: '', zone: '', playlistId: '' });
+  const [creating, setCreating] = useState(false);
+  const [createErr, setCreateErr] = useState('');
+  const openCreate = () => {
+    setCreateForm({ deviceId: '', name: '', zone: '', playlistId: '' });
+    setCreateErr('');
+    setCreateOpen(true);
+    if (!playlists.length) api.getPlaylists().then(setPlaylists).catch(() => {});
+  };
+  const submitCreate = async () => {
+    if (!createForm.deviceId.trim() || !createForm.name.trim()) { setCreateErr('Device ID y nombre son obligatorios.'); return; }
+    setCreating(true); setCreateErr('');
+    try {
+      await api.createTablet({
+        deviceId: createForm.deviceId.trim(),
+        name: createForm.name.trim(),
+        zone: createForm.zone.trim() || undefined,
+        playlistId: createForm.playlistId ? Number(createForm.playlistId) : undefined,
+      });
+      show('Tablet creada');
+      setCreateOpen(false);
+      await fetchData();
+    } catch (e) {
+      setCreateErr(e instanceof Error ? e.message : 'Error al crear');
+    } finally { setCreating(false); }
+  };
+  useEffect(() => {
+    if (!canManage) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('nueva') !== '1') return;
+    window.history.replaceState(null, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- abre el alta una vez al llegar con ?nueva=1
+    openCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage]);
+
   const wakeAll = async () => {
     setWakingAll(true);
     try {
@@ -205,6 +260,9 @@ export default function MonitorPage() {
           remove: setDeleteTarget,
         }}
         fleet={{
+          syncingAll, onSyncAll: syncAll,
+          onExportCsv: exportCsv,
+          onCreate: canManage ? openCreate : undefined,
           allBlocked, blockingAll, onBlockAll: () => setConfirmBlockAll(!allBlocked),
           wakingAll, onWakeAll: wakeAll,
           brightAuto, brightPct, savingBright,
@@ -215,6 +273,29 @@ export default function MonitorPage() {
         }}
       />
       {dialogs}
+      {createOpen && (
+        <Modal title="Nueva tablet" onClose={() => setCreateOpen(false)}>
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted)]">
+              Las tablets se registran solas al instalar la app. Usá esto sólo para pre-cargar una tablet con su Device ID.
+            </p>
+            <Field label="Device ID"><input className="input" value={createForm.deviceId} onChange={(e) => setCreateForm({ ...createForm, deviceId: e.target.value })} placeholder="ANDROID_ID de la tablet" /></Field>
+            <Field label="Nombre"><input className="input" value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Taxi 13" /></Field>
+            <Field label="Zona (opcional)"><input className="input" value={createForm.zone} onChange={(e) => setCreateForm({ ...createForm, zone: e.target.value })} /></Field>
+            <Field label="Playlist (opcional)">
+              <select className="input" value={createForm.playlistId} onChange={(e) => setCreateForm({ ...createForm, playlistId: e.target.value })}>
+                <option value="">Sin playlist</option>
+                {playlists.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </Field>
+            {createErr && <p className="text-sm text-[var(--danger)]">{createErr}</p>}
+            <div className="flex gap-2 pt-1 [&>button]:flex-1 [&>button]:justify-center">
+              <Btn v="primary" onClick={submitCreate} disabled={creating}>{creating ? 'Creando…' : 'Crear tablet'}</Btn>
+              <Btn onClick={() => setCreateOpen(false)}>Cancelar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
