@@ -93,8 +93,6 @@ export const api = {
     request<{ ok: boolean; message: string }>(`/api/tablets/${id}/force-sync`, { method: 'POST' }),
   forceSyncAll: () =>
     request<{ ok: boolean; count: number; message: string }>('/api/tablets/force-sync-all', { method: 'POST' }),
-  regenerateTabletToken: (id: number) =>
-    request<{ ok: boolean; message: string }>(`/api/tablets/${id}/regenerate-token`, { method: 'POST' }),
   deleteTablet: (id: number) => request<void>(`/api/tablets/${id}`, { method: 'DELETE' }),
   getTabletMonitor: () => request<TabletMonitorEntry[]>('/api/tablets/monitor'),
 
@@ -269,9 +267,6 @@ export const api = {
   getSyncHistory: (tabletId: number) =>
     request<{ syncs: SyncLog[]; uptimePct7d: number }>(`/api/tablets/${tabletId}/sync-history`),
 
-  // Admin message to tablet (#4)
-  sendTabletMessage: (tabletId: number, message: string) =>
-    request<{ id: number }>(`/api/tablets/${tabletId}/message`, { method: 'POST', body: JSON.stringify({ message }) }),
 
   // Tablet groups (#5)
   getTabletGroups: () => request<TabletGroup[]>('/api/tablets/groups'),

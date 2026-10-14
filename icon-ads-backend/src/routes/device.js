@@ -701,24 +701,10 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
   }
 });
 
-// GET /api/device/messages — pending admin messages for this tablet (#4)
-router.get('/messages', requireDevice, async (req, res, next) => {
-  try {
-    const messages = await prisma.tabletMessage.findMany({
-      where: { tabletId: req.tablet.id, shown: false },
-      orderBy: { createdAt: 'asc' },
-    });
-    if (messages.length > 0) {
-      await prisma.tabletMessage.updateMany({
-        where: { id: { in: messages.map((m) => m.id) } },
-        data: { shown: true },
-      });
-    }
-    res.json(messages.map((m) => ({ id: m.id, message: m.message, createdAt: m.createdAt })));
-  } catch (err) {
-    next(err);
-  }
-});
+// GET /api/device/messages — los mensajes del panel a la tablet se quitaron.
+// Se deja respondiendo lista vacía porque las APK actuales lo consultan cada
+// 5 min (sin esto loguearían un 404 en cada consulta).
+router.get('/messages', requireDevice, (req, res) => res.json([]));
 
 // POST /api/device/screenshot — la tablet sube una captura de su pantalla
 // cuando el panel la pidió (data URI JPEG base64). Sólo se guarda la última.
