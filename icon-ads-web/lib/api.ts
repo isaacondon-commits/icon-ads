@@ -571,12 +571,23 @@ export interface CampaignDetail extends Campaign {
 }
 export interface Comment { id: number; campaignId: number; authorName: string; body: string; createdAt: string; }
 export interface Ad {
-  id: number; campaignId: number; campaign?: { id: number; name: string };
+  id: number; campaignId: number;
+  campaign?: { id: number; name: string; active?: boolean; deletedAt?: string | null; startDate?: string; endDate?: string } | null;
   name: string; type: 'video' | 'image'; fileUrl: string; thumbnailUrl?: string | null; filename: string;
+  fileSize?: number | null;
   durationS: number; active: boolean; approvalStatus: string;
   priority: number; targetUrl?: string | null; startsAt?: string | null; endsAt?: string | null;
   tags: string[];
   deletedAt?: string; createdAt: string; updatedAt: string;
+  /** Sólo en GET /api/ads: entrega real del anuncio y por qué no pasa (si aplica). */
+  delivery?: AdDelivery;
+}
+export interface AdDelivery {
+  plays: number;
+  lastPlayedAt: string | null;
+  playlists: { id: number; name: string; tablets: number }[];
+  tablets: number;
+  issue: { code: string; level: 'error' | 'info'; label: string } | null;
 }
 export interface PlaylistAd { id: number; adId: number; order: number; ad: Ad; }
 export interface Playlist {

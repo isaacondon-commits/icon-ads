@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { api, Ad, Campaign, BASE, StorageStats } from '@/lib/api';
+import { api, Ad, Campaign, StorageStats } from '@/lib/api';
+import { AdList, AdGrid, AdViewer, AdActionHandlers, hasNoCampaign, neverPlayed } from '@/components/AdViews';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import { useRole } from '@/lib/roles';
 
 const MAX_SIZE_MB = 100;
-const mediaUrl = (fileUrl: string) => fileUrl.startsWith('http') ? fileUrl : `${BASE}${fileUrl}`;
 const ALLOWED_TYPES = ['video/mp4', 'image/jpeg', 'image/png', 'image/webp'];
 const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const PAGE_SIZE = 10;
@@ -20,6 +20,9 @@ const AD_TABS = [
   { id: 'paused', label: 'Pausados', match: (a: Ad) => a.approvalStatus === 'approved' && !a.active },
   { id: 'pending', label: 'Pendientes', match: (a: Ad) => a.approvalStatus === 'pending' },
   { id: 'rejected', label: 'Rechazados', match: (a: Ad) => a.approvalStatus === 'rejected' },
+  // Pestañas de alerta: sólo aparecen (en rojo) cuando tienen algo.
+  { id: 'never', label: 'Nunca pasaron', match: (a: Ad) => neverPlayed(a), alert: true },
+  { id: 'nocampaign', label: 'Sin campaña', match: (a: Ad) => hasNoCampaign(a), alert: true },
 ] as const;
 type AdTabId = typeof AD_TABS[number]['id'];
 
@@ -87,7 +90,7 @@ export default function AdsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Ad | null>(null);
   const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
-  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
+  const [viewAd, setViewAd] = useState<Ad | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);  // #1
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
@@ -100,7 +103,10 @@ export default function AdsPage() {
   const [fileError, setFileError] = useState('');
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    try { return localStorage.getItem('ads_view') === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
+  });
+  const changeView = (m: 'grid' | 'list') => { setViewMode(m); try { localStorage.setItem('ads_view', m); } catch { /* ignore */ } };
   const [activeTab, setActiveTab] = useState<AdTabId>('active');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -108,7 +114,6 @@ export default function AdsPage() {
   const [approvingAll, setApprovingAll] = useState(false);
   const [confirmApproveAll, setConfirmApproveAll] = useState(false);
   const [pausingId, setPausingId] = useState<number | null>(null);
-  const [hoveredAdId, setHoveredAdId] = useState<number | null>(null);
   const [storage, setStorage] = useState<StorageStats | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -117,7 +122,7 @@ export default function AdsPage() {
       .then(([a, c, t]) => { setAds(a); setCampaigns(c); setAllTags(t); })
       .finally(() => setLoading(false));
 
-  const { canCreateContent } = useRole();
+  const { canCreateContent, canManage } = useRole();
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
 
@@ -423,6 +428,18 @@ export default function AdsPage() {
     load();
   };
 
+  const handlers: AdActionHandlers = {
+    canManage,
+    busyId: approvingId ?? pausingId,
+    onView: setViewAd,
+    onApprove: (ad) => handleApprove(ad.id),
+    onReject: (ad) => handleReject(ad.id),
+    onTogglePause: handleTogglePause,
+    onEdit: openEdit,
+    onDelete: confirmDelete,
+    onTag: (t) => { setTagFilter(t); setPage(1); },
+  };
+
   return (
     <div>
       {/* Header */}
@@ -438,20 +455,27 @@ export default function AdsPage() {
         </div>
       </div>
 
+      <AdAlerts ads={ads} onShow={(tab) => { setActiveTab(tab); setPage(1); }} />
+
       {/* Estados como pestañas */}
       <div className="flex flex-wrap gap-2 mb-4">
         {AD_TABS.map((t) => {
           const count = ads.filter(t.match).length;
           const isActive = activeTab === t.id;
+          const alertTab = 'alert' in t && t.alert;
+          if (alertTab && count === 0 && !isActive) return null;
+          const isAlert = alertTab && count > 0;
           return (
             <button
               key={t.id}
               onClick={() => { setActiveTab(t.id); setPage(1); }}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                isActive ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                isActive ? (isAlert ? 'bg-red-600 border-red-600 text-white' : 'bg-blue-600 border-blue-600 text-white')
+                  : isAlert ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {t.label} <span className={isActive ? 'text-blue-100' : 'text-gray-400'}>{count}</span>
+              {isAlert && '⚠ '}{t.label} <span className={isActive ? 'text-white/80' : isAlert ? 'text-red-500' : 'text-gray-400'}>{count}</span>
             </button>
           );
         })}
@@ -506,13 +530,13 @@ export default function AdsPage() {
         {/* #33 — grid/list toggle */}
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
           <button
-            onClick={() => setViewMode('grid')}
+            onClick={() => changeView('grid')}
             className={`px-3 py-2 text-sm ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
           >
             ⊞ Grilla
           </button>
           <button
-            onClick={() => setViewMode('list')}
+            onClick={() => changeView('list')}
             className={`px-3 py-2 text-sm border-l border-gray-200 ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
           >
             ≡ Lista
@@ -525,152 +549,9 @@ export default function AdsPage() {
       ) : filtered.length === 0 ? (
         <p className="text-gray-500">{search ? 'Sin resultados.' : `No hay anuncios en "${activeTabDef.label}".`}</p>
       ) : viewMode === 'grid' ? (
-        /* GRID VIEW */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {paged.map((ad) => (
-            <div key={ad.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-              {/* #11 — thumbnail, hover to preview video, click for full preview */}
-              <div
-                className="h-36 bg-gray-100 flex items-center justify-center overflow-hidden cursor-pointer relative group"
-                onClick={() => setPlayerUrl(mediaUrl(ad.fileUrl))}
-                onMouseEnter={() => setHoveredAdId(ad.id)}
-                onMouseLeave={() => setHoveredAdId(null)}
-              >
-                {ad.type === 'image' ? (
-                  <img src={mediaUrl(ad.fileUrl)} alt={ad.name} className="h-full w-full object-cover" />
-                ) : hoveredAdId === ad.id ? (
-                  <video
-                    src={mediaUrl(ad.fileUrl)}
-                    className="h-full w-full object-cover"
-                    muted autoPlay loop playsInline
-                  />
-                ) : ad.thumbnailUrl ? (
-                  <div className="relative w-full h-full">
-                    <img src={mediaUrl(ad.thumbnailUrl)} alt={ad.name} className="h-full w-full object-cover" />
-                    <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">▶</span>
-                  </div>
-                ) : (
-                  <div className="w-full h-full bg-gray-800 flex flex-col items-center justify-center gap-1 group-hover:bg-gray-700 transition-colors">
-                    <span className="text-white text-3xl">▶</span>
-                    <span className="text-gray-400 text-xs">Video</span>
-                  </div>
-                )}
-              </div>
-              <div className="p-4">
-                <p className="font-medium text-sm truncate">{ad.name}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{ad.campaign?.name} · {ad.durationS}s</p>
-                {(ad.tags ?? []).length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {ad.tags.map((t) => (
-                      <span key={t} className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 cursor-pointer" onClick={(e) => { e.stopPropagation(); setTagFilter(t); }}>{t}</span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center justify-between mt-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ad.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
-                    {ad.type}
-                  </span>
-                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                    {ad.approvalStatus === 'pending' && (
-                      <>
-                        <button onClick={() => handleApprove(ad.id)} disabled={approvingId === ad.id} className="text-xs text-emerald-600 hover:underline disabled:opacity-40">Aprobar</button>
-                        <button onClick={() => handleReject(ad.id)} disabled={approvingId === ad.id} className="text-xs text-red-500 hover:underline disabled:opacity-40">Rechazar</button>
-                      </>
-                    )}
-                    {ad.approvalStatus === 'rejected' && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Rechazado</span>}
-                    {ad.approvalStatus === 'approved' && (
-                      <button onClick={() => handleTogglePause(ad)} disabled={pausingId === ad.id} className={`text-xs hover:underline disabled:opacity-40 ${ad.active ? 'text-amber-600' : 'text-emerald-600'}`}>
-                        {pausingId === ad.id ? '...' : ad.active ? 'Pausar' : 'Reanudar'}
-                      </button>
-                    )}
-                    <button onClick={() => openEdit(ad)} className="text-xs text-blue-600 hover:underline">Editar</button>
-                    <button onClick={() => confirmDelete(ad)} className="text-xs text-red-500 hover:underline">Eliminar</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <AdGrid ads={paged} h={handlers} />
       ) : (
-        /* LIST VIEW — #11 thumbnail column */
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left px-4 py-3 font-medium text-gray-600 w-16">Preview</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Nombre</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Campaña</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Duración</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tags</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {paged.map((ad) => (
-                <tr key={ad.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-4 py-2">
-                    <div
-                      className="w-12 h-8 rounded overflow-hidden bg-gray-100 cursor-pointer relative group"
-                      onClick={() => setPlayerUrl(mediaUrl(ad.fileUrl))}
-                      onMouseEnter={() => setHoveredAdId(ad.id)}
-                      onMouseLeave={() => setHoveredAdId(null)}
-                    >
-                      {ad.type === 'image' ? (
-                        <img src={mediaUrl(ad.fileUrl)} alt="" className="w-full h-full object-cover" />
-                      ) : hoveredAdId === ad.id ? (
-                        <video
-                          src={mediaUrl(ad.fileUrl)}
-                          className="w-full h-full object-cover"
-                          muted autoPlay loop playsInline
-                        />
-                      ) : ad.thumbnailUrl ? (
-                        <img src={mediaUrl(ad.thumbnailUrl)} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-gray-800 flex items-center justify-center group-hover:bg-gray-700 transition-colors">
-                          <span className="text-white text-xs">▶</span>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-medium max-w-xs truncate">{ad.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{ad.campaign?.name ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ad.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>
-                      {ad.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">{ad.durationS}s</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(ad.tags ?? []).map((t) => (
-                        <span key={t} className="text-xs px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 cursor-pointer" onClick={() => { setTagFilter(t); }}>{t}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <div className="flex items-center gap-2 justify-end">
-                      {ad.approvalStatus === 'pending' && (
-                        <>
-                          <button onClick={() => handleApprove(ad.id)} disabled={approvingId === ad.id} className="text-xs text-emerald-600 hover:underline disabled:opacity-40">Aprobar</button>
-                          <button onClick={() => handleReject(ad.id)} disabled={approvingId === ad.id} className="text-xs text-red-500 hover:underline disabled:opacity-40">Rechazar</button>
-                        </>
-                      )}
-                      {ad.approvalStatus === 'rejected' && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Rechazado</span>}
-                      {ad.approvalStatus === 'approved' && (
-                        <button onClick={() => handleTogglePause(ad)} disabled={pausingId === ad.id} className={`text-xs hover:underline disabled:opacity-40 ${ad.active ? 'text-amber-600' : 'text-emerald-600'}`}>
-                          {pausingId === ad.id ? '...' : ad.active ? 'Pausar' : 'Reanudar'}
-                        </button>
-                      )}
-                      <button onClick={() => openEdit(ad)} className="text-xs text-blue-600 hover:underline">Editar</button>
-                      <button onClick={() => confirmDelete(ad)} className="text-xs text-red-500 hover:underline">Eliminar</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <AdList ads={paged} h={handlers} />
       )}
 
       {/* #8 — pagination */}
@@ -684,22 +565,7 @@ export default function AdsPage() {
         </div>
       )}
 
-      {/* Video player modal */}
-      {playerUrl && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setPlayerUrl(null)}>
-          <div className="relative max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setPlayerUrl(null)}
-              className="absolute -top-8 right-0 text-white text-2xl leading-none hover:text-gray-300"
-            >×</button>
-            {/\.(jpg|jpeg|png|webp)(\?|$)/i.test(playerUrl) ? (
-              <img src={playerUrl} alt="preview" className="w-full rounded-lg" />
-            ) : (
-              <video src={playerUrl} controls autoPlay className="w-full rounded-lg" />
-            )}
-          </div>
-        </div>
-      )}
+      {viewAd && <AdViewer ad={viewAd} onClose={() => setViewAd(null)} />}
 
       {/* Aprobar todo — confirmación */}
       {confirmApproveAll && (
@@ -944,6 +810,59 @@ export default function AdsPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Carteles arriba de las pestañas: anuncios sin campaña y anuncios aprobados
+// que nunca se reprodujeron (agrupados por motivo).
+function AdAlerts({ ads, onShow }: { ads: Ad[]; onShow: (tab: AdTabId) => void }) {
+  const noCampaign = ads.filter(hasNoCampaign);
+  const never = ads.filter(neverPlayed);
+  if (!noCampaign.length && !never.length) return null;
+  const reasons = new Map<string, number>();
+  for (const a of never) {
+    const label = a.delivery?.issue?.label ?? 'Está en condiciones de pasar pero todavía no se reprodujo';
+    reasons.set(label, (reasons.get(label) ?? 0) + 1);
+  }
+  const box = 'rounded-xl border p-4 flex flex-wrap items-start justify-between gap-3';
+  const btn = 'h-8 px-3 rounded-md text-sm font-medium border shrink-0';
+  return (
+    <div className="space-y-3 mb-5">
+      {noCampaign.length > 0 && (
+        <div role="alert" className={`${box} border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40`}>
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">!</span>
+            <div className="min-w-0">
+              <p className="font-semibold text-red-800 dark:text-red-200">
+                {noCampaign.length === 1 ? '1 anuncio no tiene campaña' : `${noCampaign.length} anuncios no tienen campaña`}
+              </p>
+              <p className="text-sm text-red-700/80 dark:text-red-300/80">
+                Su campaña fue archivada o eliminada, así que no se reproducen. Asignales una campaña (Editar) o eliminalos.
+              </p>
+            </div>
+          </div>
+          <button onClick={() => onShow('nocampaign')} className={`${btn} border-red-300 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40`}>Ver cuáles</button>
+        </div>
+      )}
+      {never.length > 0 && (
+        <div role="status" className={`${box} border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30`}>
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm font-bold text-white">⚠</span>
+            <div className="min-w-0">
+              <p className="font-semibold text-amber-800 dark:text-amber-200">
+                {never.length === 1 ? '1 anuncio aprobado nunca se reprodujo' : `${never.length} anuncios aprobados nunca se reprodujeron`}
+              </p>
+              <ul className="mt-1 text-sm text-amber-800/90 dark:text-amber-300/80">
+                {[...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([label, n]) => (
+                  <li key={label}>· {label}: <span className="font-semibold">{n}</span></li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <button onClick={() => onShow('never')} className={`${btn} border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/40`}>Ver cuáles</button>
         </div>
       )}
     </div>

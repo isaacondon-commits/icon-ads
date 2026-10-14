@@ -127,6 +127,8 @@ const MIGRATIONS = [
   { name: 'fleet_frozen.default', sql: `INSERT INTO system_config (key, value) VALUES ('fleet_frozen', '1') ON CONFLICT (key) DO NOTHING` },
   // v29 — peso del archivo de cada anuncio (bytes), para el peso por campaña.
   { name: 'ads.file_size', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS file_size INT` },
+  // v30 — reproducciones por anuncio en la lista de Anuncios (GROUP BY ad_id).
+  { name: 'metrics.ad_idx', sql: `CREATE INDEX IF NOT EXISTS metrics_ad_id_idx ON metrics(ad_id, played_at)` },
 ];
 
 // Garantiza el índice único metrics_natural_key (tablet_id, ad_id, played_at)

@@ -280,6 +280,7 @@ model Metric {
   @@index([tabletId])
   @@index([campaignId])
   @@index([playedAt])
+  @@index([adId, playedAt], map: "metrics_ad_id_idx")
   // Clave natural: un reenvío del mismo lote no duplica filas. Declarado acá
   // para que un `prisma db push` nunca lo borre.
   @@unique([tabletId, adId, playedAt], map: "metrics_natural_key")

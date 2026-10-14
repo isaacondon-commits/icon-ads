@@ -6,6 +6,7 @@ const multer = require('multer');
 const sharp = require('sharp');
 const prisma = require('../lib/prisma');
 const { remoteFileSize } = require('../lib/adFileSize');
+const { adDeliveryInfo } = require('../lib/adDelivery');
 const r2 = require('../lib/r2');
 const supabaseStorage = require('../lib/supabase-storage');
 const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
@@ -106,10 +107,11 @@ router.get('/', async (req, res, next) => {
     const tag = req.query.tag ? String(req.query.tag) : undefined;
     const ads = await prisma.ad.findMany({
       where: { deletedAt: null, ...(tag ? { tags: { has: tag } } : {}) },
-      include: { campaign: { select: { id: true, name: true } } },
+      include: { campaign: { select: { id: true, name: true, active: true, deletedAt: true, startDate: true, endDate: true } } },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(ads);
+    const delivery = await adDeliveryInfo(ads);
+    res.json(ads.map((a) => ({ ...a, delivery: delivery[a.id] })));
   } catch (err) {
     next(err);
   }
