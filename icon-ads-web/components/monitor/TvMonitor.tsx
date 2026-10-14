@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { BandwidthStatus, TabletMonitorEntry } from '@/lib/api';
 import ScreenshotViewer from '@/components/ScreenshotViewer';
 
-// Monitor estilo Smart TV: arriba, el video de ICON de fondo con el tucán
-// flotando y la tablet destacada (como el "hero" de una TV) con todas sus
-// acciones; abajo, la lista de la flota de la vista clásica (pestañas con
-// alertas, filas con todas las acciones), todo en la misma paleta oscura
-// (azul noche + cian del logo), independiente del tema claro/oscuro del panel.
+// Monitor estilo Smart TV: el video de ICON de fondo con el tucán flotando,
+// los controles de la flota y la lista de tablets (pestañas con alertas, una
+// fila por tablet con todas sus acciones), en una paleta oscura propia (azul
+// noche + cian del logo), independiente del tema claro/oscuro del panel.
 
 export type TvActions = {
   wake: (id: number) => void; wakingId: number | null;
@@ -112,11 +111,9 @@ function tabletNumber(name: string) {
 
 export default function TvMonitor({ entries, loading, error, countdown, onRefresh, canManage, actions, fleet }: Props) {
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   // null en el primer render: el reloj sólo existe en el navegador (evita
   // diferencias de hidratación entre servidor y cliente).
   const [clock, setClock] = useState<Date | null>(null);
-  const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const tick = () => setClock(new Date());
@@ -125,20 +122,12 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
     return () => clearInterval(t);
   }, []);
 
-  // Destacada por defecto: la primera que requiere atención; si no, la primera.
-  const fallback = entries.find((e) => ['bad', 'blocked'].includes(stateOf(e).tone)) ?? entries[0] ?? null;
-  const selected = entries.find((e) => e.id === selectedId) ?? fallback;
-  const select = (e: TabletMonitorEntry) => {
-    setSelectedId(e.id);
-    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   const online = entries.filter((e) => e.status === 'online').length;
   const totalPlays = entries.reduce((n, e) => n + e.todayPlays, 0);
   const bw = fleet.bw;
 
   return (
-    <div ref={topRef} className="tv-root relative isolate -m-4 sm:-m-6 lg:-m-8 min-h-screen overflow-hidden bg-[#030812] text-white">
+    <div className="tv-root relative isolate -m-4 sm:-m-6 lg:-m-8 min-h-screen overflow-hidden bg-[#030812] text-white">
       <style>{`
         @keyframes tv-float { 0%,100% { transform: translateY(0) rotate(-2deg) } 50% { transform: translateY(-16px) rotate(1.5deg) } }
         @keyframes tv-glow { 0%,100% { opacity: .55 } 50% { opacity: .95 } }
@@ -157,11 +146,6 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
       </div>
       <div className="pointer-events-none absolute -right-40 -top-40 -z-10 h-[520px] w-[520px] rounded-full bg-sky-500/20 blur-3xl tv-anim"
         style={{ animation: 'tv-glow 7s ease-in-out infinite' }} />
-
-      {/* Tucán flotando */}
-      <img src="/monitor/toucan.png" alt="" aria-hidden="true"
-        className="tv-anim pointer-events-none absolute right-[4%] top-44 -z-10 hidden w-[min(34vw,440px)] opacity-90 drop-shadow-[0_0_40px_rgba(56,189,248,0.45)] md:block"
-        style={{ animation: 'tv-float 7s ease-in-out infinite' }} />
 
       <div className="relative px-6 pb-10 pt-5 sm:px-10">
         {/* Barra superior */}
@@ -205,9 +189,10 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
           </div>
         </header>
 
-        {/* Controles de flota (arriba, antes de la tablet destacada) */}
+        {/* Controles de flota + tucán */}
+        <div className="mt-6 flex items-center gap-6">
         {canManage && (
-          <section className="mt-6 max-w-5xl flex flex-wrap items-center gap-3 rounded-3xl bg-white/[0.05] p-4 ring-1 ring-white/10 backdrop-blur-xl">
+          <section className="flex flex-1 flex-wrap items-center gap-3 rounded-3xl bg-white/[0.05] p-4 ring-1 ring-white/10 backdrop-blur-xl">
             <span className="mr-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-200/70">Flota</span>
             <div className="flex min-w-[260px] flex-1 items-center gap-3">
               <Ico d={ICONS.sun} className="h-4 w-4 text-amber-200" />
@@ -241,23 +226,13 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
             )}
           </section>
         )}
-
-        {/* Tablet destacada */}
-        <section className="mt-9 min-h-[300px] max-w-4xl">
-          {loading ? (
-            <p className="text-white/60">Cargando flota…</p>
-          ) : error ? (
-            <p className="text-rose-300">{error}</p>
-          ) : !selected ? (
-            <p className="text-white/60">No hay tablets registradas.</p>
-          ) : (
-            <Hero e={selected} canManage={canManage} actions={actions} />
-          )}
-        </section>
+          <img src="/monitor/toucan.png" alt="" aria-hidden="true"
+            className="tv-anim pointer-events-none hidden w-32 shrink-0 drop-shadow-[0_0_30px_rgba(56,189,248,0.45)] md:block lg:w-40"
+            style={{ animation: 'tv-float 7s ease-in-out infinite' }} />
+        </div>
 
         {!loading && !error && entries.length > 0 && (
-          <FleetList entries={entries} search={search} selectedId={selected?.id ?? null} onSelect={select}
-            canManage={canManage} actions={actions} />
+          <FleetList entries={entries} search={search} canManage={canManage} actions={actions} />
         )}
 
       </div>
@@ -266,70 +241,6 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
 }
 
 
-function Hero({ e, canManage, actions }: { e: TabletMonitorEntry; canManage: boolean; actions: TvActions }) {
-  const st = stateOf(e);
-  const isBlocked = e.health === 'blocked';
-  const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
-  const stats = [
-    { k: 'Última conexión', v: relativeTime(e.lastSync) },
-    { k: 'Reproducciones hoy', v: e.todayPlays.toLocaleString('es-AR') },
-    { k: 'Playlist', v: e.playlist?.name ?? 'Sin asignar', bad: !e.playlist },
-    { k: 'Batería', v: e.batteryLevel != null ? `${e.batteryLevel}%` : '—', bad: e.batteryLevel != null && e.batteryLevel <= 20 },
-    { k: 'Brillo', v: e.brightness != null ? `${e.brightness}%${e.brightnessAuto ? ' auto' : ''}` : '—' },
-    { k: 'App', v: e.appVersion ? `v${e.appVersion}` : '—' },
-  ];
-  return (
-    <div key={e.id} className="animate-[fadeIn_.35s_ease-out]">
-      <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }`}</style>
-      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-sky-300/80">Tablet seleccionada</p>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">{e.name}</h1>
-        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium ring-1 ${TONE[st.tone].pill}`}>
-          <span className={`h-2 w-2 rounded-full ${TONE[st.tone].dot}`} />
-          {st.label}
-        </span>
-      </div>
-      <p className="mt-2 text-sm text-white/55">{who || 'Sin zona asignada'}{e.serial ? ` · SN ${e.serial}` : ''}</p>
-
-      <dl className="mt-6 grid max-w-2xl grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
-        {stats.map((s) => (
-          <div key={s.k}>
-            <dt className="text-[11px] uppercase tracking-wider text-white/45">{s.k}</dt>
-            <dd className={`truncate text-base font-semibold ${s.bad ? 'text-rose-300' : 'text-white/95'}`}>{s.v}</dd>
-          </div>
-        ))}
-      </dl>
-
-      <div className="mt-7 flex flex-wrap items-center gap-2.5">
-        <ScreenshotViewer tabletId={e.id} tabletName={e.name} variant="tv" />
-        {canManage && (
-          <>
-            <TvButton icon="power" onClick={() => actions.wake(e.id)} disabled={actions.wakingId === e.id}
-              title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)">
-              {actions.wakingId === e.id ? 'Enviando…' : 'Prender pantalla'}
-            </TvButton>
-            <TvButton icon="sync" onClick={() => actions.forceSync(e.id)} disabled={actions.syncingId === e.id}
-              title="Fuerza a la tablet a sincronizar ahora">
-              {actions.syncingId === e.id ? 'Sincronizando…' : 'Forzar sync'}
-            </TvButton>
-            <TvButton icon={isBlocked ? 'unlock' : 'lock'} tone={isBlocked ? 'success' : 'glass'}
-              onClick={() => actions.toggleBlock(e)} disabled={actions.blockingId === e.id}
-              title={isBlocked ? 'Vuelve a mostrar publicidad' : 'Frena la publicidad sin desarmar el kiosco'}>
-              {actions.blockingId === e.id ? 'Aplicando…' : isBlocked ? 'Desbloquear' : 'Bloquear'}
-            </TvButton>
-            <Link href={`/tablets/${e.id}?editar=1`} className={glassBtn}>
-              <Ico d={ICONS.edit} />
-              Editar
-            </Link>
-            <TvButton icon="trash" tone="danger" onClick={() => actions.remove(e)} title="Elimina la tablet del sistema">
-              Eliminar
-            </TvButton>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── Lista de la flota (la idea de la vista clásica, en estilo TV) ───────────
 
@@ -392,9 +303,8 @@ function SmButton({ icon, tone = 'glass', onClick, disabled, title, children }: 
   );
 }
 
-function FleetList({ entries, search, selectedId, onSelect, canManage, actions }: {
-  entries: TabletMonitorEntry[]; search: string; selectedId: number | null;
-  onSelect: (e: TabletMonitorEntry) => void; canManage: boolean; actions: TvActions;
+function FleetList({ entries, search, canManage, actions }: {
+  entries: TabletMonitorEntry[]; search: string; canManage: boolean; actions: TvActions;
 }) {
   const [tab, setTab] = useState<TabId>('all');
   const [page, setPage] = useState(1);
@@ -408,7 +318,7 @@ function FleetList({ entries, search, selectedId, onSelect, canManage, actions }
   const paged = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
   return (
-    <section className="mt-10 rounded-3xl bg-[#071225]/70 ring-1 ring-white/10 backdrop-blur-xl">
+    <section className="mt-6 rounded-3xl bg-[#071225]/70 ring-1 ring-white/10 backdrop-blur-xl">
       {/* Pestañas */}
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-4">
         <h2 className="mr-2 text-lg font-semibold">Flota</h2>
@@ -457,15 +367,13 @@ function FleetList({ entries, search, selectedId, onSelect, canManage, actions }
         <ul className="divide-y divide-white/[0.06]">
           {paged.map((e) => {
             const st = stateOf(e);
-            const isSel = e.id === selectedId;
             const isBlocked = e.health === 'blocked';
             const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
             return (
-              <li key={e.id} onClick={() => onSelect(e)}
-                className={`cursor-pointer px-5 py-4 transition ${isSel ? 'bg-sky-400/[0.08] shadow-[inset_3px_0_0_rgba(125,211,252,0.9)]' : 'hover:bg-white/[0.03]'}`}>
+              <li key={e.id} className="px-5 py-4 transition hover:bg-white/[0.03]">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                   {/* Miniatura tipo TV */}
-                  <div className={`relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br ring-1 ${TONE[st.tone].card} ${isSel ? 'ring-sky-300/70' : 'ring-white/10'}`}>
+                  <div className={`relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br ring-1 ${TONE[st.tone].card} ring-white/10`}>
                     <span className="absolute -bottom-2 right-1 text-5xl font-black leading-none text-white/[0.12]">{tabletNumber(e.name)}</span>
                     <span className={`absolute left-2 top-2 h-2 w-2 rounded-full ${TONE[st.tone].dot}`} />
                   </div>
@@ -504,7 +412,7 @@ function FleetList({ entries, search, selectedId, onSelect, canManage, actions }
                 </div>
 
                 {/* Acciones de la fila, todas juntas */}
-                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[8.5rem]" onClick={(ev) => ev.stopPropagation()}>
+                <div className="mt-3 flex flex-wrap items-center gap-2 sm:pl-[8.5rem]">
                   <ScreenshotViewer tabletId={e.id} tabletName={e.name} variant="tvsm" />
                   {canManage && (
                     <>
