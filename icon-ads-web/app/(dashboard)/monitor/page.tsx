@@ -10,6 +10,7 @@ import FilterBar from '@/components/FilterBar';
 import { applyFilter, type Filter } from '@/lib/filterEngine';
 import { monitorFilterConfig } from '@/lib/monitorFilters';
 import { useRole } from '@/lib/roles';
+import TvMonitor from '@/components/monitor/TvMonitor';
 
 const LS_MONITOR_FILTERS = 'monitor_filters_v1';
 
@@ -61,6 +62,10 @@ export default function MonitorPage() {
   const [activeTab, setActiveTab] = useState<MonitorTabId>('all');
   const [page, setPage] = useState(1);
   const { canManage } = useRole();
+  const [view, setView] = useState<'tv' | 'classic'>(() => {
+    try { return localStorage.getItem('monitor_view') === 'classic' ? 'classic' : 'tv'; } catch { return 'tv'; }
+  });
+  const changeView = (v: 'tv' | 'classic') => { setView(v); try { localStorage.setItem('monitor_view', v); } catch { /* ignore */ } };
   const { show } = useToast();
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -146,15 +151,42 @@ export default function MonitorPage() {
   const totalPlays = entries.reduce((s, e) => s + e.todayPlays, 0);
   const allBlocked = entries.length > 0 && entries.every((e) => e.health === 'blocked');
 
-  const unblock = async (id: number) => {
-    setUnblockingId(id);
+  // Bloquear / desbloquear una tablet desde su fila.
+  const toggleBlock = async (t: TabletMonitorEntry) => {
+    const blocking = t.health !== 'blocked';
+    setUnblockingId(t.id);
     try {
-      const r = await api.blockTablet(id, false);
+      const r = await api.blockTablet(t.id, blocking);
       show(r.message);
       await fetchData();
     } catch (e) {
-      show(e instanceof Error ? e.message : 'Error al desbloquear', 'error');
+      show(e instanceof Error ? e.message : 'Error al cambiar el estado', 'error');
     } finally { setUnblockingId(null); }
+  };
+
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  const forceSync = async (id: number) => {
+    setSyncingId(id);
+    try {
+      const r = await api.forceSync(id);
+      show(r.message);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al forzar sync', 'error');
+    } finally { setSyncingId(null); }
+  };
+
+  const [deleteTarget, setDeleteTarget] = useState<TabletMonitorEntry | null>(null);
+  const deleteTablet = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.deleteTablet(deleteTarget.id);
+      show(`"${deleteTarget.name}" eliminada`, 'info');
+      setDeleteTarget(null);
+      await fetchData();
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Error al eliminar', 'error');
+      setDeleteTarget(null);
+    }
   };
 
   const wake = async (id: number) => {
@@ -189,6 +221,63 @@ export default function MonitorPage() {
     } finally { setBlockingAll(false); }
   };
 
+  const dialogs = (
+    <>
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Eliminar tablet"
+          message={`¿Eliminar "${deleteTarget.name}" del sistema? Se borran también sus métricas e historial. Si la tablet sigue prendida, se vuelve a registrar sola como tablet nueva.`}
+          confirmLabel="Eliminar"
+          onConfirm={deleteTablet}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {confirmBlockAll !== null && (
+        <ConfirmDialog
+          title={confirmBlockAll ? 'Bloquear toda la flota' : 'Desbloquear toda la flota'}
+          message={confirmBlockAll
+            ? `Las ${entries.length} tablets dejan de mostrar publicidad (quedan en negro, el kiosco sigue armado). Se reanuda cuando desbloqueás.`
+            : `Las ${entries.length} tablets vuelven a mostrar publicidad.`}
+          confirmLabel={confirmBlockAll ? 'Bloquear todas' : 'Desbloquear todas'}
+          onConfirm={() => blockAll(confirmBlockAll)}
+          onCancel={() => setConfirmBlockAll(null)}
+        />
+      )}
+    </>
+  );
+
+  if (view === 'tv') {
+    return (
+      <>
+        <TvMonitor
+          entries={entries}
+          loading={loading}
+          error={error}
+          countdown={countdown}
+          onRefresh={() => { fetchData(); resetCountdown(); }}
+          canManage={canManage}
+          onClassic={() => changeView('classic')}
+          actions={{
+            wake, wakingId,
+            forceSync, syncingId,
+            toggleBlock, blockingId: unblockingId,
+            remove: setDeleteTarget,
+          }}
+          fleet={{
+            allBlocked, blockingAll, onBlockAll: () => setConfirmBlockAll(!allBlocked),
+            wakingAll, onWakeAll: wakeAll,
+            brightAuto, brightPct, savingBright,
+            setBrightPct: (n) => { setBrightPct(n); setBrightAuto(false); },
+            commitBrightness,
+            bw, togglingFreeze, onFreezeToggle: () => { if (bw) setFreeze(!bw.frozen); },
+            resettingCircuit, onResetCircuit: doResetCircuit,
+          }}
+        />
+        {dialogs}
+      </>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -203,6 +292,10 @@ export default function MonitorPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => changeView('tv')}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500">
+            ✦ Vista TV
+          </button>
           {canManage && (<>
           <button onClick={() => setConfirmBlockAll(!allBlocked)} disabled={blockingAll}
             title={allBlocked ? 'Todas vuelven a mostrar publicidad' : 'Todas dejan de mostrar publicidad (el kiosco sigue armado)'}
@@ -380,7 +473,9 @@ export default function MonitorPage() {
           {paged.map((t) => (
             <TabletRow key={t.id} entry={t} canManage={canManage}
               onWake={() => wake(t.id)} waking={wakingId === t.id}
-              onUnblock={() => unblock(t.id)} unblocking={unblockingId === t.id} />
+              onSync={() => forceSync(t.id)} syncing={syncingId === t.id}
+              onToggleBlock={() => toggleBlock(t)} blocking={unblockingId === t.id}
+              onDelete={() => setDeleteTarget(t)} />
           ))}
         </ul>
       )}
@@ -395,17 +490,7 @@ export default function MonitorPage() {
         </div>
       )}
 
-      {confirmBlockAll !== null && (
-        <ConfirmDialog
-          title={confirmBlockAll ? 'Bloquear toda la flota' : 'Desbloquear toda la flota'}
-          message={confirmBlockAll
-            ? `Las ${entries.length} tablets dejan de mostrar publicidad (quedan en negro, el kiosco sigue armado). Se reanuda cuando desbloqueás.`
-            : `Las ${entries.length} tablets vuelven a mostrar publicidad.`}
-          confirmLabel={confirmBlockAll ? 'Bloquear todas' : 'Desbloquear todas'}
-          onConfirm={() => blockAll(confirmBlockAll)}
-          onCancel={() => setConfirmBlockAll(null)}
-        />
-      )}
+      {dialogs}
     </div>
   );
 }
@@ -428,90 +513,133 @@ function offlineLabel(min: number) {
   return `${Math.floor(min / 1440)} d`;
 }
 
-function TabletRow({ entry: e, canManage, onWake, waking, onUnblock, unblocking }: {
+const ROW_ICONS = {
+  power: 'M12 3v8M6.3 7.3a8 8 0 1 0 11.4 0',
+  sync: 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4',
+  lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+  unlock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.8-1.2',
+  edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+} as const;
+
+const ROW_TONES = {
+  neutral: 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700',
+  blue: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50',
+  amber: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50',
+  emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
+  red: 'border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40',
+} as const;
+
+const rowBtnCls = (tone: keyof typeof ROW_TONES) =>
+  `inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors disabled:opacity-40 ${ROW_TONES[tone]}`;
+
+function RowIcon({ name }: { name: keyof typeof ROW_ICONS }) {
+  return (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={ROW_ICONS[name]} />
+    </svg>
+  );
+}
+
+function RowButton({ icon, tone = 'neutral', onClick, disabled, title, children }: {
+  icon: keyof typeof ROW_ICONS; tone?: keyof typeof ROW_TONES;
+  onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode;
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={title} className={rowBtnCls(tone)}
+      style={tone === 'neutral' ? { borderColor: 'var(--border-md)' } : undefined}>
+      <RowIcon name={icon} />
+      {children}
+    </button>
+  );
+}
+
+function TabletRow({ entry: e, canManage, onWake, waking, onSync, syncing, onToggleBlock, blocking, onDelete }: {
   entry: TabletMonitorEntry; canManage: boolean;
-  onWake: () => void; waking: boolean; onUnblock: () => void; unblocking: boolean;
+  onWake: () => void; waking: boolean; onSync: () => void; syncing: boolean;
+  onToggleBlock: () => void; blocking: boolean; onDelete: () => void;
 }) {
   const st = tabletState(e);
   const isOnline = e.status === 'online';
-  const iconBtn = 'inline-flex items-center justify-center h-7 w-7 rounded-md border transition-colors disabled:opacity-40';
+  const isBlocked = e.health === 'blocked';
   const who = [e.zone, e.driverName, e.licensePlate].filter(Boolean).join(' · ');
   return (
-    <li className={`flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 border-l-4 ${st.warn ? (e.health === 'blocked' ? 'border-l-amber-400' : 'border-l-red-400') : 'border-l-transparent'}`}
+    <li className={`px-4 py-3 border-l-4 ${st.warn ? (isBlocked ? 'border-l-amber-400' : 'border-l-red-400') : 'border-l-transparent'}`}
       style={{ borderTopColor: 'var(--border)' }}>
-      {/* Nombre + estado */}
-      <div className="min-w-0 flex-1 basis-56">
-        <div className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${st.dot}`} />
-          <Link href={`/tablets/${e.id}`} className="truncate font-medium hover:underline">{e.name}</Link>
-          <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
+      {/* Info */}
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-2">
+        <div className="min-w-0 flex-1 basis-60">
+          <div className="flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${st.dot}`} />
+            <Link href={`/tablets/${e.id}`} className="truncate font-semibold hover:underline">{e.name}</Link>
+            <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>{st.label}</span>
+          </div>
+          <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--text-xs)', paddingLeft: '1.125rem' }}>
+            {who || 'Sin zona'}
+          </p>
         </div>
-        <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--text-xs)', paddingLeft: '1.125rem' }}>
-          {who || 'Sin zona'}
-        </p>
-      </div>
 
-      {/* Conexión + reproducciones */}
-      <div className="w-40 shrink-0 text-xs">
-        <p>
-          <span style={{ color: 'var(--text-muted)' }}>Conexión </span>
-          <span className="font-semibold" style={isOnline ? undefined : { color: 'var(--text-muted)' }}>{relativeTime(e.lastSync)}</span>
-        </p>
-        <p className="mt-0.5">
-          <span className={`font-semibold tabular-nums ${e.todayPlays > 0 ? 'text-blue-600 dark:text-blue-400' : ''}`}
-            style={e.todayPlays === 0 ? { color: 'var(--text-muted)' } : undefined}>{e.todayPlays.toLocaleString('es-AR')}</span>
-          <span style={{ color: 'var(--text-muted)' }}> reproducciones hoy</span>
-        </p>
-      </div>
+        <div className="w-44 shrink-0 text-xs">
+          <p style={{ color: 'var(--text-xs)' }}>Última conexión</p>
+          <p className="font-semibold" style={isOnline ? undefined : { color: 'var(--text-muted)' }}>{relativeTime(e.lastSync)}</p>
+        </div>
 
-      {/* Playlist */}
-      <div className="w-40 shrink-0 min-w-0 text-xs">
-        <p style={{ color: 'var(--text-xs)' }}>Playlist</p>
-        <p className={`truncate font-medium ${e.playlist ? '' : 'text-red-600 dark:text-red-400'}`}>{e.playlist?.name ?? 'Sin asignar'}</p>
-      </div>
+        <div className="w-36 shrink-0 text-xs">
+          <p style={{ color: 'var(--text-xs)' }}>Reproducciones hoy</p>
+          <p className={`font-semibold tabular-nums ${e.todayPlays > 0 ? 'text-blue-600 dark:text-blue-400' : ''}`}
+            style={e.todayPlays === 0 ? { color: 'var(--text-muted)' } : undefined}>{e.todayPlays.toLocaleString('es-AR')}</p>
+        </div>
 
-      {/* Hardware */}
-      <div className="flex w-48 shrink-0 flex-wrap gap-x-2.5 gap-y-0.5 text-[11px]" style={{ color: 'var(--text-xs)' }}>
-        {e.batteryLevel != null && (
-          <span className={e.batteryLevel <= 20 ? 'font-semibold text-red-600 dark:text-red-400' : ''}>🔋 {e.batteryLevel}%</span>
-        )}
-        {e.brightness != null && (
-          <span className={e.brightnessAuto === false ? 'font-medium text-amber-600' : ''}
-            title={e.brightnessAuto === false ? 'Brillo en manual' : 'Brillo automático'}>
-            ☀ {e.brightness}%{e.lux != null ? ` · ${Math.round(e.lux)} lx` : ''}
-          </span>
-        )}
-        {e.lightSensor === false && <span className="font-medium text-red-500" title="Sin sensor de luz">sin sensor</span>}
-        {e.appVersion && <span className="font-mono">v{e.appVersion}</span>}
-        {e.serial && <span className="font-mono" title="Nº de serie del hardware">SN {e.serial}</span>}
-      </div>
+        <div className="w-40 shrink-0 min-w-0 text-xs">
+          <p style={{ color: 'var(--text-xs)' }}>Playlist</p>
+          <p className={`truncate font-semibold ${e.playlist ? '' : 'text-red-600 dark:text-red-400'}`}>{e.playlist?.name ?? 'Sin asignar'}</p>
+        </div>
 
-      {/* Acciones */}
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <ScreenshotViewer tabletId={e.id} tabletName={e.name} pill />
-        {canManage && e.health === 'blocked' && (
-          <button type="button" onClick={onUnblock} disabled={unblocking}
-            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300 disabled:opacity-40">
-            {unblocking ? 'Desbloqueando…' : 'Desbloquear'}
-          </button>
-        )}
-        {canManage && (
-          <button type="button" onClick={onWake} disabled={waking}
-            title="Prender: enciende la pantalla aunque el auto esté sin contacto (necesita señal)"
-            className={`${iconBtn} text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30`} style={{ borderColor: 'var(--border-md)' }}>
-            {waking ? '…' : (
-              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
-                <path d="M12 3v8M6.3 7.3a8 8 0 1 0 11.4 0" />
-              </svg>
+        <div className="w-52 shrink-0 text-xs">
+          <p style={{ color: 'var(--text-xs)' }}>Equipo</p>
+          <p className="flex flex-wrap gap-x-2.5" style={{ color: 'var(--text-muted)' }}>
+            {e.batteryLevel != null && (
+              <span className={e.batteryLevel <= 20 ? 'font-semibold text-red-600 dark:text-red-400' : ''}>🔋 {e.batteryLevel}%</span>
             )}
-          </button>
+            {e.brightness != null && (
+              <span className={e.brightnessAuto === false ? 'font-medium text-amber-600' : ''}
+                title={e.brightnessAuto === false ? 'Brillo en manual' : 'Brillo automático'}>☀ {e.brightness}%</span>
+            )}
+            {e.lightSensor === false && <span className="font-medium text-red-500" title="Sin sensor de luz">sin sensor</span>}
+            {e.appVersion && <span className="font-mono">v{e.appVersion}</span>}
+            {e.batteryLevel == null && e.brightness == null && !e.appVersion && <span>—</span>}
+          </p>
+        </div>
+      </div>
+
+      {/* Acciones: todas juntas, en una sola barra */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5" style={{ paddingLeft: '1.125rem' }}>
+        <ScreenshotViewer tabletId={e.id} tabletName={e.name} pill />
+        {canManage && (
+          <>
+            <RowButton icon="power" tone="blue" onClick={onWake} disabled={waking}
+              title="Enciende la pantalla aunque el auto esté sin contacto (necesita señal)">
+              {waking ? 'Enviando…' : 'Prender pantalla'}
+            </RowButton>
+            <RowButton icon="sync" onClick={onSync} disabled={syncing} title="Fuerza a la tablet a sincronizar ahora">
+              {syncing ? 'Sincronizando…' : 'Forzar sync'}
+            </RowButton>
+            {isBlocked ? (
+              <RowButton icon="unlock" tone="emerald" onClick={onToggleBlock} disabled={blocking} title="Vuelve a mostrar publicidad">
+                {blocking ? 'Desbloqueando…' : 'Desbloquear'}
+              </RowButton>
+            ) : (
+              <RowButton icon="lock" tone="amber" onClick={onToggleBlock} disabled={blocking} title="Frena la publicidad sin desarmar el kiosco">
+                {blocking ? 'Aplicando…' : 'Bloquear'}
+              </RowButton>
+            )}
+            <Link href={`/tablets/${e.id}?editar=1`} className={rowBtnCls('neutral')} style={{ borderColor: 'var(--border-md)' }}>
+              <RowIcon name="edit" />
+              Editar
+            </Link>
+            <RowButton icon="trash" tone="red" onClick={onDelete} title="Elimina la tablet del sistema">Eliminar</RowButton>
+          </>
         )}
-        <Link href={`/tablets/${e.id}`} title="Ver detalle"
-          className={`${iconBtn} text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-slate-700`} style={{ borderColor: 'var(--border-md)' }}>
-          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        </Link>
       </div>
     </li>
   );

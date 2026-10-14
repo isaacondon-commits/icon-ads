@@ -189,6 +189,19 @@ export default function TabletDetailPage() {
     } finally { setWaking(false); }
   };
 
+  // Desde el Monitor, "Editar" llega con ?editar=1: abrir el formulario directo.
+  useEffect(() => {
+    if (!tablet) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('editar') !== '1') return;
+    params.delete('editar');
+    const qs = params.toString();
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- abre el modal una vez al llegar con ?editar=1
+    openEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tablet?.id]);
+
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>;
   if (!tablet) return null;
 

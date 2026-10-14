@@ -6,7 +6,9 @@ import { api } from '@/lib/api';
 // Botón "Ver pantalla" + modal: pide una captura a la tablet, espera a que
 // llegue, y la muestra. On-demand — no es un stream.
 // pill: estilo de botón del Monitor (igual a 'Ver anuncio' en Anuncios).
-export default function ScreenshotViewer({ tabletId, tabletName, pill = false }: { tabletId: number; tabletName: string; pill?: boolean }) {
+// variant 'tv': botón principal blanco del Monitor en modo TV.
+export default function ScreenshotViewer({ tabletId, tabletName, pill = false, variant }: { tabletId: number; tabletName: string; pill?: boolean; variant?: 'tv' }) {
+  const tv = variant === 'tv';
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'waiting' | 'done' | 'error'>('idle');
   const [img, setImg] = useState<string | null>(null);
@@ -64,12 +66,14 @@ export default function ScreenshotViewer({ tabletId, tabletName, pill = false }:
     <>
       <button
         onClick={openAndCapture}
-        className={pill
+        className={tv
+          ? 'inline-flex items-center gap-2 h-10 px-5 rounded-full text-sm font-semibold bg-white text-[#031022] shadow-[0_0_30px_rgba(125,211,252,0.35)] transition hover:bg-sky-100'
+          : pill
           ? 'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50'
           : 'text-xs px-2.5 py-1 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950 text-blue-600 border-blue-200'}
         title="Capturar lo que muestra la tablet ahora"
       >
-        {pill && (
+        {(pill || tv) && (
           <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 5h18v12H3zM8 21h8M12 17v4" />
           </svg>
