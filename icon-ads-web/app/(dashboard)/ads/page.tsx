@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, Ad, Campaign, StorageStats } from '@/lib/api';
+import { Icon } from '@/components/CampaignActions';
 import { AdList, AdViewer, AdActionHandlers, hasNoCampaign, neverPlayed } from '@/components/AdViews';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
@@ -91,6 +92,10 @@ export default function AdsPage() {
   const [editing, setEditing] = useState<Ad | null>(null);
   const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
   const [viewAd, setViewAd] = useState<Ad | null>(null);
+  // Eliminar varios: null = modo normal; Set = modo selección activo.
+  const [selected, setSelected] = useState<Set<number> | null>(null);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);  // #1
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
@@ -384,6 +389,26 @@ export default function AdsPage() {
   };
 
   const confirmDelete = (ad: Ad) => setDeleteTarget(ad);
+
+  const toggleSelected = (id: number) => setSelected((prev) => {
+    const next = new Set(prev ?? []);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const handleBulkDelete = async () => {
+    if (!selected?.size) return;
+    setBulkDeleting(true);
+    try {
+      await api.bulkDeleteAds([...selected]);
+      setSelected(null);
+      setConfirmBulk(false);
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Error al eliminar');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await api.deleteAd(deleteTarget.id).catch(() => {});
@@ -531,14 +556,46 @@ export default function AdsPage() {
             {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
+        {canManage && !selected && filtered.length > 0 && (
+          <button onClick={() => setSelected(new Set())}
+            className="ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40">
+            <Icon name="trash" className="w-4 h-4" />
+            Eliminar varios
+          </button>
+        )}
       </div>
+
+      {selected && (
+        <div className="sticky top-0 z-20 mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 shadow-sm dark:border-red-900 dark:bg-red-950/60">
+          <span className="text-sm font-medium text-red-800 dark:text-red-200">
+            {selected.size === 0 ? 'Marcá los anuncios que querés eliminar' : `${selected.size} seleccionado${selected.size === 1 ? '' : 's'}`}
+          </span>
+          <button onClick={() => setSelected(new Set([...selected, ...paged.map((a) => a.id)]))}
+            className="text-sm text-red-700 hover:underline dark:text-red-300">Marcar esta página ({paged.length})</button>
+          {filtered.length > paged.length && (
+            <button onClick={() => setSelected(new Set(filtered.map((a) => a.id)))}
+              className="text-sm text-red-700 hover:underline dark:text-red-300">Marcar todos los filtrados ({filtered.length})</button>
+          )}
+          {selected.size > 0 && (
+            <button onClick={() => setSelected(new Set())} className="text-sm text-red-700 hover:underline dark:text-red-300">Desmarcar</button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => setSelected(null)}
+              className="h-8 px-3 rounded-md border text-sm font-medium hover:bg-white/60 dark:hover:bg-slate-800" style={{ borderColor: 'var(--border-md)' }}>Cancelar</button>
+            <button onClick={() => setConfirmBulk(true)} disabled={selected.size === 0}
+              className="h-8 px-3 rounded-md bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40">
+              Eliminar {selected.size || ''}
+            </button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-gray-500">Cargando...</p>
       ) : filtered.length === 0 ? (
         <p className="text-gray-500">{search ? 'Sin resultados.' : `No hay anuncios en "${activeTabDef.label}".`}</p>
       ) : (
-        <AdList ads={paged} h={handlers} />
+        <AdList ads={paged} h={handlers} selection={selected ? { selected, toggle: toggleSelected } : undefined} />
       )}
 
       {/* #8 — pagination */}
@@ -566,6 +623,16 @@ export default function AdsPage() {
       )}
 
       {/* #9 — delete confirmation modal */}
+      {confirmBulk && selected && (
+        <ConfirmDialog
+          title="Eliminar anuncios"
+          message={`¿Eliminar ${selected.size} anuncio${selected.size === 1 ? '' : 's'}? Dejan de aparecer en las playlists y pasan al Archivo (se pueden restaurar desde ahí).`}
+          confirmLabel={bulkDeleting ? 'Eliminando…' : `Eliminar ${selected.size}`}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setConfirmBulk(false)}
+        />
+      )}
+
       {deleteTarget && (
         <ConfirmDialog
           title="Eliminar anuncio"

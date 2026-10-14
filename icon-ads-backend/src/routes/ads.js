@@ -315,6 +315,25 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // DELETE — soft delete (#33)
+// POST /api/ads/bulk-delete { ids: number[] } — manda varios anuncios al
+// Archivo de una (mismo soft-delete que DELETE /:id; se pueden restaurar).
+// Debe ir antes de las rutas /:id.
+router.post('/bulk-delete', async (req, res, next) => {
+  try {
+    const { ids } = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) }).parse(req.body);
+    const ads = await prisma.ad.findMany({ where: { id: { in: ids }, deletedAt: null }, select: { id: true, name: true } });
+    if (!ads.length) return res.json({ deleted: 0 });
+    const adIds = ads.map((a) => a.id);
+    await prisma.ad.updateMany({ where: { id: { in: adIds } }, data: { active: false, deletedAt: new Date() } });
+    await bumpPlaylistsForAdIds(adIds);
+    await audit(req, 'BULK_DELETE', 'ad', null, `${ads.length} anuncio(s): ${ads.map((a) => `"${a.name}"`).join(', ').slice(0, 900)}`);
+    res.json({ deleted: ads.length });
+  } catch (err) {
+    if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
+    next(err);
+  }
+});
+
 router.delete('/:id', async (req, res, next) => {
   try {
     const ad = await prisma.ad.update({

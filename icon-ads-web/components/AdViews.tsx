@@ -187,15 +187,23 @@ function Tags({ ad, onTag }: { ad: Ad; onTag: (t: string) => void }) {
 }
 
 /** Lista: una fila por anuncio. */
-export function AdList({ ads, h }: { ads: Ad[]; h: AdActionHandlers }) {
+/** Modo "eliminar varios": casillas por fila. */
+export type AdSelection = { selected: Set<number>; toggle: (id: number) => void };
+
+export function AdList({ ads, h, selection }: { ads: Ad[]; h: AdActionHandlers; selection?: AdSelection }) {
   return (
     <ul className="card divide-y overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
       {ads.map((ad) => {
         const warn = hasNoCampaign(ad) || neverPlayed(ad);
+        const checked = !!selection?.selected.has(ad.id);
         return (
-          <li key={ad.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 ${warn ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-transparent'}`}
+          <li key={ad.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 ${warn ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-transparent'} ${checked ? 'bg-red-50/70 dark:bg-red-950/30' : ''}`}
             style={{ borderTopColor: 'var(--border)' }}>
-            <button type="button" onClick={() => h.onView(ad)} className="shrink-0 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" title="Ver anuncio">
+            {selection && (
+              <input type="checkbox" checked={checked} onChange={() => selection.toggle(ad.id)}
+                aria-label={`Seleccionar ${ad.name}`} className="h-4 w-4 shrink-0 cursor-pointer accent-red-600" />
+            )}
+            <button type="button" onClick={() => (selection ? selection.toggle(ad.id) : h.onView(ad))} className="shrink-0 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" title="Ver anuncio">
               <Thumb ad={ad} className="h-14 w-24 rounded-md" hoverPlay />
             </button>
             <div className="min-w-0 flex-1 basis-56">
