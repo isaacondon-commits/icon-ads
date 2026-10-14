@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api, SystemLogEntry, AuditPage, MetricsPage, LatencySummary } from '@/lib/api';
 
 const ACTION_COLORS: Record<string, string> = {
@@ -50,17 +51,15 @@ export default function LogsPage() {
   }, [tab, auditPage, metricsPage]);
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Logs del sistema</h1>
+    <PageShell title="Logs del sistema" subtitle="Eventos, auditoría, reproducciones y latencia.">
 
       <div className="flex items-center justify-between mb-6">
-        <div className="flex rounded-lg border overflow-hidden w-fit" style={{ borderColor: 'var(--border-md)' }}>
+        <div className="flex flex-wrap gap-1.5">
           {([['live', '⚡ Eventos recientes'], ['audit', '📋 Auditoría completa'], ['metrics', '📊 Reproducciones'], ['latency', '⏱ Latencia']] as const).map(([t, label]) => (
             <button
               key={t}
               onClick={() => { setTab(t); setAuditPage(1); setMetricsPage(1); }}
-              className={`px-4 py-2 text-sm font-medium border-r last:border-0 ${tab === t ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
-              style={{ borderColor: 'var(--border-md)' }}
+              className={`h-9 rounded-full border px-4 text-sm font-medium transition-colors ${tab === t ? 'border-[var(--accent-strong)] bg-[var(--accent-strong)] text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-2)] hover:bg-[var(--surface-hover)]'}`}
             >
               {label}
             </button>
@@ -280,6 +279,6 @@ export default function LogsPage() {
           </>
         )
       )}
-    </div>
+    </PageShell>
   );
 }

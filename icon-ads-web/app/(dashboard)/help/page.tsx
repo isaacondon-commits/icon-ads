@@ -1,5 +1,7 @@
 'use client';
 
+import PageShell from '@/components/ui/PageShell';
+
 export default function HelpPage() {
   const shortcuts = [
     { key: 'N', description: 'Crear nuevo ítem (en la página actual)' },
@@ -63,11 +65,7 @@ export default function HelpPage() {
   ];
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Ayuda y documentación</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-        Guía rápida del panel de administración Icon Ads.
-      </p>
+    <PageShell title="Ayuda y documentación" subtitle="Guía rápida del panel de administración ICON ADS.">
 
       {/* Keyboard shortcuts */}
       <div className="card p-6 mb-6">
@@ -75,7 +73,7 @@ export default function HelpPage() {
         <div className="space-y-2">
           {shortcuts.map((s) => (
             <div key={s.key} className="flex items-center gap-4">
-              <kbd className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)', color: 'var(--text)' }}>
+              <kbd className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold border" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}>
                 {s.key}
               </kbd>
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{s.description}</span>
@@ -100,6 +98,6 @@ export default function HelpPage() {
           </div>
         ))}
       </div>
-    </div>
+    </PageShell>
   );
 }

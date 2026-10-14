@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api } from '@/lib/api';
 
 // Assumptions documented for transparency
@@ -63,11 +64,7 @@ export default function ImpactPage() {
   ];
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-1">Impacto ambiental</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>
-        Estimación del impacto positivo de usar publicidad digital frente a publicidad impresa.
-      </p>
+    <PageShell title="Impacto ambiental" subtitle="Estimación del impacto positivo de usar publicidad digital frente a publicidad impresa.">
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {kpis.map((k) => (
@@ -113,6 +110,6 @@ export default function ImpactPage() {
           Estos valores son referenciales y pueden variar según región y proveedor energético.
         </p>
       </div>
-    </div>
+    </PageShell>
   );
 }

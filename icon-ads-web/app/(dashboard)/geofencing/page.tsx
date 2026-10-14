@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, Zone } from '@/lib/api';
 
 const MONTEVIDEO_PRESETS = [
@@ -69,14 +71,8 @@ export default function GeofencingPage() {
   const zonesWithPolygon = zones.filter((z) => Array.isArray(z.polygon) && (z.polygon as [number,number][]).length > 0).length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold">Geofencing — Zonas de Montevideo</h1>
-        <button onClick={() => { resetForm(); setShowForm((s) => !s); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nueva zona
-        </button>
-      </div>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Definí zonas geográficas de Montevideo y asocialas a las tablets por nombre de zona.</p>
+    <PageShell title="Geofencing — Zonas de Montevideo" subtitle="Definí zonas geográficas de Montevideo y asocialas a las tablets por nombre de zona."
+      actions={<Btn icon="plus" v="primary" onClick={() => { resetForm(); setShowForm((s) => !s); }}>Nueva zona</Btn>}>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
@@ -216,6 +212,6 @@ export default function GeofencingPage() {
           <p>4. Los polígonos son informativos — sirven para visualización y futura integración GPS.</p>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

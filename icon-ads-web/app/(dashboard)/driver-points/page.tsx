@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, DriverPointsEntry } from '@/lib/api';
 
 function tier(points: number) {
@@ -32,18 +34,8 @@ export default function DriverPointsPage() {
   const topPoints = entries.length > 0 ? Math.max(...entries.map((e) => e.points), 1) : 1;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-bold">Puntos de taxistas</h1>
-        <button
-          onClick={handleRecalculate}
-          disabled={recalculating}
-          className="text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg font-medium"
-        >
-          {recalculating ? 'Calculando...' : 'Recalcular'}
-        </button>
-      </div>
-      <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>Ranking de tablets por uptime (sincronizaciones exitosas en 30 días). Se recalcula automáticamente cada 24 h.</p>
+    <PageShell title="Puntos de taxistas" subtitle="Ranking de tablets por uptime (sincronizaciones exitosas en 30 días). Se recalcula automáticamente cada 24 h."
+      actions={<Btn icon="refresh" v="primary" onClick={handleRecalculate} disabled={recalculating}>{recalculating ? 'Calculando…' : 'Recalcular'}</Btn>}>
       {msg && <p className="text-xs mb-4 text-emerald-600">{msg}</p>}
 
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -109,6 +101,6 @@ export default function DriverPointsPage() {
           </table>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

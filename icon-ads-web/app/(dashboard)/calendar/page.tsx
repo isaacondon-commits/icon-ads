@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, Campaign } from '@/lib/api';
 
 const COLORS = ['bg-blue-500','bg-violet-500','bg-amber-500','bg-emerald-500','bg-red-500','bg-pink-500','bg-cyan-500','bg-lime-500'];
@@ -43,15 +45,14 @@ export default function CalendarPage() {
   const monthName = new Date(year, month, 1).toLocaleString('es-AR', { month: 'long', year: 'numeric' });
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Calendario de campañas</h1>
+    <PageShell title="Calendario de campañas" subtitle="Qué campañas corren cada día del mes.">
 
       {/* Month nav */}
       <div className="flex items-center gap-4 mb-4">
-        <button onClick={prevMonth} className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>‹</button>
-        <h2 className="font-semibold text-lg capitalize">{monthName}</h2>
-        <button onClick={nextMonth} className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>›</button>
-        <button onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()); }} className="ml-2 text-xs text-blue-600 hover:underline">Hoy</button>
+        <Btn size="sm" onClick={prevMonth} title="Mes anterior">‹</Btn>
+        <h2 className="min-w-40 text-center text-lg font-semibold capitalize">{monthName}</h2>
+        <Btn size="sm" onClick={nextMonth} title="Mes siguiente">›</Btn>
+        <Btn size="sm" v="accent" icon="calendar" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()); }}>Hoy</Btn>
       </div>
 
       {loading ? (
@@ -118,6 +119,6 @@ export default function CalendarPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

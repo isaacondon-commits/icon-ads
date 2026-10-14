@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api, Referral, Client } from '@/lib/api';
 
 export default function ReferralsPage() {
@@ -28,9 +29,7 @@ export default function ReferralsPage() {
   const usedCount = referrals.filter((r) => r.used).length;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-1">Sistema de referidos</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Generá códigos únicos para que clientes traigan nuevos clientes.</p>
+    <PageShell title="Sistema de referidos" subtitle="Generá códigos únicos para que clientes traigan nuevos clientes.">
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
@@ -113,6 +112,6 @@ export default function ReferralsPage() {
           </table>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

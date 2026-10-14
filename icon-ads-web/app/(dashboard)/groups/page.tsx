@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, TabletGroup, Tablet, Playlist } from '@/lib/api';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useToast } from '@/lib/toast-context';
@@ -67,13 +69,8 @@ export default function GroupsPage() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Grupos de tablets</h1>
-        <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nuevo grupo
-        </button>
-      </div>
+    <PageShell title="Grupos de tablets" subtitle="Asigná una playlist a varias tablets a la vez."
+      actions={<Btn icon="plus" v="primary" onClick={openCreate}>Nuevo grupo</Btn>}>
 
       {loading ? (
         <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
@@ -180,6 +177,6 @@ export default function GroupsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

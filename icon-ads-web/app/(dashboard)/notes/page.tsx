@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api, AdminNote } from '@/lib/api';
 
 export default function NotesPage() {
@@ -38,8 +39,7 @@ export default function NotesPage() {
   };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Notas del panel</h1>
+    <PageShell title="Notas del panel" subtitle="Notas compartidas con el equipo.">
 
       <div className="card p-5 mb-6">
         <textarea
@@ -91,6 +91,6 @@ export default function NotesPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

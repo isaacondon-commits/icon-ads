@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { sunTimes, fmtMin, brightnessAt, DEFAULT_SCHEDULE, type SchedulePoint } from '@/lib/sun';
@@ -54,8 +55,7 @@ export default function SettingsPage() {
   }, [settings]);
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Configuración del sistema</h1>
+    <PageShell title="Configuración del sistema" subtitle="Mantenimiento, brillo de las tablets y opciones generales.">
 
       {loading ? (
         <p style={{ color: 'var(--text-muted)' }}>Cargando...</p>
@@ -262,7 +262,7 @@ export default function SettingsPage() {
 
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

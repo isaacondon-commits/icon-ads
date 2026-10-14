@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, Reminder } from '@/lib/api';
 
 function isPast(dueAt: string | null) {
@@ -55,21 +57,10 @@ export default function RemindersPage() {
   const overdue = pending.filter((r) => isPast(r.dueAt) && !isToday(r.dueAt));
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Recordatorios</h1>
-          {overdue.length > 0 && (
-            <p className="text-sm text-red-500 mt-0.5">{overdue.length} recordatorio{overdue.length !== 1 ? 's' : ''} vencido{overdue.length !== 1 ? 's' : ''}</p>
-          )}
-        </div>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-        >
-          + Nuevo
-        </button>
-      </div>
+    <PageShell title="Recordatorios" subtitle={overdue.length > 0
+        ? <span className="text-[var(--danger)]">{overdue.length} recordatorio{overdue.length !== 1 ? 's' : ''} vencido{overdue.length !== 1 ? 's' : ''}</span>
+        : 'Tareas y avisos pendientes del equipo.'}
+      actions={<Btn icon="plus" v="primary" onClick={() => setShowForm((s) => !s)}>Nuevo</Btn>}>
 
       {showForm && (
         <div className="card p-5 mb-6">
@@ -210,6 +201,6 @@ export default function RemindersPage() {
           )}
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

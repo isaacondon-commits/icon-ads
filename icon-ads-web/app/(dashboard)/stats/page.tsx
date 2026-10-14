@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import {
   api, WeeklyEntry, RangeStats, HourlyCount, DayHourCount, CompletionRate, PlaylistStat,
   AdNoPlays, ZoneStat, SyncInterval, ZoneHourEntry, SlaStat, MonthlyEntry, DailyEntry,
@@ -197,20 +198,16 @@ export default function StatsPage() {
   })();
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Estadísticas</h1>
-        <RefreshButton onClick={refreshAll} loading={refreshing} />
-      </div>
+    <PageShell title="Estadísticas" subtitle="Reproducciones, campañas y tablets en el período elegido."
+      actions={<RefreshButton onClick={refreshAll} loading={refreshing} />}>
 
       {/* ══ Filtros ══ */}
-      <div className="card p-4 mb-6 sticky top-0 z-10" style={{ background: 'var(--card)' }}>
+      <div className="card p-4 mb-6 sticky top-0 z-10" style={{ background: 'var(--surface)' }}>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex gap-1">
             {([['today', 'Hoy'], ['7d', '7 días'], ['month', 'Este mes'], ['30d', '30 días'], ['90d', '90 días']] as const).map(([k, lbl]) => (
               <button key={k} onClick={() => applyPreset(k)}
-                className="text-xs px-2.5 py-1.5 rounded-lg border font-medium hover:bg-blue-50 dark:hover:bg-blue-950"
-                style={{ borderColor: 'var(--border-md)', color: 'var(--text-muted)' }}>
+                className="h-8 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-medium text-[var(--text-2)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]">
                 {lbl}
               </button>
             ))}
@@ -686,7 +683,7 @@ export default function StatsPage() {
           </table>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 
 const DEFAULT_CPM = 5;
 
@@ -39,9 +40,7 @@ export default function CalculatorPage() {
   const weeklyRevenue = revenue / weeks;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-2">Calculadora de campaña</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Estimá impresiones e ingresos antes de crear una campaña.</p>
+    <PageShell title="Calculadora de campaña" subtitle="Estimá impresiones e ingresos antes de crear una campaña.">
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card p-6 space-y-6">
@@ -94,6 +93,6 @@ export default function CalculatorPage() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

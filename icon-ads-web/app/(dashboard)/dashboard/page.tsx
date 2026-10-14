@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { BtnLink } from '@/components/ui/buttons';
 import Link from 'next/link';
 import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry, AuditPage, RangeStats, DashboardSummary } from '@/lib/api';
 import UruguayMap from '@/components/UruguayMap';
@@ -76,41 +78,35 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Atajos</h1>
+    <PageShell
+      title="Atajos"
+      subtitle={(
+        <span className="inline-flex flex-wrap items-center gap-2">
+          Resumen rápido del sistema
           {/* #20 — Server latency indicator */}
           {serverLatencyMs !== null && (
             <span
-              className={`text-xs px-2 py-0.5 rounded-full font-mono font-medium ${
-                serverLatencyMs < 800
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                  : serverLatencyMs < 2500
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-              }`}
+              className="rounded-full border px-2 py-0.5 font-mono text-xs font-medium"
+              style={{ color: serverLatencyMs < 800 ? 'var(--ok)' : serverLatencyMs < 2500 ? 'var(--warn)' : 'var(--danger)', borderColor: 'currentColor' }}
               title="Latencia del servidor (tiempo de respuesta de la última llamada a la API)"
             >
               {serverLatencyMs}ms
             </span>
           )}
-        </div>
-        <div className="flex items-center gap-3">
+        </span>
+      )}
+      actions={(
+        <>
           {/* #45 — Weather widget (Open-Meteo, Montevideo) */}
           {weather && (
-            <span className="text-sm font-medium flex items-center gap-1 px-2 py-1 rounded-lg" style={{ color: 'var(--text-muted)', background: 'var(--bg)' }}>
+            <span className="inline-flex h-10 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 text-sm font-medium text-[var(--text-2)]">
               {weatherIcon(weather.code)} {weather.temp}°C MVD
             </span>
           )}
-          <a
-            href={api.getMetricsCsvUrl()}
-            className="text-sm text-blue-600 border border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950 px-3 py-1.5 rounded-lg font-medium"
-          >
-            Exportar CSV
-          </a>
-        </div>
-      </div>
+          <BtnLink icon="download" href={api.getMetricsCsvUrl()} external>Exportar CSV</BtnLink>
+        </>
+      )}
+    >
 
       {/* #4 — Monday weekly summary card */}
       {isMonday && lastWeek && (
@@ -322,7 +318,7 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

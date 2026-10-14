@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
+import { Btn } from '@/components/ui/buttons';
 import { api, AbTest, Ad } from '@/lib/api';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -36,16 +38,8 @@ export default function AbTestsPage() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">A/B Testing</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>Mostrá la versión A al 50% de las tablets y la versión B al otro 50%.</p>
-        </div>
-        <button onClick={() => setShowForm((s) => !s)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-          + Nuevo test
-        </button>
-      </div>
+    <PageShell title="A/B Testing" subtitle="Mostrá la versión A al 50% de las tablets y la versión B al otro 50%."
+      actions={<Btn icon="plus" v="primary" onClick={() => setShowForm((s) => !s)}>Nuevo test</Btn>}>
 
       {showForm && (
         <div className="card p-5 mb-6">
@@ -146,6 +140,6 @@ export default function AbTestsPage() {
           })}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

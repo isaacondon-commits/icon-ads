@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api, ArchivedCampaign, ArchivedAd } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -78,13 +79,7 @@ export default function ArchivePage() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Archivo</h1>
-        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          Elementos eliminados que pueden restaurarse
-        </span>
-      </div>
+    <PageShell title="Archivo" subtitle="Elementos eliminados que pueden restaurarse.">
 
       {/* Tabs */}
       <div className="card overflow-hidden">
@@ -224,6 +219,6 @@ export default function ArchivePage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

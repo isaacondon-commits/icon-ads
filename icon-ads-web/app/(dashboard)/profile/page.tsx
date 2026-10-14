@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 
@@ -31,8 +32,8 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-lg">
-      <h1 className="text-2xl font-bold mb-6">Perfil</h1>
+    <PageShell title="Perfil" subtitle="Tu cuenta y contraseña.">
+      <div className="max-w-lg">
 
       <div className="card p-6 mb-6">
         <h2 className="font-semibold mb-4">Información de cuenta</h2>
@@ -100,6 +101,7 @@ export default function ProfilePage() {
           </button>
         </form>
       </div>
-    </div>
+      </div>
+    </PageShell>
   );
 }

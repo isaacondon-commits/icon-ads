@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api, DashboardSummary, RoiEntry } from '@/lib/api';
 
 export default function ExecutivePage() {
@@ -27,9 +28,7 @@ export default function ExecutivePage() {
     : 0;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-1">Dashboard ejecutivo</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Resumen de alto nivel del negocio.</p>
+    <PageShell title="Dashboard ejecutivo" subtitle="Resumen de alto nivel del negocio.">
 
       {loading ? (
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
@@ -166,6 +165,6 @@ export default function ExecutivePage() {
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

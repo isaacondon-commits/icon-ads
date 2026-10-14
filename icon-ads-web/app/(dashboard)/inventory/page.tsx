@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import PageShell from '@/components/ui/PageShell';
 import { api, Tablet } from '@/lib/api';
 
 function batteryColor(level: number | null | undefined) {
@@ -49,9 +50,7 @@ export default function InventoryPage() {
     : null;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-1">Inventario de hardware</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Estado y especificaciones de todas las tablets.</p>
+    <PageShell title="Inventario de hardware" subtitle="Estado y especificaciones de todas las tablets.">
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -161,6 +160,6 @@ export default function InventoryPage() {
           </table>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
