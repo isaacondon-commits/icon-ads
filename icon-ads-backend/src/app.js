@@ -30,6 +30,7 @@ const driverpointsRoutes = require('./routes/driverpoints');
 const zonesRoutes = require('./routes/zones');
 const publicRoutes = require('./routes/public');
 const surveysRoutes = require('./routes/surveys');
+const maintenanceRoutes = require('./routes/maintenance');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const latencyTracker = require('./lib/latencyTracker');
@@ -205,6 +206,7 @@ app.use('/api/referrals', referralsRoutes);
 app.use('/api/driver-points', driverpointsRoutes);
 app.use('/api/zones', zonesRoutes);
 app.use('/api/surveys', surveysRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/v1/public', publicRoutes);
 
 // #41 — Swagger API docs at /api/docs
@@ -295,28 +297,7 @@ app.use((err, req, res, next) => {
 // Alerta: tablet ONLINE pero que NO está reproduciendo publicidad. Es el caso
 // crítico ("un taxi sin publicidad y no me entero"). Chequeo cada 5 minutos.
 const notPlayingAlerted = new Set();
-const notifyChannels = async (title, body, opts = {}) => {
-  const eventType = opts.eventType || 'TABLET_NOT_PLAYING';
-  const webhookEvent = opts.webhookEvent || 'tablet_not_playing';
-  syslog.addEvent(eventType, 'tablet', null, body);
-  try {
-    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'webhook_url' } });
-    if (cfg?.value) {
-      fetch(cfg.value, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: webhookEvent, message: body }) })
-        .catch((e) => console.warn('[webhook]', e.message));
-    }
-  } catch { /* non-fatal */ }
-  try {
-    const [phoneCfg, apikeyCfg] = await Promise.all([
-      prisma.systemConfig.findUnique({ where: { key: 'callmebot_phone' } }),
-      prisma.systemConfig.findUnique({ where: { key: 'callmebot_apikey' } }),
-    ]);
-    if (phoneCfg?.value && apikeyCfg?.value) {
-      fetch(`https://api.callmebot.com/whatsapp.php?phone=${phoneCfg.value}&text=${encodeURIComponent(`ICON ADS: ${body}`)}&apikey=${apikeyCfg.value}`)
-        .catch((e) => console.warn('[callmebot]', e.message));
-    }
-  } catch { /* non-fatal */ }
-};
+const notifyChannels = require('./lib/notify');
 setInterval(async () => {
   try {
     const tablets = await prisma.tablet.findMany({
@@ -325,7 +306,7 @@ setInterval(async () => {
     const tenMinAgo = Date.now() - 20 * 60 * 1000;  // 20 min (intervalo de sync = 5 min)
     for (const t of tablets) {
       // Bloqueada a propósito desde el panel — no es una falla, no alertar.
-      if (t.manualStatus === 'bloqueada') { notPlayingAlerted.delete(t.id); continue; }
+      if (t.manualStatus === 'bloqueada' || t.manualStatus === 'mantenimiento') { notPlayingAlerted.delete(t.id); continue; }
       const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
       const notPlaying = online && t.playlistId && (t.playerOk === false || t.onFallback === true);
       if (notPlaying && !notPlayingAlerted.has(t.id)) {
@@ -360,6 +341,8 @@ setInterval(async () => {
     });
     const fifteenMinAgo = Date.now() - 15 * 60 * 1000;
     for (const t of tablets) {
+      // En taller a propósito — no alertar.
+      if (t.manualStatus === 'mantenimiento') { lowBatteryAlerted.delete(t.id); continue; }
       const online = t.lastSync && new Date(t.lastSync).getTime() > fifteenMinAgo;
       const bat = t.batteryLevel;
       const low = online && bat != null && bat <= threshold;
@@ -383,10 +366,12 @@ setInterval(async () => {
 const alertedTablets = new Set();
 setInterval(async () => {
   try {
-    const tablets = await prisma.tablet.findMany({ select: { id: true, name: true, deviceId: true, zone: true, lastSync: true } });
+    const tablets = await prisma.tablet.findMany({ select: { id: true, name: true, deviceId: true, zone: true, lastSync: true, manualStatus: true } });
     const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
     for (const t of tablets) {
       const lastSyncMs = t.lastSync ? new Date(t.lastSync).getTime() : 0;
+      // En taller: apagada a propósito, no es una caída.
+      if (t.manualStatus === 'mantenimiento') continue;
       const isOffline = lastSyncMs < twoHoursAgo;
       if (isOffline && !alertedTablets.has(t.id)) {
         alertedTablets.add(t.id);
@@ -525,6 +510,14 @@ const cleanGhostTablets = async () => {
 };
 setInterval(cleanGhostTablets, 30 * 60 * 1000);
 setTimeout(cleanGhostTablets, 60 * 1000);
+
+// Mantenimiento recurrente: crea las órdenes de las reglas activas cuando se
+// acerca la fecha (y avisa por WhatsApp si la regla lo pide). Cada hora.
+const runMaintenanceRules = () => require('./lib/maintenance').runRules()
+  .then((made) => { if (made.length) console.log(`[maint-rules] ${made.length} orden(es) creadas`); })
+  .catch((err) => console.warn('[maint-rules]', err.message));
+setInterval(runMaintenanceRules, 60 * 60 * 1000);
+setTimeout(runMaintenanceRules, 2 * 60 * 1000);
 
 // #42 — Daily backup log
 setInterval(async () => {

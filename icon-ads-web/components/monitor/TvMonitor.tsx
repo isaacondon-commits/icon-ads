@@ -58,6 +58,7 @@ function relativeTime(iso: string | null): string {
 type Tone = 'ok' | 'bad' | 'blocked' | 'off' | 'idle';
 function stateOf(e: TabletMonitorEntry): { label: string; tone: Tone } {
   if (e.health === 'blocked') return { label: 'Bloqueada', tone: 'blocked' };
+  if (e.health === 'taller') return { label: 'En taller', tone: 'blocked' };
   if (e.health === 'sin-playlist') return { label: 'Sin playlist', tone: 'bad' };
   if (e.health === 'no-reproduce') return { label: e.onFallback ? 'No cargó playlist' : 'No reproduce', tone: 'bad' };
   if (e.status === 'online') return { label: 'En línea', tone: 'ok' };
@@ -139,7 +140,8 @@ function IconBtn({ icon, label, v = 'neutral', onClick, disabled }: {
 const chip = 'inline-flex items-center gap-1.5 h-10 px-4 rounded-full border border-[var(--border)] bg-[var(--surface)] text-sm';
 
 function tabletNumber(name: string) {
-  const m = name.match(/(\d+)\s*$/);
+  // "Taxi 05" y también "Taxi 05 (taller)" (la que quedó en taller tras un cambio).
+  const m = name.match(/(\d+)\s*(?:\(taller\))?\s*$/);
   return m ? m[1].padStart(2, '0') : name.slice(0, 2).toUpperCase();
 }
 
@@ -281,7 +283,8 @@ export default function TvMonitor({ entries, loading, error, countdown, onRefres
 
 const PAGE_SIZE = 25;
 
-const isLongOffline = (e: TabletMonitorEntry) => e.status === 'offline' && e.offlineMinutes > 120;
+// Las que están en taller (Mantenimiento) se apagan a propósito: no alertan.
+const isLongOffline = (e: TabletMonitorEntry) => e.status === 'offline' && e.offlineMinutes > 120 && e.health !== 'taller';
 
 // Pestañas: las "alert" sólo aparecen (en rojo) si tienen algo, y al pasar el
 // mouse muestran el detalle.
@@ -291,8 +294,9 @@ const TABS = [
   { id: 'offline', label: 'Fuera de línea', match: (e: TabletMonitorEntry) => e.status === 'offline' },
   { id: 'notplaying', label: 'No reproducen', match: (e: TabletMonitorEntry) => e.health === 'no-reproduce' || e.health === 'sin-playlist', alert: true },
   { id: 'blocked', label: 'Bloqueadas', match: (e: TabletMonitorEntry) => e.health === 'blocked', alert: true },
-  { id: 'lowbat', label: 'Batería baja', match: (e: TabletMonitorEntry) => e.status === 'online' && e.batteryLevel != null && e.batteryLevel <= 20, alert: true },
+  { id: 'lowbat', label: 'Batería baja', match: (e: TabletMonitorEntry) => e.status === 'online' && e.health !== 'taller' && e.batteryLevel != null && e.batteryLevel <= 20, alert: true },
   { id: 'longoffline', label: 'Apagadas +2 h', match: isLongOffline, alert: true },
+  { id: 'taller', label: 'En taller', match: (e: TabletMonitorEntry) => e.health === 'taller', hideEmpty: true },
 ] as const;
 type TabId = typeof TABS[number]['id'];
 
@@ -359,7 +363,7 @@ function FleetList({ entries, search, canManage, actions, onExportCsv, onCreate 
           const count = entries.filter(t.match).length;
           const isActive = tab === t.id;
           const alertTab = 'alert' in t && t.alert;
-          if (alertTab && count === 0 && !isActive) return null;
+          if ((alertTab || ('hideEmpty' in t && t.hideEmpty)) && count === 0 && !isActive) return null;
           const isAlert = alertTab && count > 0;
           const btn = (
             <button key={t.id} type="button" onClick={() => { setTab(t.id); setPage(1); }}

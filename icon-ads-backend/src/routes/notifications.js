@@ -24,7 +24,7 @@ router.get('/', async (req, res, next) => {
         orderBy: { endDate: 'asc' },
       }),
       prisma.tablet.findMany({
-        where: { lastSync: { lt: twoHoursAgo } },
+        where: { lastSync: { lt: twoHoursAgo }, manualStatus: { not: 'mantenimiento' } },
         select: { id: true, name: true, lastSync: true },
       }),
       prisma.tablet.findMany({
@@ -37,6 +37,8 @@ router.get('/', async (req, res, next) => {
     let monitorAlerts = 0;
     for (const t of allTablets) {
       const online = t.lastSync && new Date(t.lastSync).getTime() > tenMinAgo;
+      // En taller a propósito: no es un problema a atender en el Monitor.
+      if (t.manualStatus === 'mantenimiento') continue;
       const problem =
         !online ||
         t.manualStatus === 'bloqueada' ||

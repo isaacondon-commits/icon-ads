@@ -12,6 +12,7 @@ const { Readable } = require('stream');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const forceApkFlags = require('../lib/forceApkFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
+const diagnosticFlags = require('../lib/diagnosticFlags');
 const { resolveScheduleJson } = require('../lib/brightnessSchedule');
 const bandwidthGuard = require('../lib/bandwidthGuard');
 const { sendAlert } = require('../lib/alerts');
@@ -284,6 +285,11 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const isPlayerSync = playerOk !== undefined || appVersion !== undefined;
     const screenshotRequested = isPlayerSync && screenshotFlags.has(tablet.id);
     if (screenshotRequested) screenshotFlags.delete(tablet.id);
+    // Diagnóstico completo pedido desde Mantenimiento. Sólo lo consume una app
+    // que avisa que sabe responderlo (diagCap=1, APK >= 1.48): con una vieja el
+    // pedido queda esperando hasta que se actualice.
+    const diagnosticRequested = isPlayerSync && req.query.diagCap === '1' && diagnosticFlags.has(tablet.id);
+    if (diagnosticRequested) diagnosticFlags.delete(tablet.id);
     // El operador bloqueó esta tablet desde el panel (manualStatus). La app
     // frena la reproducción y muestra una pantalla neutra hasta que se
     // desbloquee — pero sigue sincronizando normalmente.
@@ -297,7 +303,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       return res.json({
         needsUpdate: false, version: currentVersion, blocked: true, frozen,
         rotated180: tablet.rotated180, forceApkCheck, testMode,
-        brightnessPolicy, screenshotRequested, brightnessSchedule,
+        brightnessPolicy, screenshotRequested, diagnosticRequested, brightnessSchedule,
         // Congelado: forzar sync lento (10 min) para minimizar hasta el latido.
         syncIntervalS: frozen ? 600 : syncIntervalS,
       });
@@ -307,13 +313,13 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       console.log(`[sync] tablet=${tablet.id} → sin playlist asignada`);
       // noPlaylist: la app borra la playlist local y cae al institucional en vez
       // de seguir loopeando el último paquete que descargó.
-      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule, syncIntervalS });
+      return res.json({ needsUpdate: false, version: 0, message: 'No playlist assigned', noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
     if (!playlist) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
-      return res.json({ needsUpdate: false, version: 0, noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule, syncIntervalS });
+      return res.json({ needsUpdate: false, version: 0, noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
     // #48 — el admin forzó un sync desde el panel: baja sí o sí.
@@ -332,7 +338,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!needsUpdate) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} v${playlist.version} sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, blocked, brightnessSchedule, syncIntervalS });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
     const motivo = forced ? 'forzado' : differentPlaylist ? `otra playlist (${installedPlaylistId}→${tablet.playlistId})` : `v${currentVersion}→v${playlist.version}`;
@@ -346,6 +352,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       testMode,
       brightnessPolicy,
       screenshotRequested,
+      diagnosticRequested,
       blocked,
       brightnessSchedule,
       syncIntervalS,
@@ -718,6 +725,25 @@ router.post('/screenshot', requireDevice, async (req, res, next) => {
       where: { id: req.tablet.id },
       data: { lastScreenshot: image, lastScreenshotAt: new Date() },
     });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// POST /api/device/diagnostic — la tablet manda su diagnóstico completo
+// (almacenamiento, memoria, batería, red, etc.) cuando el panel lo pidió. Se
+// guardan los últimos 20 por tablet.
+router.post('/diagnostic', requireDevice, async (req, res, next) => {
+  try {
+    const data = req.body?.data;
+    const raw = JSON.stringify(data ?? null);
+    if (!data || typeof data !== 'object' || Array.isArray(data) || raw.length > 32_000) {
+      return res.status(400).json({ error: 'Diagnóstico inválido o demasiado grande' });
+    }
+    await prisma.$executeRawUnsafe(`INSERT INTO tablet_diagnostics (tablet_id, data) VALUES ($1, $2::jsonb)`, req.tablet.id, raw);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM tablet_diagnostics WHERE tablet_id = $1 AND id NOT IN (SELECT id FROM tablet_diagnostics WHERE tablet_id = $1 ORDER BY created_at DESC LIMIT 20)`,
+      req.tablet.id,
+    );
     res.json({ ok: true });
   } catch (err) { next(err); }
 });

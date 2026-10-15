@@ -9,6 +9,7 @@ const healthLabel: Record<string, string> = {
   'no-reproduce': 'no reproduce',
   'sin-playlist': 'sin playlist',
   blocked: 'bloqueada',
+  taller: 'en taller',
 };
 
 export const monitorFilterConfig: FilterConfig<TabletMonitorEntry> = {
@@ -16,7 +17,7 @@ export const monitorFilterConfig: FilterConfig<TabletMonitorEntry> = {
     { key: 'name', label: 'Nombre', type: 'text' },
     { key: 'zone', label: 'Zona', type: 'enum' },
     { key: 'status', label: 'Estado', type: 'enum', fixed: ['online', 'offline'] },
-    { key: 'health', label: 'Salud', type: 'enum', fixed: ['ok', 'no reproduce', 'sin playlist', 'bloqueada', 'offline'] },
+    { key: 'health', label: 'Salud', type: 'enum', fixed: ['ok', 'no reproduce', 'sin playlist', 'bloqueada', 'en taller', 'offline'] },
     { key: 'manualStatus', label: 'Estado manual', type: 'enum', fixed: ['activa', 'bloqueada', 'mantenimiento'] },
     { key: 'playlist', label: 'Playlist', type: 'enum' },
     { key: 'appVersion', label: 'Versión APK', type: 'enum' },

@@ -27,7 +27,12 @@ interface DeviceApi {
         @Query("lux") lux: Float? = null,
         @Query("lightSensor") lightSensor: Boolean? = null,
         @Query("installedPlaylistId") installedPlaylistId: Int? = null,
+        // 1 = esta app sabe responder el diagnóstico de Mantenimiento.
+        @Query("diagCap") diagCap: Int? = null,
     ): SyncResponse
+
+    @POST("api/device/diagnostic")
+    suspend fun uploadDiagnostic(@Body body: DiagnosticUpload)
 
     @POST("api/device/screenshot")
     suspend fun uploadScreenshot(@Body body: ScreenshotUpload)

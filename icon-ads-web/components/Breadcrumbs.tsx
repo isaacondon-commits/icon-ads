@@ -7,6 +7,7 @@ const LABELS: Record<string, string> = {
   dashboard: 'Atajos', tablets: 'Tablets', campaigns: 'Campañas', clients: 'Clientes',
   ads: 'Anuncios', playlists: 'Playlists', stats: 'Estadísticas', monitor: 'Monitor',
   logs: 'Logs', calendar: 'Calendario', compare: 'Comparar',
+  maintenance: 'Mantenimiento', orden: 'Órdenes',
 };
 
 export default function Breadcrumbs() {
@@ -18,7 +19,10 @@ export default function Breadcrumbs() {
   // /tablets ya no es una página: el tramo 'Tablets' lleva al Monitor.
   const crumbs = parts.map((part, i) => ({
     label: i === 0 && part === 'tablets' ? 'Monitor' : LABELS[part] ?? (isNaN(Number(part)) ? part : `#${part}`),
-    href: i === 0 && part === 'tablets' ? '/monitor' : '/' + parts.slice(0, i + 1).join('/'),
+    // /maintenance/orden tampoco es una página: lleva a la pestaña Órdenes.
+    href: i === 0 && part === 'tablets' ? '/monitor'
+      : parts[0] === 'maintenance' && part === 'orden' ? '/maintenance?tab=ordenes'
+        : '/' + parts.slice(0, i + 1).join('/'),
     isLast: i === parts.length - 1,
   }));
 

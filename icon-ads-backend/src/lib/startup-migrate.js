@@ -129,6 +129,21 @@ const MIGRATIONS = [
   { name: 'ads.file_size', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS file_size INT` },
   // v30 — reproducciones por anuncio en la lista de Anuncios (GROUP BY ad_id).
   { name: 'metrics.ad_idx', sql: `CREATE INDEX IF NOT EXISTS metrics_ad_id_idx ON metrics(ad_id, played_at)` },
+  // v31 — Mantenimiento: órdenes (con checklist, fotos y repuestos usados),
+  // inventario de repuestos con sus movimientos, reglas recurrentes y
+  // diagnósticos pedidos a la tablet. Sólo tablas nuevas: nada se borra ni se
+  // modifica. Si se borra una tablet, sus órdenes quedan (tablet_id → NULL,
+  // tablet_name guarda el nombre). Las órdenes no se borran: se cancelan.
+  { name: 'maintenance_orders', sql: `CREATE TABLE IF NOT EXISTS maintenance_orders (id SERIAL PRIMARY KEY, tablet_id INT REFERENCES tablets(id) ON DELETE SET NULL, tablet_name TEXT, type TEXT NOT NULL DEFAULT 'revision', title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pendiente', priority TEXT NOT NULL DEFAULT 'normal', scheduled_for TIMESTAMPTZ, assignee TEXT, notes TEXT, resolution TEXT, checklist JSONB NOT NULL DEFAULT '[]', photos JSONB NOT NULL DEFAULT '[]', parts JSONB NOT NULL DEFAULT '[]', parts_applied BOOLEAN NOT NULL DEFAULT false, workshop BOOLEAN NOT NULL DEFAULT false, source TEXT NOT NULL DEFAULT 'manual', alert_code TEXT, rule_id INT, created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ)` },
+  { name: 'maintenance_orders.tablet_idx', sql: `CREATE INDEX IF NOT EXISTS maintenance_orders_tablet_idx ON maintenance_orders(tablet_id, status)` },
+  { name: 'maintenance_orders.sched_idx', sql: `CREATE INDEX IF NOT EXISTS maintenance_orders_sched_idx ON maintenance_orders(status, scheduled_for)` },
+  { name: 'maintenance_orders.rule_idx', sql: `CREATE INDEX IF NOT EXISTS maintenance_orders_rule_idx ON maintenance_orders(rule_id, tablet_id)` },
+  { name: 'maintenance_parts', sql: `CREATE TABLE IF NOT EXISTS maintenance_parts (id SERIAL PRIMARY KEY, name TEXT NOT NULL, category TEXT, unit TEXT NOT NULL DEFAULT 'u', stock INT NOT NULL DEFAULT 0, min_stock INT NOT NULL DEFAULT 0, notes TEXT, active BOOLEAN NOT NULL DEFAULT true, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'maintenance_part_moves', sql: `CREATE TABLE IF NOT EXISTS maintenance_part_moves (id SERIAL PRIMARY KEY, part_id INT NOT NULL REFERENCES maintenance_parts(id) ON DELETE CASCADE, delta INT NOT NULL, reason TEXT, order_id INT REFERENCES maintenance_orders(id) ON DELETE SET NULL, created_by TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'maintenance_part_moves.idx', sql: `CREATE INDEX IF NOT EXISTS maintenance_part_moves_part_idx ON maintenance_part_moves(part_id, created_at DESC)` },
+  { name: 'maintenance_rules', sql: `CREATE TABLE IF NOT EXISTS maintenance_rules (id SERIAL PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'revision', every_days INT NOT NULL, lead_days INT NOT NULL DEFAULT 3, scope TEXT NOT NULL DEFAULT 'all', scope_id INT, assignee TEXT, notify BOOLEAN NOT NULL DEFAULT true, active BOOLEAN NOT NULL DEFAULT true, starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_run_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'tablet_diagnostics', sql: `CREATE TABLE IF NOT EXISTS tablet_diagnostics (id BIGSERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
+  { name: 'tablet_diagnostics.idx', sql: `CREATE INDEX IF NOT EXISTS tablet_diagnostics_tablet_idx ON tablet_diagnostics(tablet_id, created_at DESC)` },
 ];
 
 // Garantiza el índice único metrics_natural_key (tablet_id, ad_id, played_at)

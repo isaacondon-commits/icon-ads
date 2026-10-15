@@ -921,6 +921,34 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // Diagnóstico completo para Mantenimiento: lo del sistema (DeviceDiagnostics)
+    // + el estado del player. En su propia corrutina: no demora el sync.
+    private fun uploadDiagnostic(token: String) {
+        val player = mapOf(
+            "playerOk" to playerOk(),
+            "onFallback" to onFallback(),
+            "ads" to ads.size,
+            "errorStreak" to errorStreak,
+            "lastAdAgoS" to lastAdAgoS(),
+            "blocked" to blockedByPanel,
+            "playlistVersion" to prefs.getPlaylistVersion(),
+            "installedPlaylistId" to playlistRepo.installedPlaylistId(),
+            "testMode" to prefs.getTestMode(),
+        )
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val data = com.iconads.player.util.DeviceDiagnostics.collect(this@PlayerActivity)
+                data.putAll(player)
+                NetworkModule.provideDeviceApi(token).uploadDiagnostic(
+                    com.iconads.player.data.model.DiagnosticUpload(data),
+                )
+                Log.i(TAG, "diagnóstico subido (${data.size} datos)")
+            } catch (e: Exception) {
+                Log.w(TAG, "uploadDiagnostic: ${e.message}")
+            }
+        }
+    }
+
     private fun getSerial(): String? = try {
         @Suppress("HardwareIds", "MissingPermission")
         val s = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Build.getSerial() else @Suppress("DEPRECATION") Build.SERIAL
@@ -950,6 +978,7 @@ class PlayerActivity : AppCompatActivity() {
                     lux = if (autoBrightness) adaptiveBrightness.lastLux else null,
                     lightSensor = if (autoBrightness) adaptiveBrightness.hasSensor else null,
                     installedPlaylistId = playlistRepo.installedPlaylistId(),
+                    diagCap = 1,
                 )
             }
             Log.i(TAG, "syncNow: needsUpdate=${syncResp.needsUpdate} v${syncResp.version} msg=${syncResp.message}")
@@ -978,6 +1007,10 @@ class PlayerActivity : AppCompatActivity() {
             if (syncResp.screenshotRequested) {
                 Log.i(TAG, "syncNow: el panel pidió captura de pantalla")
                 withContext(Dispatchers.Main) { captureAndUploadScreenshot(token) }
+            }
+            if (syncResp.diagnosticRequested) {
+                Log.i(TAG, "syncNow: el panel pidió diagnóstico")
+                uploadDiagnostic(token)
             }
             if (syncResp.forceApkCheck) {
                 Log.i(TAG, "syncNow: panel forzó chequeo de APK — encolando SyncWorker")

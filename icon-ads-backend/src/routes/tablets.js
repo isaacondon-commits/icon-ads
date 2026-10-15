@@ -91,6 +91,7 @@ router.get('/monitor', async (req, res, next) => {
       // reporta que NO está mostrando anuncios; 'ok' si no.
       let health = 'ok';
       if (t.manualStatus === 'bloqueada') health = 'blocked';
+      else if (t.manualStatus === 'mantenimiento') health = 'taller';
       else if (!online) health = 'offline';
       else if (!t.playlistId) health = 'sin-playlist';
       else if (t.playerOk === false || t.onFallback === true) health = 'no-reproduce';

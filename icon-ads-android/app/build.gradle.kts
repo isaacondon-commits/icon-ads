@@ -27,8 +27,8 @@ android {
         applicationId = "com.iconads.player"
         minSdk = 26
         targetSdk = 34
-        versionCode = 58
-        versionName = "1.47"
+        versionCode = 59
+        versionName = "1.48"
 
         buildConfigField("String", "BASE_URL", "\"https://icon-ads-backend.onrender.com\"")
         buildConfigField("String", "ENROLLMENT_KEY", "\"${enrollmentProps["key"] as? String ?: ""}\"")

@@ -30,6 +30,9 @@ data class SyncResponse(
     val brightnessSchedule: String? = null,
     // El panel pidió una captura de pantalla de esta tablet.
     val screenshotRequested: Boolean = false,
+    // Mantenimiento pidió un diagnóstico completo (almacenamiento, memoria,
+    // batería, red). Sólo llega si el sync mandó diagCap=1.
+    val diagnosticRequested: Boolean = false,
     // El operador bloqueó esta tablet desde el panel: frenar reproducción y
     // mostrar una pantalla neutra hasta que se desbloquee (sigue sincronizando).
     val blocked: Boolean = false,
@@ -38,6 +41,10 @@ data class SyncResponse(
     val noPlaylist: Boolean = false,
     // Intervalo del ciclo de sync en segundos (server-controlado). Default 300.
     val syncIntervalS: Int = 300,
+)
+
+data class DiagnosticUpload(
+    val data: Map<String, Any?>,
 )
 
 data class ScreenshotUpload(

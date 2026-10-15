@@ -1,158 +1,136 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import PageShell from '@/components/ui/PageShell';
-import { Btn } from '@/components/ui/buttons';
-import { api, Tablet } from '@/lib/api';
+import { Btn, TabPill } from '@/components/ui/buttons';
+import {
+  api, MaintAlert, MaintAlertsResponse, MaintMeta, MaintOrder, MaintPart, MaintRule, TabletGroup, TabletMonitorEntry,
+} from '@/lib/api';
+import { useRole } from '@/lib/roles';
+import { useToast } from '@/lib/toast-context';
+import { AgendaTab, AlertsTab, OrdersTab } from '@/components/maintenance/WorkTabs';
+import { ChecklistsTab, PartsTab, RulesTab } from '@/components/maintenance/ConfigTabs';
+import { DiagnosticModal, HistoryModal, NewOrderModal, NewOrderPreset, SwapModal } from '@/components/maintenance/modals';
+import { isOpen, isOverdue } from '@/components/maintenance/shared';
 
-type MaintenanceStatus = 'scheduled' | 'overdue' | 'stale' | 'ok';
-
-interface TabletWithStatus extends Tablet {
-  maintenanceStatus: MaintenanceStatus;
-  daysSinceSync: number | null;
-  maintenanceDaysLeft: number | null;
-}
-
-function statusLabel(s: MaintenanceStatus) {
-  if (s === 'scheduled') return { label: 'Mantenimiento programado', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
-  if (s === 'overdue') return { label: 'Mantenimiento vencido', cls: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' };
-  if (s === 'stale') return { label: 'Sin sync >7 días', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' };
-  return { label: 'OK', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
-}
+const TABS = [
+  { id: 'alertas', label: 'Alertas' },
+  { id: 'ordenes', label: 'Órdenes' },
+  { id: 'agenda', label: 'Agenda' },
+  { id: 'repuestos', label: 'Repuestos' },
+  { id: 'recurrentes', label: 'Recurrentes' },
+  { id: 'checklists', label: 'Checklists' },
+] as const;
+type TabId = typeof TABS[number]['id'];
 
 export default function MaintenancePage() {
-  const [tablets, setTablets] = useState<TabletWithStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<MaintenanceStatus | 'all'>('all');
+  const router = useRouter();
+  const { show } = useToast();
+  const { canManage } = useRole();
+  const [tab, setTab] = useState<TabId>('alertas');
+  const [meta, setMeta] = useState<MaintMeta | null>(null);
+  const [alerts, setAlerts] = useState<MaintAlertsResponse | null>(null);
+  const [orders, setOrders] = useState<MaintOrder[] | null>(null);
+  const [parts, setParts] = useState<MaintPart[] | null>(null);
+  const [rules, setRules] = useState<MaintRule[] | null>(null);
+  const [tablets, setTablets] = useState<TabletMonitorEntry[]>([]);
+  const [groups, setGroups] = useState<TabletGroup[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
+  const [newOrder, setNewOrder] = useState<NewOrderPreset | null>(null);
+  const [swap, setSwap] = useState(false);
+  const [diag, setDiag] = useState<{ id: number; name: string } | null>(null);
+  const [history, setHistory] = useState<{ id: number; name: string } | null>(null);
+
+  // Pestaña desde la URL (?tab=agenda) para poder compartir el link.
   useEffect(() => {
-    api.getTablets().then((data) => {
-      const now = Date.now();
-      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-      const enriched: TabletWithStatus[] = data.map((t) => {
-        const lastSyncMs = t.lastSync ? new Date(t.lastSync).getTime() : null;
-        const daysSinceSync = lastSyncMs != null ? Math.floor((now - lastSyncMs) / 86400000) : null;
-        const maintenanceUntilMs = t.maintenanceUntil ? new Date(t.maintenanceUntil).getTime() : null;
-        const maintenanceDaysLeft = maintenanceUntilMs != null ? Math.ceil((maintenanceUntilMs - now) / 86400000) : null;
-
-        let maintenanceStatus: MaintenanceStatus = 'ok';
-        if (maintenanceDaysLeft != null) {
-          maintenanceStatus = maintenanceDaysLeft >= 0 ? 'scheduled' : 'overdue';
-        } else if (daysSinceSync != null && lastSyncMs != null && now - lastSyncMs > sevenDaysMs) {
-          maintenanceStatus = 'stale';
-        }
-
-        return { ...t, maintenanceStatus, daysSinceSync, maintenanceDaysLeft };
-      });
-      setTablets(enriched.sort((a, b) => {
-        const order: Record<MaintenanceStatus, number> = { overdue: 0, scheduled: 1, stale: 2, ok: 3 };
-        return order[a.maintenanceStatus] - order[b.maintenanceStatus];
-      }));
-    }).finally(() => setLoading(false));
+    const t = new URLSearchParams(window.location.search).get('tab');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lee la URL una vez al montar
+    if (t && TABS.some((x) => x.id === t)) setTab(t as TabId);
   }, []);
-
-  const counts = {
-    overdue: tablets.filter((t) => t.maintenanceStatus === 'overdue').length,
-    scheduled: tablets.filter((t) => t.maintenanceStatus === 'scheduled').length,
-    stale: tablets.filter((t) => t.maintenanceStatus === 'stale').length,
-    ok: tablets.filter((t) => t.maintenanceStatus === 'ok').length,
+  const changeTab = (t: TabId) => {
+    setTab(t);
+    window.history.replaceState(null, '', t === 'alertas' ? '/maintenance' : `/maintenance?tab=${t}`);
   };
 
-  const filtered = filter === 'all' ? tablets : tablets.filter((t) => t.maintenanceStatus === filter);
+  const load = useCallback(async () => {
+    setRefreshing(true);
+    const fail = (e: unknown) => show(e instanceof Error ? e.message : 'Error al cargar', 'error');
+    await Promise.all([
+      api.getMaintMeta().then(setMeta).catch(fail),
+      api.getMaintAlerts().then(setAlerts).catch(fail),
+      api.getMaintOrders().then(setOrders).catch(fail),
+      api.getMaintParts().then(setParts).catch(fail),
+      api.getMaintRules().then(setRules).catch(fail),
+      api.getTabletMonitor().then((t) => setTablets([...t].sort((a, b) => a.name.localeCompare(b.name)))).catch(fail),
+      api.getTabletGroups().then(setGroups).catch(() => setGroups([])),
+    ]);
+    setRefreshing(false);
+  }, [show]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial de datos
+  useEffect(() => { load(); }, [load]);
+
+  const openOrders = orders?.filter(isOpen) ?? [];
+  const kpis = [
+    { label: 'Tablets con alertas', value: alerts ? new Set(alerts.alerts.map((a) => a.tabletId)).size : '—', color: 'var(--danger)', tab: 'alertas' as TabId },
+    { label: 'Órdenes abiertas', value: orders ? openOrders.length : '—', color: 'var(--accent)', tab: 'ordenes' as TabId },
+    { label: 'Vencidas', value: orders ? openOrders.filter(isOverdue).length : '—', color: 'var(--warn)', tab: 'agenda' as TabId },
+    { label: 'En taller', value: alerts ? alerts.workshop.length : '—', color: 'var(--warn)', tab: 'alertas' as TabId },
+    { label: 'Repuestos bajos', value: alerts ? alerts.lowStock.length : '—', color: 'var(--danger)', tab: 'repuestos' as TabId },
+  ];
+  const assignees = [...new Set((orders ?? []).map((o) => o.assignee).filter(Boolean) as string[])].sort();
+
+  const fromAlert = (a: MaintAlert) => setNewOrder({
+    tabletIds: [a.tabletId], type: a.suggestedType, alertCode: a.code, source: 'alerta',
+    title: `${a.label} — ${a.tabletName}`, notes: a.detail,
+  });
 
   return (
-    <PageShell title="Mantenimiento preventivo" subtitle="Tablets que requieren atención o tienen mantenimiento programado.">
+    <PageShell title="Mantenimiento" subtitle="Alertas de la flota, órdenes de trabajo, repuestos y mantenimiento programado."
+      actions={(
+        <>
+          <Btn icon="refresh" onClick={load} disabled={refreshing}>{refreshing ? 'Actualizando…' : 'Actualizar'}</Btn>
+          {canManage && <Btn icon="transfer" onClick={() => setSwap(true)}>Cambiar tablet</Btn>}
+          {canManage && <Btn v="primary" icon="plus" onClick={() => setNewOrder({})}>Nueva orden</Btn>}
+        </>
+      )}>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {([
-          { key: 'overdue', label: 'Mantenimiento vencido', color: 'text-red-500' },
-          { key: 'scheduled', label: 'Mantenimiento próximo', color: 'text-amber-500' },
-          { key: 'stale', label: 'Sin sync >7 días', color: 'text-orange-500' },
-          { key: 'ok', label: 'En buen estado', color: 'text-emerald-600' },
-        ] as { key: MaintenanceStatus; label: string; color: string }[]).map((k) => (
-          <button
-            key={k.key}
-            onClick={() => setFilter(filter === k.key ? 'all' : k.key)}
-            className={`card p-5 text-left transition-all hover:bg-[var(--surface-2)] ${filter === k.key ? 'ring-2 ring-[var(--accent)]' : ''}`}
-          >
-            <p className={`text-3xl font-bold tabular-nums ${k.color}`}>{counts[k.key]}</p>
-            <p className="text-xs font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{k.label}</p>
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {kpis.map((k) => (
+          <button key={k.label} type="button" onClick={() => changeTab(k.tab)}
+            className="card p-4 text-left transition-colors hover:bg-[var(--surface-hover)]">
+            <p className="text-3xl font-bold tabular-nums" style={{ color: Number(k.value) > 0 ? k.color : 'var(--text)' }}>{k.value}</p>
+            <p className="mt-1 text-xs font-medium text-[var(--muted)]">{k.label}</p>
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Cargando...</p>
-      ) : (
-        <div className="card overflow-x-auto">
-          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-md)' }}>
-            <p className="text-sm font-medium">{filter === 'all' ? 'Todas las tablets' : statusLabel(filter as MaintenanceStatus).label} ({filtered.length})</p>
-            {filter !== 'all' && (
-              <Btn size="sm" v="ghost" onClick={() => setFilter('all')}>Ver todas</Btn>
-            )}
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                <th className="text-left px-4 py-3">Tablet</th>
-                <th className="text-left px-4 py-3">Zona</th>
-                <th className="text-right px-4 py-3">Último sync</th>
-                <th className="text-right px-4 py-3">Mantenimiento hasta</th>
-                <th className="text-right px-4 py-3">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                    Sin tablets en esta categoría.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((t) => {
-                  const { label, cls } = statusLabel(t.maintenanceStatus);
-                  return (
-                    <tr key={t.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
-                      <td className="px-4 py-2.5">
-                        <p className="font-medium">{t.name}</p>
-                        <p className="text-xs font-mono" style={{ color: 'var(--text-xs)' }}>{t.deviceModel ?? t.deviceId}</p>
-                      </td>
-                      <td className="px-4 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{t.zone ?? '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-xs">
-                        {t.daysSinceSync != null ? (
-                          <span className={t.daysSinceSync > 7 ? 'text-red-500 font-medium' : ''}>
-                            {t.daysSinceSync === 0 ? 'Hoy' : `hace ${t.daysSinceSync}d`}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>Nunca</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-xs">
-                        {t.maintenanceUntil ? (
-                          <span className={t.maintenanceDaysLeft != null && t.maintenanceDaysLeft < 0 ? 'text-red-500 font-medium' : ''}>
-                            {new Date(t.maintenanceUntil).toLocaleDateString('es-AR')}
-                            {t.maintenanceDaysLeft != null && (
-                              <span className="ml-1" style={{ color: 'var(--text-muted)' }}>
-                                ({t.maintenanceDaysLeft >= 0 ? `en ${t.maintenanceDaysLeft}d` : `vencido ${Math.abs(t.maintenanceDaysLeft)}d`})
-                              </span>
-                            )}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{label}</span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className="mb-5 flex flex-wrap gap-2">
+        {TABS.map((t) => <TabPill key={t.id} active={tab === t.id} onClick={() => changeTab(t.id)}>{t.label}</TabPill>)}
+      </div>
+
+      {tab === 'alertas' && (
+        <AlertsTab data={alerts} canManage={canManage} onCreateOrder={fromAlert}
+          onDiagnostic={(id, name) => setDiag({ id, name })} onHistory={(id, name) => setHistory({ id, name })} />
       )}
+      {tab === 'ordenes' && meta && <OrdersTab orders={orders} types={meta.types} />}
+      {tab === 'agenda' && meta && <AgendaTab orders={orders} types={meta.types} />}
+      {tab === 'repuestos' && <PartsTab parts={parts} canManage={canManage} onChanged={load} />}
+      {tab === 'recurrentes' && meta && <RulesTab rules={rules} meta={meta} tablets={tablets} groups={groups} canManage={canManage} onChanged={load} />}
+      {tab === 'checklists' && meta && <ChecklistsTab meta={meta} canManage={canManage} onSaved={(c) => setMeta({ ...meta, checklists: c })} />}
+
+      {newOrder && meta && (
+        <NewOrderModal tablets={tablets} meta={meta} preset={newOrder} assignees={assignees} onClose={() => setNewOrder(null)}
+          onCreated={(created) => {
+            setNewOrder(null);
+            if (created.length === 1) router.push(`/maintenance/orden/${created[0].id}`);
+            else { load(); changeTab('ordenes'); }
+          }} />
+      )}
+      {swap && <SwapModal tablets={tablets} onClose={() => setSwap(false)} onDone={() => { setSwap(false); load(); }} />}
+      {diag && <DiagnosticModal tabletId={diag.id} tabletName={diag.name} canManage={canManage} onClose={() => setDiag(null)} />}
+      {history && meta && <HistoryModal tabletId={history.id} tabletName={history.name} types={meta.types} onClose={() => setHistory(null)} />}
     </PageShell>
   );
 }

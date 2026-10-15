@@ -459,6 +459,54 @@ export const api = {
     request<Reminder>(`/api/reminders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteReminder: (id: number) => request<void>(`/api/reminders/${id}`, { method: 'DELETE' }),
 
+  // Mantenimiento: órdenes, alertas, repuestos, reglas recurrentes, diagnóstico
+  getMaintMeta: () => request<MaintMeta>('/api/maintenance/meta'),
+  saveMaintChecklists: (data: Record<string, string[]>) =>
+    request<Record<string, string[]>>('/api/maintenance/checklists', { method: 'PUT', body: JSON.stringify(data) }),
+  getMaintAlerts: () => request<MaintAlertsResponse>('/api/maintenance/alerts'),
+  getMaintOrders: (q: { status?: string; tabletId?: number; from?: string; to?: string } = {}) => {
+    const p = new URLSearchParams();
+    Object.entries(q).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)); });
+    return request<MaintOrder[]>(`/api/maintenance/orders${p.size ? `?${p}` : ''}`);
+  },
+  getMaintOrder: (id: number) => request<MaintOrder>(`/api/maintenance/orders/${id}`),
+  createMaintOrders: (data: MaintOrderInput & { tabletIds: number[] }) =>
+    request<MaintOrder[]>('/api/maintenance/orders', { method: 'POST', body: JSON.stringify(data) }),
+  updateMaintOrder: (id: number, data: Partial<MaintOrderInput> & {
+    status?: MaintStatus; checklist?: MaintChecklistItem[]; photos?: MaintPhoto[]; parts?: MaintOrderPart[]; resolution?: string | null;
+  }) => request<MaintOrder>(`/api/maintenance/orders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  uploadMaintPhoto: async (file: Blob, filename: string) => {
+    const contentType = file.type || 'image/jpeg';
+    const presign = await request<{ uploadUrl: string; key: string; publicUrl: string }>(
+      `/api/maintenance/photo-presign?filename=${encodeURIComponent(filename)}&contentType=${encodeURIComponent(contentType)}`,
+    );
+    const res = await fetch(presign.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
+    if (!res.ok) throw new Error(`No se pudo subir la foto (HTTP ${res.status})`);
+    return { url: presign.publicUrl, key: presign.key };
+  },
+  getMaintTabletHistory: (tabletId: number) =>
+    request<{ orders: MaintOrder[]; diagnostics: { id: number; data: Record<string, unknown>; createdAt: string }[] }>(`/api/maintenance/tablets/${tabletId}/history`),
+  getMaintDiagnostic: (tabletId: number) => request<MaintDiagnostic>(`/api/maintenance/tablets/${tabletId}/diagnostic`),
+  requestMaintDiagnostic: (tabletId: number) =>
+    request<{ ok: boolean; message: string }>(`/api/maintenance/tablets/${tabletId}/diagnostic`, { method: 'POST' }),
+  swapTablet: (data: { fromId: number; toId: number; note?: string; orderId?: number }) =>
+    request<{ ok: boolean; message: string; doneOrder: MaintOrder; repairOrder: MaintOrder }>('/api/maintenance/swap', { method: 'POST', body: JSON.stringify(data) }),
+  getMaintParts: () => request<MaintPart[]>('/api/maintenance/parts'),
+  createMaintPart: (data: { name: string; category?: string | null; unit?: string; stock?: number; minStock?: number; notes?: string | null }) =>
+    request<MaintPart>('/api/maintenance/parts', { method: 'POST', body: JSON.stringify(data) }),
+  updateMaintPart: (id: number, data: Partial<{ name: string; category: string | null; unit: string; minStock: number; notes: string | null; active: boolean }>) =>
+    request<MaintPart>(`/api/maintenance/parts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  moveMaintPart: (id: number, delta: number, reason?: string) =>
+    request<MaintPart>(`/api/maintenance/parts/${id}/move`, { method: 'POST', body: JSON.stringify({ delta, reason }) }),
+  getMaintPartMoves: (id: number) =>
+    request<{ id: number; delta: number; reason: string | null; orderId: number | null; createdBy: string | null; createdAt: string }[]>(`/api/maintenance/parts/${id}/moves`),
+  getMaintRules: () => request<MaintRule[]>('/api/maintenance/rules'),
+  createMaintRule: (data: MaintRuleInput) =>
+    request<{ rule: MaintRule; created: number }>('/api/maintenance/rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateMaintRule: (id: number, data: Partial<MaintRuleInput> & { active?: boolean }) =>
+    request<{ rule: MaintRule; created: number }>(`/api/maintenance/rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  runMaintRules: () => request<{ ok: boolean; created: number }>('/api/maintenance/rules/run', { method: 'POST' }),
+
   // Zones / Geofencing (#67)
   getZones: () => request<Zone[]>('/api/zones'),
   createZone: (data: { name: string; description?: string; polygon?: [number, number][]; color?: string }) =>
@@ -639,7 +687,7 @@ export interface OccupancyEntry {
 export interface TabletMonitorEntry {
   id: number; name: string; deviceId: string; zone: string | null; timezone: string | null;
   status: 'online' | 'offline'; offlineMinutes: number; lastSync: string | null;
-  health?: 'ok' | 'offline' | 'no-reproduce' | 'blocked' | 'sin-playlist';
+  health?: 'ok' | 'offline' | 'no-reproduce' | 'blocked' | 'sin-playlist' | 'taller';
   manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
   driverName?: string | null;
   licensePlate?: string | null;
@@ -846,6 +894,63 @@ export interface TabletLiveLocation {
 
 export interface LocationPoint {
   lat: number; lng: number; accuracy: number | null; created_at: string;
+}
+
+// ── Mantenimiento ─────────────────────────────────────────────────────
+export type MaintStatus = 'pendiente' | 'en_curso' | 'hecha' | 'cancelada';
+export type MaintPriority = 'baja' | 'normal' | 'alta' | 'urgente';
+export interface MaintChecklistItem { label: string; done: boolean }
+export interface MaintPhoto { url: string; key?: string | null; kind: 'antes' | 'despues' | 'otra'; at?: string }
+export interface MaintOrderPart { partId: number; qty: number; name?: string | null }
+export interface MaintOrder {
+  id: number; tabletId: number | null; tabletName: string | null; type: string; title: string;
+  status: MaintStatus; priority: MaintPriority; scheduledFor: string | null; assignee: string | null;
+  notes: string | null; resolution: string | null; checklist: MaintChecklistItem[]; photos: MaintPhoto[];
+  parts: MaintOrderPart[]; partsApplied: boolean; workshop: boolean; source: 'manual' | 'alerta' | 'recurrente' | string;
+  alertCode: string | null; ruleId: number | null; createdBy: string | null;
+  createdAt: string; updatedAt: string; startedAt: string | null; completedAt: string | null;
+}
+export interface MaintOrderInput {
+  type?: string; title?: string; priority?: MaintPriority; scheduledFor?: string | null; assignee?: string | null;
+  notes?: string | null; workshop?: boolean; source?: string; alertCode?: string | null;
+}
+export interface MaintMeta {
+  types: Record<string, string>; statuses: MaintStatus[]; priorities: MaintPriority[]; checklists: Record<string, string[]>;
+}
+export interface MaintAlert {
+  code: string; level: 'danger' | 'warn' | 'info'; label: string; detail: string;
+  tabletId: number; tabletName: string; zone: string | null; driverName: string | null; licensePlate: string | null;
+  suggestedType: string; orderId: number | null; openOrders: number;
+}
+export interface MaintPart {
+  id: number; name: string; category: string | null; unit: string; stock: number; minStock: number;
+  notes: string | null; active: boolean; low: boolean; createdAt: string; updatedAt: string;
+}
+export interface MaintAlertsResponse {
+  alerts: MaintAlert[]; workshop: { id: number; name: string; zone: string | null }[];
+  lowStock: MaintPart[]; batteryThreshold: number; publishedVersion: string | null;
+}
+export interface MaintRule {
+  id: number; name: string; type: string; everyDays: number; leadDays: number; scope: 'all' | 'group' | 'tablet';
+  scopeId: number | null; assignee: string | null; notify: boolean; active: boolean; startsAt: string;
+  lastRunAt: string | null; createdAt: string; updatedAt: string;
+}
+export interface MaintRuleInput {
+  name: string; type: string; everyDays: number; leadDays?: number; scope: 'all' | 'group' | 'tablet';
+  scopeId?: number | null; assignee?: string | null; notify?: boolean; startsAt?: string;
+}
+export interface MaintDiagnostic {
+  tablet: {
+    id: number; name: string; zone: string | null; lastSync: string | null; lastIp: string | null; batteryLevel: number | null;
+    temperatureC: number | null; appVersion: string | null; osVersion: string | null; deviceModel: string | null; serial: string | null;
+    brightness: number | null; brightnessAuto: boolean | null; playerOk: boolean | null; onFallback: boolean | null;
+    lastAdAgoS: number | null; manualStatus: string; playlistId: number | null;
+    playlist: { id: number; name: string; version: number } | null; lastScreenshotAt: string | null;
+  };
+  errors: { errorType: string; message: string; occurredAt: string }[];
+  syncs24h: { total: number; failed: number };
+  full: { data: Record<string, unknown>; at: string } | null;
+  pending: boolean; supportsFull: boolean;
 }
 
 export { BASE };
