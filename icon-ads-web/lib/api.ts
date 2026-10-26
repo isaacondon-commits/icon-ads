@@ -191,7 +191,7 @@ export const api = {
   deleteAd: (id: number) => request<void>(`/api/ads/${id}`, { method: 'DELETE' }),
   bulkDeleteAds: (ids: number[]) =>
     request<{ deleted: number }>('/api/ads/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
-  updateAd: (id: number, data: Partial<Pick<Ad, 'name' | 'type' | 'durationS' | 'priority' | 'targetUrl' | 'tags'>>) =>
+  updateAd: (id: number, data: Partial<Pick<Ad, 'campaignId' | 'name' | 'type' | 'durationS' | 'priority' | 'targetUrl' | 'tags'>>) =>
     request<Ad>(`/api/ads/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   approveAd: (id: number) => request<Ad>(`/api/ads/${id}/approve`, { method: 'PATCH' }),
   rejectAd: (id: number) => request<Ad>(`/api/ads/${id}/reject`, { method: 'PATCH' }),

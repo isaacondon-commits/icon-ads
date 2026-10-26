@@ -161,7 +161,7 @@ export default function AdsPage() {
   const openEdit = (ad: Ad) => {
     setEditing(ad);
     setForm({
-      campaignId: ad.campaignId.toString(),
+      campaignId: ad.campaign && !ad.campaign.deletedAt ? ad.campaignId.toString() : '',
       name: ad.name,
       type: ad.type,
       durationS: ad.durationS.toString(),
@@ -369,10 +369,12 @@ export default function AdsPage() {
 
   const handleUpdate = async () => {
     if (!editing) return;
+    if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
     setSaving(true);
     setError('');
     try {
       await api.updateAd(editing.id, {
+        campaignId: Number(form.campaignId),
         name: form.name,
         type: form.type as 'video' | 'image',
         durationS: Number(form.durationS),
@@ -769,16 +771,12 @@ export default function AdsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Campaña</label>
-                {editing ? (
-                  <p className="text-sm text-gray-500 py-2">{editing.campaign?.name ?? '—'} <span className="text-xs text-gray-400">(no se puede cambiar acá)</span></p>
-                ) : (
-                  <select className="input" value={form.campaignId} onChange={(e) => setForm({ ...form, campaignId: e.target.value })}>
-                    <option value="">Seleccionar campaña</option>
-                    {campaigns.filter(c => c.active).map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
+                <select className="input" value={form.campaignId} onChange={(e) => setForm({ ...form, campaignId: e.target.value })}>
+                  <option value="">Seleccionar campaña</option>
+                  {campaigns.filter(c => c.active || String(c.id) === form.campaignId).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}{c.active ? '' : ' (inactiva)'}</option>
+                  ))}
+                </select>
               </div>
               {batch.length > 0 ? (
                 <p className="text-xs text-gray-500">

@@ -302,7 +302,11 @@ router.get('/:id', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const data = adSchema.omit({ campaignId: true }).partial().parse(req.body);
+    const data = adSchema.partial().parse(req.body);
+    if (data.campaignId != null) {
+      const campaign = await prisma.campaign.findFirst({ where: { id: data.campaignId, deletedAt: null }, select: { id: true } });
+      if (!campaign) return res.status(400).json({ error: 'La campaña no existe' });
+    }
     const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
     await audit(req, 'UPDATE', 'ad', ad.id, `Updated "${ad.name}"`);
     await bumpPlaylistsForAdIds([ad.id]);
