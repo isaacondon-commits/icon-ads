@@ -613,7 +613,7 @@ export default function CampaignsPage() {
       )}
 
       {showModal && (
-        <Modal title={editing ? 'Editar campaña' : 'Nueva campaña'} onClose={() => setShowModal(false)}>
+        <Modal title={editing ? 'Editar campaña' : 'Nueva campaña'} onClose={() => setShowModal(false)} closeOnBackdrop={false}>
           <div className="space-y-4">
             {/* #31 — template picker (create mode only) */}
             {!editing && templates.length > 0 && (
@@ -762,7 +762,7 @@ export default function CampaignsPage() {
   );
 }
 
-function Modal(props: { title: string; children: React.ReactNode; onClose: () => void }) {
+function Modal(props: { title: string; children: React.ReactNode; onClose: () => void; closeOnBackdrop?: boolean }) {
   return <UiModal {...props} />;
 }
 
