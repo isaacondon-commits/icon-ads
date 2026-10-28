@@ -166,11 +166,15 @@ export const api = {
         onProgress(100);
         return ad;
       } catch (err: unknown) {
-        // No direct-upload storage configured (503) — fall through to the
-        // backend-buffered upload (local dev only, disk storage)
-        if (!(err instanceof Error) || !err.message.includes('Direct upload not configured')) throw err;
+        // Sin storage directo (503) o el navegador cortó el PUT a storage
+        // ("Error de red", típicamente CORS del bucket) — sigue por el upload
+        // a través del backend, que sube a R2 con sus credenciales.
+        const msg = err instanceof Error ? err.message : '';
+        if (!msg.includes('Direct upload not configured') && msg !== 'Error de red') throw err;
       }
     }
+    // /upload acepta un solo archivo (campo 'file'); la miniatura no viaja por acá.
+    formData.delete('thumbnail');
 
     // Fallback: direct upload through backend (local dev / no cloud storage configured)
     return new Promise((resolve, reject) => {

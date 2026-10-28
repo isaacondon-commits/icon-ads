@@ -243,8 +243,17 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     const ext = path.extname(req.file.originalname);
     const filename = `${unique}${ext}`;
 
+    // R2 primero (mismo formato de key que /presign). Este camino lo usa el
+    // panel cuando el PUT directo a R2 falla en el navegador.
     let fileUrl;
-    if (supabaseStorage.isConfigured) {
+    let storage = 'disk';
+    if (r2.isConfigured) {
+      const key = `uploads/${filename}`;
+      await r2.putBuffer(key, fileBuffer, req.file.mimetype);
+      fileUrl = r2.getPublicUrl(key);
+      storage = 'r2';
+    } else if (supabaseStorage.isConfigured) {
+      storage = 'supabase';
       fileUrl = await supabaseStorage.uploadFile(filename, fileBuffer, req.file.mimetype);
     } else {
       diskPath = path.join(uploadDir, filename);
@@ -260,7 +269,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
       include: { campaign: { select: { id: true, name: true } } },
     });
-    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus}) via ${supabaseStorage.isConfigured ? 'supabase' : 'disk'}`);
+    await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus}) via ${storage}`);
     res.status(201).json(ad);
   } catch (err) {
     if (diskPath) fs.unlink(diskPath, () => {});
