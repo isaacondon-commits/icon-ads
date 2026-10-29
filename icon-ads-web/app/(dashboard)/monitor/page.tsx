@@ -274,7 +274,7 @@ export default function MonitorPage() {
       />
       {dialogs}
       {createOpen && (
-        <Modal title="Nueva tablet" onClose={() => setCreateOpen(false)}>
+        <Modal title="Nueva tablet" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <div className="space-y-4">
             <p className="text-sm text-[var(--muted)]">
               Las tablets se registran solas al instalar la app. Usá esto sólo para pre-cargar una tablet con su Device ID.

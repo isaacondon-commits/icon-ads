@@ -216,7 +216,7 @@ export default function ClientsPage() {
       )}
 
       {showModal && (
-        <Modal title={editing ? 'Editar cliente' : 'Nuevo cliente'} onClose={() => setShowModal(false)}>
+        <Modal title={editing ? 'Editar cliente' : 'Nuevo cliente'} onClose={() => setShowModal(false)} closeOnBackdrop={false}>
           <div className="space-y-4">
             <Field label="Nombre"><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <Field label="Email"><input type="email" className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
@@ -252,7 +252,7 @@ export default function ClientsPage() {
   );
 }
 
-function Modal(props: { title: string; children: React.ReactNode; onClose: () => void }) {
+function Modal(props: { title: string; children: React.ReactNode; onClose: () => void; closeOnBackdrop?: boolean }) {
   return <UiModal {...props} />;
 }
 
