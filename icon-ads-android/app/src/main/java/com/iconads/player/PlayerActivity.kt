@@ -96,7 +96,7 @@ class PlayerActivity : AppCompatActivity() {
     // Backoff de descarga: máx N intentos de /package por hora. Si se supera,
     // la tablet sigue reproduciendo su contenido actual y solo loguea.
     private val packageAttempts = ArrayDeque<Long>()
-    private val maxPackageAttemptsPerHour = 5
+    private val maxPackageAttemptsPerHour = 30
 
     // El operador bloqueó la tablet desde el panel (manualStatus="bloqueada").
     // A diferencia de `dormant` (apagado por energía/quietud), acá el kiosco
