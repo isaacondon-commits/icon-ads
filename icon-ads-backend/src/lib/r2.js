@@ -1,5 +1,5 @@
 const {
-  S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand,
+  S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand, ListObjectsV2Command,
   GetBucketCorsCommand, PutBucketCorsCommand,
 } = require('@aws-sdk/client-s3');
 const fs = require('fs');
@@ -121,6 +121,21 @@ async function ensureUploadCors(origins) {
   }
 }
 
+// Lo que ocupa el bucket (anuncios + ZIPs de playlists), para la barra de
+// almacenamiento del panel. Pagina de a 1000 objetos.
+async function getUsageBytes() {
+  if (!client) return { totalBytes: 0, fileCount: 0 };
+  let totalBytes = 0;
+  let fileCount = 0;
+  let ContinuationToken;
+  do {
+    const r = await client.send(new ListObjectsV2Command({ Bucket: process.env.R2_BUCKET, ContinuationToken }));
+    for (const o of r.Contents || []) { totalBytes += o.Size || 0; fileCount += 1; }
+    ContinuationToken = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (ContinuationToken);
+  return { totalBytes, fileCount };
+}
+
 function getPublicUrl(key) {
   const base = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
   return `${base}/${key}`;
@@ -129,5 +144,5 @@ function getPublicUrl(key) {
 module.exports = {
   isConfigured, hasPublicUrl,
   getPresignedUploadUrl, deleteObject, objectExists, putFile, putBuffer, getPublicUrl,
-  ensureUploadCors,
+  ensureUploadCors, getUsageBytes,
 };

@@ -118,12 +118,32 @@ router.get('/', async (req, res, next) => {
 });
 
 // GET /api/ads/storage-stats — storage usage + quota (#storage-bar)
-// SUPABASE_STORAGE_QUOTA_MB lets this track a plan upgrade; defaults to the
-// Supabase free-tier bucket limit (1 GB) since that's what's configured today.
+// Los anuncios se suben a R2, así que si está configurado se mide R2 (cuota
+// R2_STORAGE_QUOTA_MB, por defecto los 10 GB gratis de Cloudflare). Supabase
+// queda como respaldo: SUPABASE_STORAGE_QUOTA_MB, por defecto 1 GB.
 const DEFAULT_QUOTA_MB = 1024;
+const DEFAULT_R2_QUOTA_MB = 10240;
 router.get('/storage-stats', async (req, res, next) => {
   try {
     const adCount = await prisma.ad.count({ where: { deletedAt: null, active: true } });
+    if (r2.isConfigured) {
+      let usage;
+      try {
+        usage = await r2.getUsageBytes();
+      } catch (err) {
+        // Sin permiso de listar: sumar el peso guardado de cada anuncio.
+        console.warn('[storage-stats] R2 list falló, uso el peso de los anuncios:', err.name, err.message);
+        const agg = await prisma.ad.aggregate({ where: { deletedAt: null }, _sum: { fileSize: true }, _count: { _all: true } });
+        usage = { totalBytes: agg._sum.fileSize || 0, fileCount: agg._count._all };
+      }
+      const quotaMB = Number(process.env.R2_STORAGE_QUOTA_MB) || DEFAULT_R2_QUOTA_MB;
+      const quotaBytes = quotaMB * 1024 * 1024;
+      return res.json({
+        totalBytes: usage.totalBytes, totalMB: Math.round(usage.totalBytes / 1024 / 1024),
+        quotaMB, quotaBytes, usedPct: quotaBytes > 0 ? Math.round((usage.totalBytes / quotaBytes) * 1000) / 10 : 0,
+        fileCount: usage.fileCount, adCount, storage: 'r2',
+      });
+    }
     if (supabaseStorage.isConfigured) {
       const { totalBytes, fileCount } = await supabaseStorage.getUsageBytes();
       const quotaMB = Number(process.env.SUPABASE_STORAGE_QUOTA_MB) || DEFAULT_QUOTA_MB;
