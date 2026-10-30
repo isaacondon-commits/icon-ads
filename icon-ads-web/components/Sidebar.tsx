@@ -18,6 +18,7 @@ const NAV_ICONS: Record<string, string> = {
   '/clients': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
   '/ads': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   '/playlists': 'M4 6h16M4 12h16M4 18h16',
+  '/maestro': 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   '/tablets/compare': 'M3 6h18v12H3zM3 12h18',
   '/apk': 'M12 4v12M7 11l5 5 5-5M5 20h14',
   '/maintenance': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1',
@@ -39,7 +40,7 @@ function NavIcon({ href }: { href: string }) {
 }
 
 // Secciones que sólo ve un admin/superadmin (supervisor y operator no).
-const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk']);
+const ADMIN_ONLY_HREFS = new Set(['/settings', '/apk', '/maestro']);
 
 const linkGroups = [
   {
@@ -54,6 +55,7 @@ const linkGroups = [
       { href: '/clients', label: 'Clientes', icon: '⊛' },
       { href: '/ads', label: 'Anuncios', icon: '◉' },
       { href: '/playlists', label: 'Playlists', icon: '≡' },
+      { href: '/maestro', label: 'Maestro', icon: '⚙' },
     ],
   },
   {

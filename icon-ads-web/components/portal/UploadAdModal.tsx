@@ -17,12 +17,14 @@ function videoDuration(url: string): Promise<number | null> {
   });
 }
 
-export default function UploadAdModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: (u: PortalUpload) => void }) {
+export default function UploadAdModal({ maxSeconds, onClose, onUploaded }: { maxSeconds: number; onClose: () => void; onUploaded: (u: PortalUpload) => void }) {
+  // Tiempos de imagen que permite su tope (más el tope mismo si no está en la lista).
+  const imageChoices = [...new Set([...UPLOAD_LIMITS.imageDurations.filter((s) => s <= maxSeconds), Math.min(maxSeconds, 30)])].sort((a, b) => a - b);
   const [name, setName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [videoS, setVideoS] = useState<number | null>(null);
-  const [imageS, setImageS] = useState(10);
+  const [imageS, setImageS] = useState(Math.min(10, maxSeconds));
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
@@ -48,9 +50,9 @@ export default function UploadAdModal({ onClose, onUploaded }: { onClose: () => 
     const url = URL.createObjectURL(f);
     if (video) {
       const d = await videoDuration(url);
-      if (d !== null && d > UPLOAD_LIMITS.videoMaxS + 0.5) {
+      if (d !== null && Math.ceil(d - 0.05) > maxSeconds) {
         URL.revokeObjectURL(url);
-        setError(`El video dura ${Math.round(d)} s. El máximo es ${UPLOAD_LIMITS.videoMaxS} s.`);
+        setError(`El video dura ${Math.ceil(d - 0.05)} s. Tu máximo es ${maxSeconds} s.`);
         return;
       }
       setVideoS(d);
@@ -100,7 +102,7 @@ export default function UploadAdModal({ onClose, onUploaded }: { onClose: () => 
                 onChange={(e) => pick(e.target.files?.[0] ?? null)}
                 className="block w-full text-sm text-[var(--text-2)] file:mr-3 file:rounded-full file:border-0 file:bg-[var(--surface-2)] file:px-4 file:py-2 file:text-sm file:text-[var(--text)]" />
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Video MP4 (hasta {UPLOAD_LIMITS.videoMb} MB y {UPLOAD_LIMITS.videoMaxS} s) o imagen JPG, PNG o WEBP (hasta {UPLOAD_LIMITS.imageMb} MB). Ideal: horizontal, 1920×1080.
+                Video MP4 (hasta {UPLOAD_LIMITS.videoMb} MB y {maxSeconds} s) o imagen JPG, PNG o WEBP (hasta {UPLOAD_LIMITS.imageMb} MB). Ideal: horizontal, 1920×1080.
               </p>
             </div>
 
@@ -123,7 +125,7 @@ export default function UploadAdModal({ onClose, onUploaded }: { onClose: () => 
               <div>
                 <label htmlFor="up-dur" className="mb-1 block text-xs text-[var(--muted)]">Tiempo en pantalla</label>
                 <select id="up-dur" value={imageS} onChange={(e) => setImageS(Number(e.target.value))} disabled={uploading} className="input h-11">
-                  {UPLOAD_LIMITS.imageDurations.map((s) => <option key={s} value={s}>{s} segundos</option>)}
+                  {imageChoices.map((s) => <option key={s} value={s}>{s} segundos</option>)}
                 </select>
               </div>
             )}

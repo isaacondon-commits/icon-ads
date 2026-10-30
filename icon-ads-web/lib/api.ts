@@ -273,6 +273,11 @@ export const api = {
   assignTabletGroup: (tabletId: number, groupId: number | null) =>
     request<Tablet>(`/api/tablets/${tabletId}/group`, { method: 'PATCH', body: JSON.stringify({ groupId }) }),
 
+  // Maestro: segundos máximos de los anuncios del portal (general + por empresa)
+  getAdDurationLimits: () => request<AdDurationLimits>('/api/maestro/ad-duration'),
+  saveAdDurationLimits: (data: { defaultSeconds?: number; clients?: { id: number; maxSeconds: number | null }[] }) =>
+    request<AdDurationLimits>('/api/maestro/ad-duration', { method: 'PUT', body: JSON.stringify(data) }),
+
   // System settings (#11 #12 #10)
   getSettings: () => request<Record<string, string>>('/api/settings'),
   setSetting: (key: string, value: string) =>
@@ -661,6 +666,11 @@ export interface TabletMonitorEntry {
   lastAdAgoS?: number | null;
   hasScreenshot?: boolean;
   lastScreenshotAt?: string | null;
+}
+export interface AdDurationLimits {
+  minSeconds: number; maxSeconds: number; defaultSeconds: number;
+  /** maxSeconds null = usa el general. */
+  clients: { id: number; name: string; active: boolean; maxSeconds: number | null }[];
 }
 export interface PortalInviteResult { sent: boolean; error?: string; expiresAt?: string }
 export interface ClientPortalStatus {

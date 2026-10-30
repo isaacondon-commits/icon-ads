@@ -14,11 +14,10 @@ const prisma = require('../lib/prisma');
 const { sendAlert } = require('../lib/alerts');
 const { mp4DurationSeconds } = require('../lib/mp4Duration');
 const { requireUploadTicket, logPortalEvent } = require('../lib/portalAuth');
+const { MAX_S, maxSecondsForClient } = require('../lib/portalLimits');
 const { IMAGE_MAX, VIDEO_MAX, ALLOWED_EXT, detectMimeFromBuffer, compressImage, storeAdFile } = require('../lib/adFile');
 
 const MAX_PENDING_UPLOADS = 10;
-const MAX_VIDEO_S = 120;
-const IMAGE_DURATIONS = [5, 10, 15, 20, 30];
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -33,7 +32,7 @@ const fieldsSchema = z.object({
   publicName: z.string().trim().min(1, 'Poné un nombre para el anuncio.').max(120, 'El nombre es muy largo (máximo 120).'),
   // Imágenes: cuánto tiempo se muestran. Videos: lo que midió el navegador
   // (sólo se usa si no se puede leer del archivo).
-  durationS: z.coerce.number().int().positive().max(MAX_VIDEO_S).optional(),
+  durationS: z.coerce.number().int().positive().max(MAX_S).optional(),
 });
 
 router.post('/', requireUploadTicket, (req, res, next) => {
@@ -57,14 +56,17 @@ router.post('/', requireUploadTicket, (req, res, next) => {
       return res.status(400).json({ error: 'El archivo no es una imagen o un video MP4 válido.' });
     }
 
+    // Tope de segundos de ESTA empresa (Maestro del panel).
+    const maxS = await maxSecondsForClient(req.portal.clientId);
     let durationS;
     if (isVideo) {
       const real = mp4DurationSeconds(req.file.buffer);
       durationS = real != null ? Math.max(1, Math.ceil(real - 0.05)) : parsed.data.durationS;
       if (!durationS) return res.status(400).json({ error: 'No pudimos leer la duración del video. Exportalo como MP4 (H.264) y probá de nuevo.' });
-      if (durationS > MAX_VIDEO_S) return res.status(400).json({ error: `El video dura ${durationS} s. El máximo es ${MAX_VIDEO_S} s.` });
+      if (durationS > maxS) return res.status(400).json({ error: `El video dura ${durationS} s. Tu máximo es ${maxS} s.` });
     } else {
-      durationS = IMAGE_DURATIONS.includes(parsed.data.durationS) ? parsed.data.durationS : 10;
+      durationS = parsed.data.durationS ?? Math.min(10, maxS);
+      if (durationS > maxS) return res.status(400).json({ error: `El tiempo en pantalla máximo es ${maxS} s.` });
     }
 
     const buffer = isVideo ? req.file.buffer : await compressImage(req.file.buffer, mime);

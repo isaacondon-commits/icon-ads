@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { portal, passwordHint, PortalAd, PortalAdStatus, PortalError, PortalStats, PortalUpload, PortalUploadStatus } from '@/lib/portal';
+import { portal, passwordHint, PortalAd, PortalAdStatus, PortalError, PortalMe, PortalStats, PortalUpload, PortalUploadStatus } from '@/lib/portal';
 import { FormError } from '@/components/portal/AuthCard';
 import UploadAdModal from '@/components/portal/UploadAdModal';
 
@@ -35,7 +35,7 @@ const PRESETS = [
 
 export default function PortalStatsPage() {
   const router = useRouter();
-  const [me, setMe] = useState<{ clientName: string; email: string } | null>(null);
+  const [me, setMe] = useState<PortalMe | null>(null);
   const [ads, setAds] = useState<PortalAd[]>([]);
   const [stats, setStats] = useState<PortalStats | null>(null);
   const [adId, setAdId] = useState('');
@@ -87,8 +87,6 @@ export default function PortalStatsPage() {
 
   const t = stats?.totals;
   const dailyMax = Math.max(1, ...(stats?.daily.map((d) => d.count) ?? [1]));
-  const hourlyMax = Math.max(1, ...(stats?.hourly.map((h) => h.count) ?? [1]));
-  const peak = stats?.hourly.reduce((b, h) => (h.count > b.count ? h : b), { hour: 0, count: 0 });
   const change = t?.changePct == null ? undefined
     : `${t.changePct >= 0 ? '+' : ''}${t.changePct}% vs. el período anterior`;
 
@@ -141,12 +139,9 @@ export default function PortalStatsPage() {
       {error && <div className="mb-6"><FormError message={error} /></div>}
 
       {/* Totales */}
-      <section className={`mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5 ${loading ? 'opacity-60' : ''}`}>
+      <section className={`mb-6 grid grid-cols-2 gap-3 ${loading ? 'opacity-60' : ''}`}>
         <Kpi label="Reproducciones" value={t ? fmt(t.plays) : '—'} hint={change} />
-        <Kpi label="Vistas completas" value={t ? `${t.completionRate}%` : '—'} hint={t ? `${fmt(t.completedPlays)} de ${fmt(t.plays)}` : undefined} />
-        <Kpi label="Minutos al aire" value={t ? fmt(Math.round(t.secondsOnScreen / 60)) : '—'} />
-        <Kpi label="Taxis que lo mostraron" value={t ? fmt(t.tablets) : '—'} hint="en el período" />
-        <Kpi label="Taxis donde corre hoy" value={t ? fmt(t.tabletsNow) : '—'} hint="ahora mismo" />
+        <Kpi label="Taxis asignados" value={t ? fmt(t.tabletsAssigned) : '—'} hint="taxis que tienen tu anuncio" />
       </section>
 
       {stats && (
@@ -173,29 +168,6 @@ export default function PortalStatsPage() {
             )}
           </section>
 
-          {/* Por hora */}
-          <section className="card mb-6 px-5 py-4">
-            <h2 className="mb-1 text-sm font-semibold">¿A qué hora se ve más?</h2>
-            {peak && peak.count > 0 && (
-              <p className="mb-4 text-xs text-[var(--muted)]">Hora pico: {String(peak.hour).padStart(2, '0')}:00 a {String(peak.hour).padStart(2, '0')}:59</p>
-            )}
-            {stats.totals.plays === 0 ? <Empty /> : (
-              <>
-                <div className="flex h-32 items-end gap-1" role="img" aria-label="Gráfico de reproducciones por hora">
-                  {stats.hourly.map((h) => (
-                    <div key={h.hour} className="group relative flex h-full flex-1 flex-col justify-end">
-                      <div className="rounded-t-sm bg-[var(--accent)]" style={{ height: `${(h.count / hourlyMax) * 100}%`, minHeight: h.count ? 2 : 0 }} />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-[var(--surface-2)] px-2 py-1 text-xs group-hover:block">
-                        {String(h.hour).padStart(2, '0')} h: {fmt(h.count)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 flex justify-between text-xs text-[var(--muted)]"><span>00 h</span><span>12 h</span><span>23 h</span></div>
-              </>
-            )}
-          </section>
-
           {/* Por anuncio */}
           <section className="card px-5 py-4">
             <h2 className="mb-3 text-sm font-semibold">Mis anuncios</h2>
@@ -206,10 +178,7 @@ export default function PortalStatsPage() {
                     <tr className="text-left text-xs text-[var(--muted)]">
                       <th className="pb-2 font-normal">Anuncio</th>
                       <th className="pb-2 text-right font-normal">Reproducciones</th>
-                      <th className="pb-2 text-right font-normal">Completas</th>
-                      <th className="pb-2 text-right font-normal">Taxis</th>
-                      <th className="pb-2 text-right font-normal">Taxis hoy</th>
-                      <th className="pb-2 text-right font-normal">Minutos</th>
+                      <th className="pb-2 text-right font-normal">Taxis asignados</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--divider)]">
@@ -223,10 +192,7 @@ export default function PortalStatsPage() {
                           </p>
                         </td>
                         <td className="py-3 text-right tabular-nums">{fmt(a.plays)}</td>
-                        <td className="py-3 text-right tabular-nums">{a.completionRate}%</td>
-                        <td className="py-3 text-right tabular-nums">{fmt(a.tablets)}</td>
-                        <td className="py-3 text-right tabular-nums">{fmt(a.tabletsNow)}</td>
-                        <td className="py-3 text-right tabular-nums">{fmt(Math.round(a.secondsOnScreen / 60))}</td>
+                        <td className="py-3 text-right tabular-nums">{fmt(a.tabletsAssigned)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -263,7 +229,7 @@ export default function PortalStatsPage() {
       </p>
 
       {showPassword && <ChangePassword onClose={() => setShowPassword(false)} />}
-      {showUpload && <UploadAdModal onClose={() => setShowUpload(false)} onUploaded={(u) => setUploads((prev) => [u, ...prev])} />}
+      {showUpload && <UploadAdModal maxSeconds={me.maxAdSeconds} onClose={() => setShowUpload(false)} onUploaded={(u) => setUploads((prev) => [u, ...prev])} />}
     </div>
   );
 }

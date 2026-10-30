@@ -8,23 +8,20 @@ export interface PortalAd {
   id: number; name: string; type: 'video' | 'image';
   startsAt: string | null; endsAt: string | null; status: PortalAdStatus;
   totalPlays: number; lastPlayAt: string | null;
-  /** Tablets donde está corriendo ahora. */
-  tabletsNow: number;
+  /** Taxis cuya playlist tiene el anuncio. */
+  tabletsAssigned: number;
 }
 
 export interface PortalStats {
   from: string; to: string;
   totals: {
-    plays: number; completedPlays: number; completionRate: number; tablets: number; tabletsNow: number;
-    secondsOnScreen: number; previousPlays: number;
+    plays: number; tabletsAssigned: number; previousPlays: number;
     /** % contra el período anterior de igual duración; null si no hubo datos antes. */
     changePct: number | null;
   };
   daily: { date: string; count: number }[];
-  hourly: { hour: number; count: number }[];
   byAd: {
-    id: number; name: string; type: 'video' | 'image'; status: PortalAdStatus; plays: number;
-    completionRate: number; tablets: number; secondsOnScreen: number; tabletsNow: number;
+    id: number; name: string; type: 'video' | 'image'; status: PortalAdStatus; plays: number; tabletsAssigned: number;
   }[];
 }
 
@@ -36,7 +33,10 @@ export interface PortalUpload {
   status: PortalUploadStatus; createdAt: string;
 }
 
-export const UPLOAD_LIMITS = { videoMb: 100, imageMb: 10, videoMaxS: 120, imageDurations: [5, 10, 15, 20, 30] };
+// La duración máxima no es fija: la define el admin por empresa (PortalMe.maxAdSeconds).
+export const UPLOAD_LIMITS = { videoMb: 100, imageMb: 10, imageDurations: [5, 10, 15, 20, 30] };
+
+export interface PortalMe { clientName: string; email: string; maxAdSeconds: number }
 
 export class PortalError extends Error {
   constructor(message: string, public status: number) { super(message); }
@@ -57,7 +57,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 const post = <T>(path: string, data: unknown = {}) => call<T>(path, { method: 'POST', body: JSON.stringify(data) });
 
 export const portal = {
-  me: () => call<{ clientName: string; email: string }>('me'),
+  me: () => call<PortalMe>('me'),
   login: (email: string, password: string) => post<{ ok: true }>('login', { email, password }),
   logout: () => post<{ ok: true }>('logout'),
   activate: (token: string, password: string) => post<{ ok: true }>('activate', { token, password }),

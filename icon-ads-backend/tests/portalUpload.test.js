@@ -11,6 +11,7 @@ const cookieParser = require('cookie-parser');
 const request = require('supertest');
 
 const mockDb = {
+  config: {},
   clients: [
     { id: 1, name: 'Empresa Uno', active: true, deletedAt: null },
     { id: 2, name: 'Empresa Dos', active: true, deletedAt: null },
@@ -41,6 +42,8 @@ jest.mock('../src/lib/prisma', () => ({
       return ad;
     }),
   },
+  client: { findUnique: jest.fn(async ({ where }) => mockDb.clients.find((c) => c.id === where.id) ?? null) },
+  systemConfig: { findUnique: jest.fn(async ({ where }) => (mockDb.config?.[where.key] !== undefined ? { key: where.key, value: mockDb.config[where.key] } : null)) },
   auditLog: { create: jest.fn(async () => ({})) },
 }));
 jest.mock('../src/lib/alerts', () => ({ sendAlert: jest.fn(async () => {}) }));
@@ -86,6 +89,19 @@ describe('subida de anuncios desde el portal', () => {
     expect(res.body.status).toBe('revision');
     const ad = mockDb.ads.find((a) => a.id === res.body.id);
     expect(ad).toMatchObject({ clientId: 1, publicName: 'Promo verano', approvalStatus: 'pending', uploadedByClient: true, type: 'image', durationS: 15 });
+  });
+
+  it('respeta el tope general del Maestro y el propio de cada empresa', async () => {
+    mockDb.config.portal_max_ad_seconds = '10';
+    expect((await send(await ticketFor(100), { publicName: 'Larga', durationS: 15 })).status).toBe(400);
+    expect((await send(await ticketFor(100), { publicName: 'Justa', durationS: 10 })).status).toBe(201);
+    // La empresa 1 tiene su propio tope: manda sobre el general.
+    mockDb.clients[0].portalMaxAdSeconds = 20;
+    expect((await send(await ticketFor(100), { publicName: 'Con excepción', durationS: 15 })).status).toBe(201);
+    const me = await request(app).get('/api/portal/me').set(PROXY).set('Cookie', cookieFor(100));
+    expect(me.body.maxAdSeconds).toBe(20);
+    mockDb.clients[0].portalMaxAdSeconds = null;
+    delete mockDb.config.portal_max_ad_seconds;
   });
 
   it('el permiso sirve una sola vez', async () => {

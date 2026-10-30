@@ -35,6 +35,9 @@ model Client {
   contactName       String?          @map("contact_name")
   contactPhone      String?          @map("contact_phone")
   active            Boolean          @default(true)
+  // Tope de segundos para los anuncios que sube desde el portal. null = el
+  // general del Maestro (lib/portalLimits.js).
+  portalMaxAdSeconds Int?            @map("portal_max_ad_seconds")
   deletedAt         DateTime?        @map("deleted_at")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")

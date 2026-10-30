@@ -16,13 +16,13 @@ const prisma = require('../lib/prisma');
 const pdf = require('../lib/pdfHelper');
 const { sendAlert } = require('../lib/alerts');
 const { sendReset } = require('../lib/portalMailer');
-const { isAdPlayable } = require('../lib/adSchedule');
 const {
   signSession, setSessionCookie, clearSessionCookie, newOneTimeToken, hashToken,
   passwordProblem, hashPassword, checkPassword, lockoutFor, RESET_TTL_MS,
   requirePortalProxy, requirePortalSession, logPortalEvent, signUploadTicket,
 } = require('../lib/portalAuth');
 const { MAX_PENDING_UPLOADS } = require('./portalUpload');
+const { maxSecondsForClient } = require('../lib/portalLimits');
 
 router.use(requirePortalProxy);
 
@@ -169,8 +169,10 @@ router.post('/password/forgot', authLimiter, async (req, res, next) => {
 // ── Todo lo de abajo exige sesión ───────────────────────────────────────────
 router.use(requirePortalSession, dataLimiter);
 
-router.get('/me', (req, res) => {
-  res.json({ clientName: req.portal.clientName, email: req.portal.email });
+router.get('/me', async (req, res, next) => {
+  try {
+    res.json({ clientName: req.portal.clientName, email: req.portal.email, maxAdSeconds: await maxSecondsForClient(req.portal.clientId) });
+  } catch (err) { next(err); }
 });
 
 router.post('/password/change', async (req, res, next) => {
@@ -251,14 +253,15 @@ async function scope(req) {
   return { ads, labels, ids };
 }
 
-// Tablets donde cada anuncio está corriendo AHORA: anuncio reproducible, en
-// una playlist activa asignada a la tablet, y tablet no bloqueada. Devuelve
-// { perAd: Map(adId -> cantidad), total: tablets distintas }.
-async function tabletsNow(ads) {
-  const playable = ads.filter((a) => !a.deletedAt && isAdPlayable(a)).map((a) => a.id);
-  if (!playable.length) return { perAd: new Map(), total: 0 };
+// Taxis asignados: tablets (no bloqueadas) cuya playlist tiene el anuncio.
+// Cuenta los anuncios aprobados que no terminaron; no mira si la playlist está
+// pausada ni el horario del día. Devuelve { perAd: Map(adId -> cantidad),
+// total: tablets distintas }.
+async function tabletsAssigned(ads, now = new Date()) {
+  const ids = ads.filter((a) => !a.deletedAt && a.approvalStatus === 'approved' && !(a.endsAt && new Date(a.endsAt) < now)).map((a) => a.id);
+  if (!ids.length) return { perAd: new Map(), total: 0 };
   const links = await prisma.playlistAd.findMany({
-    where: { adId: { in: playable }, playlist: { active: true } },
+    where: { adId: { in: ids } },
     select: { adId: true, playlistId: true },
   });
   const playlistIds = [...new Set(links.map((l) => l.playlistId))];
@@ -278,9 +281,11 @@ async function tabletsNow(ads) {
   return { perAd, total: all.size };
 }
 
+// Lo que ve la empresa: reproducciones (con comparación), por día, por
+// anuncio y taxis asignados. Nada más.
 async function buildStats(sc, from, to) {
   const { ids, labels, ads } = sc;
-  const now = await tabletsNow(ads.filter((a) => ids.includes(a.id)));
+  const assigned = await tabletsAssigned(ads.filter((a) => ids.includes(a.id)));
   const fill = (rows) => {
     const map = new Map(rows.map((r) => [r.date, Number(r.count)]));
     const out = [];
@@ -290,74 +295,53 @@ async function buildStats(sc, from, to) {
     }
     return out;
   };
-  const rate = (done, total) => (total ? Math.round((done / total) * 1000) / 10 : 0);
   // Período anterior de la misma duración, para la comparación.
   const span = to.getTime() - from.getTime() + 1;
   const prevFrom = new Date(from.getTime() - span);
   const prevTo = new Date(from.getTime() - 1);
 
   if (!ids.length) {
-    return {
-      totals: { plays: 0, completedPlays: 0, completionRate: 0, tablets: 0, tabletsNow: 0, secondsOnScreen: 0, previousPlays: 0, changePct: null },
-      daily: fill([]), hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })), byAd: [],
-    };
+    return { totals: { plays: 0, tabletsAssigned: 0, previousPlays: 0, changePct: null }, daily: fill([]), byAd: [] };
   }
 
   const inIds = Prisma.join(ids);
   const where = Prisma.sql`m.ad_id IN (${inIds}) AND m.played_at BETWEEN ${from} AND ${to}`;
-  const [totals, prev, daily, hourly, byAd] = await Promise.all([
-    prisma.$queryRaw(Prisma.sql`
-      SELECT COUNT(*)::int AS plays, COALESCE(SUM(CASE WHEN m.completed THEN 1 ELSE 0 END), 0)::int AS completed,
-             COUNT(DISTINCT m.tablet_id)::int AS tablets, COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
-      FROM metrics m WHERE ${where}`),
+  const [totals, prev, daily, byAd] = await Promise.all([
+    prisma.$queryRaw(Prisma.sql`SELECT COUNT(*)::int AS plays FROM metrics m WHERE ${where}`),
     prisma.$queryRaw(Prisma.sql`
       SELECT COUNT(*)::int AS plays FROM metrics m
       WHERE m.ad_id IN (${inIds}) AND m.played_at BETWEEN ${prevFrom} AND ${prevTo}`),
     prisma.$queryRaw(Prisma.sql`
       SELECT TO_CHAR(DATE(m.played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
       FROM metrics m WHERE ${where} GROUP BY 1 ORDER BY 1`),
-    prisma.$queryRaw(Prisma.sql`
-      SELECT EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'America/Montevideo')::int AS hour, COUNT(*)::int AS count
-      FROM metrics m WHERE ${where} GROUP BY 1`),
-    prisma.$queryRaw(Prisma.sql`
-      SELECT m.ad_id AS id, COUNT(*)::int AS plays,
-             COALESCE(SUM(CASE WHEN m.completed THEN 1 ELSE 0 END), 0)::int AS completed,
-             COUNT(DISTINCT m.tablet_id)::int AS tablets, COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
-      FROM metrics m WHERE ${where} GROUP BY 1`),
+    prisma.$queryRaw(Prisma.sql`SELECT m.ad_id AS id, COUNT(*)::int AS plays FROM metrics m WHERE ${where} GROUP BY 1`),
   ]);
 
-  const t = totals[0] || {};
-  const plays = Number(t.plays || 0);
-  const completed = Number(t.completed || 0);
+  const plays = Number(totals[0]?.plays || 0);
   const previousPlays = Number(prev[0]?.plays || 0);
-  const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
-  for (const r of hourly) hours[Number(r.hour)].count = Number(r.count);
   const adById = new Map(ads.map((a) => [a.id, a]));
   const playedIds = new Set(byAd.map((r) => Number(r.id)));
-  // Por anuncio: los que se reprodujeron en el rango + los que están
-  // corriendo ahora aunque todavía no sumen reproducciones.
+  // Por anuncio: los que se reprodujeron en el rango + los que tienen taxis
+  // asignados aunque todavía no sumen reproducciones.
   const rows = [
-    ...byAd.map((r) => ({ id: Number(r.id), plays: Number(r.plays), completed: Number(r.completed), tablets: Number(r.tablets), seconds: Number(r.seconds) })),
-    ...[...now.perAd.keys()].filter((id) => !playedIds.has(id)).map((id) => ({ id, plays: 0, completed: 0, tablets: 0, seconds: 0 })),
+    ...byAd.map((r) => ({ id: Number(r.id), plays: Number(r.plays) })),
+    ...[...assigned.perAd.keys()].filter((id) => !playedIds.has(id)).map((id) => ({ id, plays: 0 })),
   ];
   return {
     totals: {
-      plays, completedPlays: completed, completionRate: rate(completed, plays),
-      tablets: Number(t.tablets || 0), tabletsNow: now.total, secondsOnScreen: Number(t.seconds || 0),
-      previousPlays, changePct: previousPlays ? Math.round(((plays - previousPlays) / previousPlays) * 1000) / 10 : null,
+      plays, tabletsAssigned: assigned.total, previousPlays,
+      changePct: previousPlays ? Math.round(((plays - previousPlays) / previousPlays) * 1000) / 10 : null,
     },
     daily: fill(daily),
-    hourly: hours,
     byAd: rows
       .map((r) => {
         const ad = adById.get(r.id);
         return {
           id: r.id, name: labels.get(r.id), type: ad?.type, status: ad ? (ad.deletedAt ? 'finalizado' : adStatus(ad)) : 'finalizado',
-          plays: r.plays, completionRate: rate(r.completed, r.plays), tablets: r.tablets,
-          secondsOnScreen: r.seconds, tabletsNow: now.perAd.get(r.id) ?? 0,
+          plays: r.plays, tabletsAssigned: assigned.perAd.get(r.id) ?? 0,
         };
       })
-      .sort((a, b) => b.plays - a.plays || b.tabletsNow - a.tabletsNow),
+      .sort((x, y) => y.plays - x.plays || y.tabletsAssigned - x.tabletsAssigned),
   };
 }
 
@@ -368,7 +352,7 @@ router.get('/ads', async (req, res, next) => {
     const ids = visible.map((a) => a.id);
     const [totals, now] = await Promise.all([
       ids.length ? prisma.metric.groupBy({ by: ['adId'], where: { adId: { in: ids } }, _count: { _all: true }, _max: { playedAt: true } }) : [],
-      tabletsNow(visible),
+      tabletsAssigned(visible),
     ]);
     const byId = new Map(totals.map((t) => [t.adId, t]));
     res.json(visible
@@ -376,7 +360,7 @@ router.get('/ads', async (req, res, next) => {
         id: a.id, name: sc.labels.get(a.id), type: a.type, startsAt: a.startsAt, endsAt: a.endsAt, status: adStatus(a),
         totalPlays: byId.get(a.id)?._count._all ?? 0,
         lastPlayAt: byId.get(a.id)?._max.playedAt ?? null,
-        tabletsNow: now.perAd.get(a.id) ?? 0,
+        tabletsAssigned: now.perAd.get(a.id) ?? 0,
       }))
       .sort((x, y) => String(x.name).localeCompare(String(y.name), 'es', { numeric: true })));
   } catch (err) { next(err); }
@@ -478,32 +462,13 @@ router.get('/report.pdf', async (req, res, next) => {
     const change = st.totals.changePct === null ? '' : ` (${st.totals.changePct >= 0 ? '+' : ''}${st.totals.changePct}% vs. período anterior)`;
     pdf.sectionTitle(doc, 'Resumen');
     pdf.row(doc, 'Reproducciones', `${fmtInt(st.totals.plays)}${change}`, true);
-    pdf.row(doc, 'Reproducciones completas', `${fmtInt(st.totals.completedPlays)} (${st.totals.completionRate}%)`);
-    pdf.row(doc, 'Minutos al aire', fmtInt(Math.round(st.totals.secondsOnScreen / 60)));
-    pdf.row(doc, 'Taxis que lo mostraron', fmtInt(st.totals.tablets));
-    pdf.row(doc, 'Taxis donde corre hoy', fmtInt(st.totals.tabletsNow));
+    pdf.row(doc, 'Taxis asignados', fmtInt(st.totals.tabletsAssigned));
 
     if (!single && st.byAd.length) {
       pdf.sectionTitle(doc, 'Por anuncio');
       pdfTable(doc,
-        [{ label: 'Anuncio', w: 0.34 }, { label: 'Estado', w: 0.14 }, { label: 'Taxis hoy', w: 0.12, align: 'right' }, { label: 'Taxis', w: 0.1, align: 'right' }, { label: 'Completas', w: 0.13, align: 'right' }, { label: 'Reprod.', w: 0.17, align: 'right' }],
-        st.byAd.map((a) => [a.name, STATUS_LABEL[a.status], fmtInt(a.tabletsNow), fmtInt(a.tablets), `${a.completionRate}%`, fmtInt(a.plays)]));
-    }
-
-    // Horas pico: barras.
-    if (st.totals.plays) {
-      if (doc.y > doc.page.height - 200) { doc.addPage(); doc.y = 50; }
-      pdf.sectionTitle(doc, 'Reproducciones por hora del día');
-      const max = Math.max(...st.hourly.map((h) => h.count), 1);
-      const chartW = doc.page.width - 100;
-      const barW = chartW / 24;
-      const baseY = doc.y + 90;
-      st.hourly.forEach((h, i) => {
-        const bh = (h.count / max) * 80;
-        doc.rect(50 + i * barW + 2, baseY - bh, barW - 4, bh).fill(pdf.BLUE);
-        doc.fontSize(6.5).fillColor(pdf.GRAY).text(String(h.hour).padStart(2, '0'), 50 + i * barW, baseY + 3, { width: barW, align: 'center' });
-      });
-      doc.y = baseY + 20;
+        [{ label: 'Anuncio', w: 0.46 }, { label: 'Estado', w: 0.16 }, { label: 'Taxis asignados', w: 0.2, align: 'right' }, { label: 'Reprod.', w: 0.18, align: 'right' }],
+        st.byAd.map((a) => [a.name, STATUS_LABEL[a.status], fmtInt(a.tabletsAssigned), fmtInt(a.plays)]));
     }
 
     pdf.sectionTitle(doc, 'Reproducciones por día');

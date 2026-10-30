@@ -29,6 +29,7 @@ const zonesRoutes = require('./routes/zones');
 const publicRoutes = require('./routes/public');
 const portalRoutes = require('./routes/portal');
 const portalUploadRoutes = require('./routes/portalUpload');
+const maestroRoutes = require('./routes/maestro');
 const surveysRoutes = require('./routes/surveys');
 const maintenanceRoutes = require('./routes/maintenance');
 const swaggerUi = require('swagger-ui-express');
@@ -212,6 +213,7 @@ app.use('/api/v1/public', publicRoutes);
 app.use('/api/portal', portalRoutes);
 // Archivo de un anuncio que manda una empresa desde el portal (directo, no por el proxy).
 app.use('/api/portal-upload', portalUploadRoutes);
+app.use('/api/maestro', maestroRoutes);
 
 // #41 — Swagger API docs at /api/docs
 const swaggerSpec = swaggerJsdoc({

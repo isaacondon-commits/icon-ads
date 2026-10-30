@@ -143,6 +143,7 @@ const MIGRATIONS = [
   { name: 'ads.client_id', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id)` },
   { name: 'ads.public_name', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS public_name TEXT` },
   { name: 'ads.client_idx', sql: `CREATE INDEX IF NOT EXISTS ads_client_id_idx ON ads(client_id)` },
+  { name: 'clients.portal_max_ad_seconds', sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_max_ad_seconds INTEGER` },
   { name: 'ads.uploaded_by_client', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS uploaded_by_client BOOLEAN NOT NULL DEFAULT false` },
   { name: 'playlists.active', sql: `ALTER TABLE playlists ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true` },
   { name: 'client_users', sql: `CREATE TABLE IF NOT EXISTS client_users (id SERIAL PRIMARY KEY, client_id INT NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE, email TEXT NOT NULL UNIQUE, password_hash TEXT, active BOOLEAN NOT NULL DEFAULT true, session_version INT NOT NULL DEFAULT 0, failed_logins INT NOT NULL DEFAULT 0, locked_until TIMESTAMPTZ, invite_token_hash TEXT UNIQUE, invite_expires_at TIMESTAMPTZ, invited_at TIMESTAMPTZ, reset_token_hash TEXT UNIQUE, reset_expires_at TIMESTAMPTZ, last_login_at TIMESTAMPTZ, last_login_ip TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },

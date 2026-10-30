@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 
 const LABELS: Record<string, string> = {
   dashboard: 'Atajos', tablets: 'Tablets', clients: 'Clientes',
-  ads: 'Anuncios', playlists: 'Playlists', stats: 'Estadísticas', monitor: 'Monitor',
+  ads: 'Anuncios', playlists: 'Playlists', maestro: 'Maestro', stats: 'Estadísticas', monitor: 'Monitor',
   logs: 'Logs', calendar: 'Calendario', compare: 'Comparar',
   maintenance: 'Mantenimiento', orden: 'Órdenes',
 };

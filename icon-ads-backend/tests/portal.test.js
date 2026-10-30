@@ -61,6 +61,8 @@ jest.mock('../src/lib/prisma', () => ({
     findMany: jest.fn(async ({ where }) => mockDb.tablets.filter((t) => where.playlistId.in.includes(t.playlistId))),
   },
   metric: { groupBy: jest.fn(async () => []) },
+  client: { findUnique: jest.fn(async ({ where }) => mockDb.clients.find((c) => c.id === where.id) ?? null) },
+  systemConfig: { findUnique: jest.fn(async ({ where }) => (mockDb.config?.[where.key] !== undefined ? { key: where.key, value: mockDb.config[where.key] } : null)) },
   auditLog: { create: jest.fn(async () => ({})) },
   $queryRaw: jest.fn(async (sql) => { mockDb.rawQueries.push(sql); return []; }),
 }));
@@ -150,6 +152,7 @@ describe('aislamiento entre empresas', () => {
     const res = await request(app).get('/api/portal/me').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
     expect(res.status).toBe(200);
     expect(res.body.clientName).toBe('Empresa Uno');
+    expect(res.body.maxAdSeconds).toBe(120);
   });
   it('/ads lista sólo sus anuncios, sin el nombre interno', async () => {
     const res = await request(app).get('/api/portal/ads').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
@@ -157,7 +160,7 @@ describe('aislamiento entre empresas', () => {
     expect(res.body.map((a) => a.id)).toEqual([10]);
     expect(res.body[0].name).toBe('Anuncio 1');
     expect(JSON.stringify(res.body)).not.toMatch(/archivo_/);
-    expect(res.body[0].tabletsNow).toBe(2);
+    expect(res.body[0].tabletsAssigned).toBe(2);
   });
   it('pedir el anuncio de otra empresa da 404', async () => {
     for (const p of ['/api/portal/stats?adId=20', '/api/portal/report.pdf?adId=20']) {
@@ -180,7 +183,7 @@ describe('aislamiento entre empresas', () => {
     expect(res.status).toBe(200);
     expect(res.body.byAd.map((a) => a.id)).toEqual([10]);
     expect(JSON.stringify(res.body)).not.toMatch(/archivo_|Promo Dos/);
-    expect(res.body.totals.tabletsNow).toBe(2);
+    expect(res.body.totals.tabletsAssigned).toBe(2);
   });
   it('un id de anuncio no numérico da 404', async () => {
     const res = await request(app).get('/api/portal/stats?adId=10%20OR%201=1').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
