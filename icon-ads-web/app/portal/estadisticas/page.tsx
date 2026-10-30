@@ -46,6 +46,9 @@ export default function PortalStatsPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [uploads, setUploads] = useState<PortalUpload[]>([]);
+  // Botón Actualizar: cada toque vuelve a pedir anuncios, enviados y estadísticas.
+  const [tick, setTick] = useState(0);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const onAuthError = useCallback((err: unknown) => {
     if (err instanceof PortalError && err.status === 401) { router.replace('/portal'); return true; }
@@ -58,21 +61,28 @@ export default function PortalStatsPage() {
       .catch((err) => { if (!onAuthError(err)) setError(err.message); });
   }, [onAuthError]);
 
+  useEffect(() => {
+    if (!tick) return;
+    Promise.all([portal.ads(), portal.uploads()])
+      .then(([a, u]) => { setAds(a); setUploads(u); })
+      .catch((err) => { if (!onAuthError(err)) setError(err.message); });
+  }, [tick, onAuthError]);
+
   const query = useMemo(() => {
     const q = new URLSearchParams({ from, to });
     if (adId) q.set('adId', adId);
     return q;
   }, [from, to, adId]);
 
-  const key = query.toString();
+  const key = `${query}#${tick}`;
   const loading = loadedKey !== key;
   useEffect(() => {
     if (!me) return;
     portal.stats(query)
-      .then((s) => { setStats(s); setError(''); })
+      .then((s) => { setStats(s); setError(''); setUpdatedAt(new Date()); })
       .catch((err) => { if (!onAuthError(err)) setError(err.message); })
-      .finally(() => setLoadedKey(query.toString()));
-  }, [me, query, onAuthError]);
+      .finally(() => setLoadedKey(`${query}#${tick}`));
+  }, [me, query, tick, onAuthError]);
 
   const logout = async () => {
     await portal.logout().catch(() => {});
@@ -131,6 +141,14 @@ export default function PortalStatsPage() {
               className="h-10 rounded-full border border-[var(--border)] px-3 text-sm text-[var(--text-2)] hover:bg-[var(--surface-hover)]">{p.label}</button>
           ))}
         </div>
+        <button type="button" onClick={() => setTick((n) => n + 1)} disabled={loading}
+          title={updatedAt ? `Actualizado a las ${updatedAt.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' })}` : undefined}
+          className="flex h-10 items-center gap-2 rounded-full border border-[var(--border)] px-4 text-sm text-[var(--text-2)] hover:bg-[var(--surface-hover)] disabled:opacity-60">
+          <svg viewBox="0 0 24 24" className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />
+          </svg>
+          {loading ? 'Actualizando…' : 'Actualizar'}
+        </button>
         <a href={portal.reportUrl(query)} className="flex h-10 items-center rounded-full bg-[var(--accent-strong)] px-5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]">
           Descargar PDF
         </a>
