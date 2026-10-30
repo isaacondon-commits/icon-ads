@@ -150,7 +150,57 @@ async function requirePortalSession(req, res, next) {
       clearSessionCookie(res);
       return res.status(401).json({ error: 'Sesión vencida. Ingresá de nuevo.' });
     }
-    req.portal = { clientUserId: cu.id, clientId: cu.clientId, clientName: cu.client.name, email: cu.email };
+    req.portal = { clientUserId: cu.id, clientId: cu.clientId, clientName: cu.client.name, email: cu.email, sessionVersion: cu.sessionVersion };
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Permiso de subida ───────────────────────────────────────────────────────
+// El archivo de un anuncio no entra por el proxy de Vercel (corta los pedidos
+// de más de ~4,5 MB). El portal pide por el proxy un permiso firmado, corto y
+// de un solo uso, y con él el navegador manda el archivo directo al backend
+// (POST /api/portal-upload). El permiso lleva la sesión: si la empresa cambia
+// la contraseña o la desactivan, deja de servir.
+const UPLOAD_AUDIENCE = 'portal-upload';
+const UPLOAD_TTL_S = 15 * 60;
+const usedUploadTickets = new Map(); // jti -> vence (ms)
+
+function signUploadTicket(portal) {
+  return jwt.sign(
+    { cu: portal.clientUserId, c: portal.clientId, v: portal.sessionVersion, jti: crypto.randomBytes(16).toString('hex') },
+    sessionSecret(),
+    { expiresIn: UPLOAD_TTL_S, audience: UPLOAD_AUDIENCE, algorithm: 'HS256' }
+  );
+}
+
+// Valida el permiso (firma, vencimiento, un solo uso) y que la cuenta y la
+// empresa sigan activas con la misma sesión. Deja req.portal como la sesión.
+async function requireUploadTicket(req, res, next) {
+  const auth = String(req.headers.authorization || '');
+  let p;
+  try {
+    p = jwt.verify(auth.replace(/^Bearer\s+/i, ''), sessionSecret(), { audience: UPLOAD_AUDIENCE, algorithms: ['HS256'] });
+  } catch {
+    return res.status(401).json({ error: 'El permiso para subir venció. Probá de nuevo.' });
+  }
+  const now = Date.now();
+  for (const [k, exp] of usedUploadTickets) if (exp < now) usedUploadTickets.delete(k);
+  if (typeof p.jti !== 'string' || usedUploadTickets.has(p.jti)) {
+    return res.status(401).json({ error: 'Ese permiso ya se usó. Probá de nuevo.' });
+  }
+  usedUploadTickets.set(p.jti, p.exp * 1000);
+  try {
+    const cu = await prisma.clientUser.findUnique({
+      where: { id: p.cu },
+      include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
+    });
+    if (!cu || !cu.active || !cu.passwordHash || cu.clientId !== p.c || cu.sessionVersion !== p.v
+      || !cu.client || !cu.client.active || cu.client.deletedAt) {
+      return res.status(401).json({ error: 'Sesión vencida. Ingresá de nuevo.' });
+    }
+    req.portal = { clientUserId: cu.id, clientId: cu.clientId, clientName: cu.client.name, email: cu.email, sessionVersion: cu.sessionVersion };
     next();
   } catch (err) {
     next(err);
@@ -170,4 +220,5 @@ module.exports = {
   signSession, verifySession, setSessionCookie, clearSessionCookie,
   newOneTimeToken, hashToken, passwordProblem, hashPassword, checkPassword, lockoutFor,
   requirePortalProxy, requirePortalSession, logPortalEvent,
+  signUploadTicket, requireUploadTicket,
 };

@@ -569,7 +569,10 @@ export interface Ad {
   client?: { id: number; name: string } | null;
   name: string;
   /** Nombre que ve la empresa en su portal; si falta, "Anuncio N". */
-  publicName?: string | null; type: 'video' | 'image'; fileUrl: string; thumbnailUrl?: string | null; filename: string;
+  publicName?: string | null;
+  /** Lo mandó la empresa desde su portal (entra pendiente y sin playlists). */
+  uploadedByClient?: boolean;
+  type: 'video' | 'image'; fileUrl: string; thumbnailUrl?: string | null; filename: string;
   fileSize?: number | null;
   durationS: number; active: boolean; approvalStatus: string;
   priority: number; targetUrl?: string | null; startsAt?: string | null; endsAt?: string | null;

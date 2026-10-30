@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'ICON ADS — Portal de empresas',
-  description: 'Estadísticas de tus campañas en la flota ICON ADS',
+  description: 'Estadísticas de tus anuncios en la flota ICON ADS',
   robots: { index: false, follow: false },
 };
 

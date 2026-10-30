@@ -1,5 +1,5 @@
-// Portal de empresas: estadísticas de SOLO LECTURA de los anuncios de la
-// empresa. Todo lo que se devuelve sale filtrado por req.portal.clientId,
+// Portal de empresas: estadísticas de los anuncios de la empresa y envío de
+// anuncios nuevos (quedan pendientes de aprobación; ver routes/portalUpload.js). Todo lo que se devuelve sale filtrado por req.portal.clientId,
 // que viene de la sesión y nunca de la URL. Sin datos de GPS, tablets
 // individuales, choferes, precios ni de otras empresas.
 //
@@ -20,8 +20,9 @@ const { isAdPlayable } = require('../lib/adSchedule');
 const {
   signSession, setSessionCookie, clearSessionCookie, newOneTimeToken, hashToken,
   passwordProblem, hashPassword, checkPassword, lockoutFor, RESET_TTL_MS,
-  requirePortalProxy, requirePortalSession, logPortalEvent,
+  requirePortalProxy, requirePortalSession, logPortalEvent, signUploadTicket,
 } = require('../lib/portalAuth');
+const { MAX_PENDING_UPLOADS } = require('./portalUpload');
 
 router.use(requirePortalProxy);
 
@@ -378,6 +379,38 @@ router.get('/ads', async (req, res, next) => {
         tabletsNow: now.perAd.get(a.id) ?? 0,
       }))
       .sort((x, y) => String(x.name).localeCompare(String(y.name), 'es', { numeric: true })));
+  } catch (err) { next(err); }
+});
+
+// ── Anuncios enviados por la empresa ────────────────────────────────────────
+
+// Permiso para mandar UN archivo directo al backend (ver portalAuth.js).
+router.post('/upload-ticket', async (req, res, next) => {
+  try {
+    const pending = await prisma.ad.count({
+      where: { clientId: req.portal.clientId, uploadedByClient: true, approvalStatus: 'pending', deletedAt: null },
+    });
+    if (pending >= MAX_PENDING_UPLOADS) {
+      return res.status(429).json({ error: `Ya tenés ${pending} anuncios esperando revisión. Esperá a que los revisemos para mandar más.` });
+    }
+    res.json({ ticket: signUploadTicket(req.portal) });
+  } catch (err) { next(err); }
+});
+
+const UPLOAD_STATUS = { pending: 'revision', approved: 'aprobado', rejected: 'rechazado' };
+
+router.get('/uploads', async (req, res, next) => {
+  try {
+    const ads = await prisma.ad.findMany({
+      where: { clientId: req.portal.clientId, uploadedByClient: true, deletedAt: null },
+      select: { id: true, publicName: true, type: true, durationS: true, approvalStatus: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    res.json(ads.map((a) => ({
+      id: a.id, name: a.publicName || 'Sin nombre', type: a.type, durationS: a.durationS,
+      status: UPLOAD_STATUS[a.approvalStatus] ?? 'revision', createdAt: a.createdAt,
+    })));
   } catch (err) { next(err); }
 });
 

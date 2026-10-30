@@ -2,14 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { portal, passwordHint, PortalAd, PortalAdStatus, PortalError, PortalStats } from '@/lib/portal';
+import { portal, passwordHint, PortalAd, PortalAdStatus, PortalError, PortalStats, PortalUpload, PortalUploadStatus } from '@/lib/portal';
 import { FormError } from '@/components/portal/AuthCard';
+import UploadAdModal from '@/components/portal/UploadAdModal';
 
 const STATUS: Record<PortalAdStatus, { label: string; color: string }> = {
   activo: { label: 'Activo', color: 'var(--ok)' },
   programado: { label: 'Programado', color: 'var(--accent)' },
   pausado: { label: 'Pausado', color: 'var(--warn)' },
   finalizado: { label: 'Finalizado', color: 'var(--muted)' },
+};
+
+const UPLOAD_STATUS: Record<PortalUploadStatus, { label: string; color: string }> = {
+  revision: { label: 'En revisión', color: 'var(--warn)' },
+  aprobado: { label: 'Aprobado', color: 'var(--ok)' },
+  rechazado: { label: 'No aprobado', color: 'var(--muted)' },
 };
 
 const fmt = (n: number) => n.toLocaleString('es-UY');
@@ -37,6 +44,8 @@ export default function PortalStatsPage() {
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploads, setUploads] = useState<PortalUpload[]>([]);
 
   const onAuthError = useCallback((err: unknown) => {
     if (err instanceof PortalError && err.status === 401) { router.replace('/portal'); return true; }
@@ -44,8 +53,8 @@ export default function PortalStatsPage() {
   }, [router]);
 
   useEffect(() => {
-    Promise.all([portal.me(), portal.ads()])
-      .then(([m, a]) => { setMe(m); setAds(a); })
+    Promise.all([portal.me(), portal.ads(), portal.uploads()])
+      .then(([m, a, u]) => { setMe(m); setAds(a); setUploads(u); })
       .catch((err) => { if (!onAuthError(err)) setError(err.message); });
   }, [onAuthError]);
 
@@ -94,7 +103,8 @@ export default function PortalStatsPage() {
             <h1 className="text-xl font-semibold">{me.clientName}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setShowUpload(true)} className="rounded-full bg-[var(--accent-strong)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)]">Subir anuncio</button>
           <button type="button" onClick={() => setShowPassword(true)} className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-2)] hover:bg-[var(--surface-hover)]">Cambiar contraseña</button>
           <button type="button" onClick={logout} className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-2)] hover:bg-[var(--surface-hover)]">Salir</button>
         </div>
@@ -227,11 +237,33 @@ export default function PortalStatsPage() {
         </div>
       )}
 
+      {/* Enviados desde el portal */}
+      {uploads.length > 0 && (
+        <section className="card mt-6 px-5 py-4">
+          <h2 className="mb-1 text-sm font-semibold">Anuncios que enviaste</h2>
+          <p className="mb-3 text-xs text-[var(--muted)]">Los revisamos antes de que salgan en los taxis.</p>
+          <ul className="divide-y divide-[var(--divider)] text-sm">
+            {uploads.map((u) => (
+              <li key={u.id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{u.name}</p>
+                  <p className="text-xs text-[var(--muted)]">
+                    {u.type === 'video' ? 'Video' : 'Imagen'} · {u.durationS} s · enviado el {new Date(u.createdAt).toLocaleDateString('es-UY', { timeZone: 'America/Montevideo' })}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-medium" style={{ color: UPLOAD_STATUS[u.status].color }}>{UPLOAD_STATUS[u.status].label}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <p className="mt-8 text-center text-xs text-[var(--muted)]">
         Datos registrados por las tablets de la flota ICON ADS. Ingresaste como {me.email}.
       </p>
 
       {showPassword && <ChangePassword onClose={() => setShowPassword(false)} />}
+      {showUpload && <UploadAdModal onClose={() => setShowUpload(false)} onUploaded={(u) => setUploads((prev) => [u, ...prev])} />}
     </div>
   );
 }

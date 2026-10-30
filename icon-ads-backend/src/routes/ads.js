@@ -3,7 +3,6 @@ const { z } = require('zod');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const sharp = require('sharp');
 const prisma = require('../lib/prisma');
 const { remoteFileSize } = require('../lib/adFileSize');
 const { adDeliveryInfo } = require('../lib/adDelivery');
@@ -15,35 +14,8 @@ const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
 const { mp4DurationSeconds } = require('../lib/mp4Duration');
 const { purgeAd } = require('../lib/purgeAd');
 const { setAdPlaylists, bumpPlaylists } = require('../lib/adPlaylists');
+const { IMAGE_MAX, VIDEO_MAX, ALLOWED_EXT, uploadDir, detectMimeFromBuffer, compressImage, storeAdFile } = require('../lib/adFile');
 
-const IMAGE_MAX = 10 * 1024 * 1024;
-const VIDEO_MAX = 100 * 1024 * 1024;
-
-function detectMimeFromBuffer(buf) {
-  if (!buf || buf.length < 12) return null;
-  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
-  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
-  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
-      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp';
-  if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'video/mp4';
-  return null;
-}
-
-async function compressImage(buffer, mimetype) {
-  try {
-    const s = sharp(buffer).resize(1920, 1080, { fit: 'inside', withoutEnlargement: true });
-    if (mimetype === 'image/png') return await s.png({ quality: 80 }).toBuffer();
-    if (mimetype === 'image/webp') return await s.webp({ quality: 80 }).toBuffer();
-    return await s.jpeg({ quality: 80 }).toBuffer();
-  } catch {
-    return buffer;
-  }
-}
-
-const uploadDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const ALLOWED_EXT = /\.(mp4|jpg|jpeg|png|webp)$/i;
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
@@ -284,27 +256,11 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     let fileBuffer = req.file.buffer;
     if (!isVideo) fileBuffer = await compressImage(fileBuffer, req.file.mimetype);
 
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    const ext = path.extname(req.file.originalname);
-    const filename = `${unique}${ext}`;
-
-    // R2 primero (mismo formato de key que /presign). Este camino lo usa el
-    // panel cuando el PUT directo a R2 falla en el navegador.
-    let fileUrl;
-    let storage = 'disk';
-    if (r2.isConfigured) {
-      const key = `uploads/${filename}`;
-      await r2.putBuffer(key, fileBuffer, req.file.mimetype);
-      fileUrl = r2.getPublicUrl(key);
-      storage = 'r2';
-    } else if (supabaseStorage.isConfigured) {
-      storage = 'supabase';
-      fileUrl = await supabaseStorage.uploadFile(filename, fileBuffer, req.file.mimetype);
-    } else {
-      diskPath = path.join(uploadDir, filename);
-      fs.writeFileSync(diskPath, fileBuffer);
-      fileUrl = `/uploads/${filename}`;
-    }
+    // R2 primero. Este camino lo usa el panel cuando el PUT directo a R2
+    // falla en el navegador.
+    const stored = await storeAdFile(fileBuffer, req.file.originalname, req.file.mimetype);
+    diskPath = stored.diskPath;
+    const { fileUrl, filename, storage } = stored;
 
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';

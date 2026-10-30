@@ -22,6 +22,8 @@ const ROUTES: Record<string, 'GET' | 'POST'> = {
   'password/change': 'POST',
   'me': 'GET',
   'ads': 'GET',
+  'uploads': 'GET',
+  'upload-ticket': 'POST',
   'stats': 'GET',
   'report.pdf': 'GET',
 };

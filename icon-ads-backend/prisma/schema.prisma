@@ -88,6 +88,8 @@ model Ad {
   name           String
   // Nombre que ve la empresa en su portal (el name suele ser el archivo).
   publicName     String?      @map("public_name")
+  // Lo subió la empresa desde su portal (entra pendiente y sin playlists).
+  uploadedByClient Boolean    @default(false) @map("uploaded_by_client")
   type           AdType
   fileUrl        String       @map("file_url")
   thumbnailUrl   String?      @map("thumbnail_url")

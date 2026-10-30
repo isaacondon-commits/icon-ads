@@ -82,7 +82,17 @@ function StatusBadge({ ad }: { ad: Ad }) {
     : ad.approvalStatus === 'rejected' ? 'rejected'
       : !ad.active ? 'paused' : 'live';
   const [label, cls] = map[key];
-  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
+  return (
+    <>
+      <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{label}</span>
+      {ad.uploadedByClient && (
+        <span title="La empresa lo mandó desde su portal: revisalo, aprobalo y ponelo en una playlist"
+          className="whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+          Lo subió la empresa
+        </span>
+      )}
+    </>
+  );
 }
 
 /** Reproducciones + aviso si nunca pasó / por qué no pasa. */
