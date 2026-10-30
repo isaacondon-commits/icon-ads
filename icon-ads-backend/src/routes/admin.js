@@ -49,6 +49,18 @@ router.post('/seed', async (req, res, next) => {
 });
 
 // DELETE /api/admin/tablet/:id — borra una fila de tablet (limpieza de orfanas).
+// POST /portal-mail-preview { to, kind: 'invite'|'reset' } — manda el mail del
+// portal tal cual lo recibe una empresa, para ver el diseño. No toca cuentas.
+router.post('/portal-mail-preview', apiKeyOrAuth, async (req, res, next) => {
+  try {
+    const parsed = z.object({ to: z.string().email(), kind: z.enum(['invite', 'reset']).default('invite') }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Datos inválidos' });
+    const r = await require('../lib/portalMailer').sendPreview(parsed.data);
+    audit(req, 'PORTAL_MAIL_PREVIEW', 'system', null, `${parsed.data.kind} → ${parsed.data.to}: ${r.sent ? 'enviado' : r.error}`).catch(() => {});
+    res.status(r.sent ? 200 : 502).json(r);
+  } catch (err) { next(err); }
+});
+
 router.delete('/tablet/:id', apiKeyOrAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);

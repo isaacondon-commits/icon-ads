@@ -199,4 +199,12 @@ function sendReset({ to, token }) {
   return send(to, m.subject, m.html, m.text, m.images);
 }
 
-module.exports = { sendInvite, sendReset, portalBaseUrl, inviteMail, resetMail, IMAGES };
+// Vista previa: el mail real, desde la misma casilla, con un botón que lleva al
+// login del portal (no activa ni cambia ninguna cuenta).
+function sendPreview({ to, kind = 'invite', clientName = 'Empresa de prueba' }) {
+  const link = `${portalBaseUrl()}/portal`;
+  const m = kind === 'reset' ? resetMail({ link }) : inviteMail({ clientName, link });
+  return send(to, `[Vista previa] ${m.subject}`, m.html, m.text, m.images);
+}
+
+module.exports = { sendInvite, sendReset, sendPreview, portalBaseUrl, inviteMail, resetMail, IMAGES };
