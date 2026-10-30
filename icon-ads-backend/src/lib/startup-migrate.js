@@ -293,6 +293,28 @@ async function removeCampaignsOnce() {
   }
 }
 
+// One-shot: las tablets subieron, después del reinicio, reproducciones que
+// tenían en cola de ANTES (la app guarda y reenvía). Se borran las que son
+// anteriores al instante del reinicio; desde ahora /api/device/metrics ya no
+// las acepta.
+async function purgePreResetMetricsOnce() {
+  const KEY = 'metrics_pre_reset_purged_v1';
+  try {
+    const [done, reset] = await Promise.all([
+      prisma.systemConfig.findUnique({ where: { key: KEY } }),
+      prisma.systemConfig.findUnique({ where: { key: 'campaigns_removed_v1' } }),
+    ]);
+    if (done || !reset) return;
+    const cutoff = new Date(reset.value);
+    if (Number.isNaN(cutoff.getTime())) return;
+    const n = await prisma.$executeRaw`DELETE FROM metrics WHERE played_at < ${cutoff}`;
+    await prisma.systemConfig.create({ data: { key: KEY, value: new Date().toISOString() } });
+    console.log(`[migrate] ${n} métricas anteriores al reinicio borradas`);
+  } catch (err) {
+    console.error(`[migrate] purgePreResetMetricsOnce FAILED: ${err.message}`);
+  }
+}
+
 async function runStartupMigrations() {
   for (const m of MIGRATIONS) {
     try {
@@ -303,6 +325,7 @@ async function runStartupMigrations() {
     }
   }
   await removeCampaignsOnce();
+  await purgePreResetMetricsOnce();
   await hardenPublicSchema();
   await autoBlockFleetOnce();
   // En segundo plano para no demorar el arranque (Render marca el deploy como

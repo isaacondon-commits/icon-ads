@@ -83,6 +83,21 @@ function afterPackageServe(tabletId, hash, bytes) {
 // Cuántos ZIP de playlist se pueden ARMAR a la vez. Ahora el armado es 100%
 // streaming (no bufferiza los videos), así que la RAM ya no es el límite; el
 // cuello es el ancho de banda a Supabase. 8 cubre la flota entera sin ahogarse.
+// Las métricas se pusieron en cero al sacar las campañas (systemConfig
+// campaigns_removed_v1 = ese instante). Las tablets traen en su cola local
+// reproducciones de antes del reinicio: se descartan, así el contador arranca
+// limpio. Se cachea porque no cambia.
+let metricsResetAt;
+async function metricsCutoffMs() {
+  if (metricsResetAt === undefined) {
+    const row = await prisma.systemConfig.findUnique({ where: { key: 'campaigns_removed_v1' } }).catch(() => null);
+    const t = row ? Date.parse(row.value) : NaN;
+    if (!row) return 0; // todavía no corrió la migración: no cachear
+    metricsResetAt = Number.isFinite(t) ? t : 0;
+  }
+  return metricsResetAt;
+}
+
 const MAX_PACKAGE_BUILDS = 8;
 let activePackageBuilds = 0;
 
@@ -616,6 +631,7 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
     // siempre y sin registrar nada (síntoma: "reproduce pero el monitor dice 0").
     // Clave natural para dedup: (tablet_id, ad_id, played_at).
     const MAX_BATCH = 5000;
+    const cutoff = await metricsCutoffMs();
     const raw = Array.isArray(req.body) ? req.body : [];
     const seen = new Set();
     const metrics = [];
@@ -626,6 +642,7 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
       const t = Date.parse(m.playedAt);
       if (!Number.isInteger(adId) || adId <= 0) continue;
       if (!Number.isFinite(t)) continue;
+      if (t < cutoff) continue; // anterior al reinicio de métricas
       const key = `${adId}|${t}`;
       if (seen.has(key)) continue;
       seen.add(key);
