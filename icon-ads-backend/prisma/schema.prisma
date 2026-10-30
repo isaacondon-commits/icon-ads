@@ -38,8 +38,7 @@ model Client {
   deletedAt         DateTime?        @map("deleted_at")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
-  campaigns         Campaign[]
-  campaignLinks     CampaignClient[]
+  ads               Ad[]
   referralsGiven    Referral[]       @relation("ReferralReferrer")
   referralsReceived Referral[]       @relation("ReferralReferred")
   portalUser        ClientUser?
@@ -75,47 +74,6 @@ model ClientUser {
   @@map("client_users")
 }
 
-model Campaign {
-  id                Int              @id @default(autoincrement())
-  clientId          Int              @map("client_id")
-  client            Client           @relation(fields: [clientId], references: [id])
-  name              String
-  startDate         DateTime         @map("start_date")
-  endDate           DateTime         @map("end_date")
-  active            Boolean          @default(true)
-  cpm               Float?
-  maxImpressions    Int?             @map("max_impressions")
-  budget            Float?
-  observations      String?
-  targetImpressions Int?             @map("target_impressions")
-  deletedAt         DateTime?        @map("deleted_at")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
-  ads               Ad[]
-  metrics           Metric[]
-  comments          Comment[]
-  additionalClients CampaignClient[]
-
-  @@map("campaigns")
-}
-
-// Extra clients tied to a campaign beyond the billing client (Campaign.clientId).
-// The billing client is what contract/certificate/payment-link PDFs use — this
-// table is purely "who else is this campaign associated with", for filtering
-// campaigns from those clients' own pages.
-model CampaignClient {
-  id         Int      @id @default(autoincrement())
-  campaignId Int      @map("campaign_id")
-  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  clientId   Int      @map("client_id")
-  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  @@unique([campaignId, clientId])
-  @@index([clientId])
-  @@map("campaign_clients")
-}
-
 enum AdType {
   video
   image
@@ -123,9 +81,13 @@ enum AdType {
 
 model Ad {
   id             Int          @id @default(autoincrement())
-  campaignId     Int          @map("campaign_id")
-  campaign       Campaign     @relation(fields: [campaignId], references: [id])
+  // Empresa dueña del anuncio. Un anuncio es de una sola empresa; las
+  // métricas del portal salen de acá. Nullable sólo por los anuncios viejos.
+  clientId       Int?         @map("client_id")
+  client         Client?      @relation(fields: [clientId], references: [id])
   name           String
+  // Nombre que ve la empresa en su portal (el name suele ser el archivo).
+  publicName     String?      @map("public_name")
   type           AdType
   fileUrl        String       @map("file_url")
   thumbnailUrl   String?      @map("thumbnail_url")
@@ -149,12 +111,15 @@ model Ad {
   abTestsA       AbTest[]     @relation("AbTestAdA")
   abTestsB       AbTest[]     @relation("AbTestAdB")
 
+  @@index([clientId])
   @@map("ads")
 }
 
 model Playlist {
   id           Int               @id @default(autoincrement())
   name         String
+  // Pausada: las tablets que la tienen muestran el institucional.
+  active       Boolean           @default(true)
   version      Int               @default(1)
   contentHash  String?           @map("content_hash")
   createdAt    DateTime          @default(now()) @map("created_at")
@@ -298,8 +263,6 @@ model Metric {
   tablet          Tablet   @relation(fields: [tabletId], references: [id], onDelete: Cascade)
   adId            Int      @map("ad_id")
   ad              Ad       @relation(fields: [adId], references: [id])
-  campaignId      Int      @map("campaign_id")
-  campaign        Campaign @relation(fields: [campaignId], references: [id])
   playedAt        DateTime @map("played_at")
   durationPlayedS Int      @map("duration_played_s")
   completed       Boolean
@@ -307,7 +270,6 @@ model Metric {
   createdAt       DateTime @default(now()) @map("created_at")
 
   @@index([tabletId])
-  @@index([campaignId])
   @@index([playedAt])
   @@index([adId, playedAt], map: "metrics_ad_id_idx")
   // Clave natural: un reenvío del mismo lote no duplica filas. Declarado acá
@@ -326,18 +288,6 @@ model ErrorLog {
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@map("error_logs")
-}
-
-model Comment {
-  id         Int      @id @default(autoincrement())
-  campaignId Int      @map("campaign_id")
-  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  userId     Int?     @map("user_id")
-  authorName String   @map("author_name")
-  body       String
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  @@map("comments")
 }
 
 model AuditLog {
@@ -363,19 +313,6 @@ model AdminNote {
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@map("admin_notes")
-}
-
-model CampaignTemplate {
-  id                Int      @id @default(autoincrement())
-  name              String
-  cpm               Float?
-  maxImpressions    Int?     @map("max_impressions")
-  budget            Float?
-  targetImpressions Int?     @map("target_impressions")
-  observations      String?
-  createdAt         DateTime @default(now()) @map("created_at")
-
-  @@map("campaign_templates")
 }
 
 model Favorite {

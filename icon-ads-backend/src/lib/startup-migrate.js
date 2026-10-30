@@ -7,7 +7,6 @@ const prisma = require('./prisma');
 
 const MIGRATIONS = [
   // Original missing columns (DIRECT_URL not set on Render)
-  { name: 'campaigns.cpm',              sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS cpm FLOAT` },
   { name: 'tablets.notes',              sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS notes TEXT` },
   { name: 'tablets.maintenance_until',  sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS maintenance_until TIMESTAMPTZ` },
   // v2 — content management fields
@@ -36,24 +35,19 @@ const MIGRATIONS = [
   { name: 'tablet_messages',            sql: `CREATE TABLE IF NOT EXISTS tablet_messages (id SERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, message TEXT NOT NULL, shown BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'tablet_groups',              sql: `CREATE TABLE IF NOT EXISTS tablet_groups (id SERIAL PRIMARY KEY, name TEXT NOT NULL, playlist_id INT REFERENCES playlists(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'tablets.group_id',           sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS group_id INT REFERENCES tablet_groups(id) ON DELETE SET NULL` },
-  { name: 'campaigns.max_impressions',  sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS max_impressions INT` },
   { name: 'system_config',              sql: `CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   // v5 — new fields: campaign observations + budget, client commercial contact, tablet last_ip
-  { name: 'campaigns.observations',    sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS observations TEXT` },
-  { name: 'campaigns.budget',          sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS budget FLOAT` },
   { name: 'clients.contact_name',      sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_name TEXT` },
   { name: 'clients.contact_phone',     sql: `ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_phone TEXT` },
   { name: 'tablets.last_ip',           sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS last_ip TEXT` },
   // v6 — tablet OS/model indicator (#2), campaign goals (#33)
   { name: 'tablets.os_version',        sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS os_version TEXT` },
   { name: 'tablets.device_model',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS device_model TEXT` },
-  { name: 'campaigns.target_impressions', sql: `ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS target_impressions INT` },
   // v7 — ad tags (#16)
   { name: 'ads.tags',                  sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}'` },
   // v8 — shared admin notes (#36)
   { name: 'admin_notes',               sql: `CREATE TABLE IF NOT EXISTS admin_notes (id SERIAL PRIMARY KEY, body TEXT NOT NULL, author_name TEXT NOT NULL DEFAULT 'Admin', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   // v9 — campaign templates (#31) + favorites (#44)
-  { name: 'campaign_templates',        sql: `CREATE TABLE IF NOT EXISTS campaign_templates (id SERIAL PRIMARY KEY, name TEXT NOT NULL, cpm FLOAT, max_impressions INT, budget FLOAT, target_impressions INT, observations TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'favorites',                 sql: `CREATE TABLE IF NOT EXISTS favorites (id SERIAL PRIMARY KEY, entity_type TEXT NOT NULL, entity_id INT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(entity_type, entity_id))` },
   // v10 — reminders (#39)
   { name: 'reminders',                 sql: `CREATE TABLE IF NOT EXISTS reminders (id SERIAL PRIMARY KEY, title TEXT NOT NULL, body TEXT, due_at TIMESTAMPTZ, done BOOLEAN NOT NULL DEFAULT false, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
@@ -107,8 +101,6 @@ const MIGRATIONS = [
   { name: 'tablets.light_sensor',      sql: `ALTER TABLE tablets ADD COLUMN IF NOT EXISTS light_sensor BOOLEAN` },
   // v23 — multiple clients per campaign (billing client stays campaigns.client_id;
   // this table holds additional clients associated with the campaign)
-  { name: 'campaign_clients',          sql: `CREATE TABLE IF NOT EXISTS campaign_clients (id SERIAL PRIMARY KEY, campaign_id INT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, client_id INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(campaign_id, client_id))` },
-  { name: 'campaign_clients.idx',      sql: `CREATE INDEX IF NOT EXISTS campaign_clients_client_idx ON campaign_clients(client_id)` },
   // v24/v27 — Supabase Advisor: rls_disabled_in_public / sensitive_columns_exposed.
   // El lockdown COMPLETO de la API auto-generada (PostgREST) se hace en
   // hardenPublicSchema() abajo, en cada arranque: RLS en TODAS las tablas de
@@ -145,6 +137,13 @@ const MIGRATIONS = [
   { name: 'tablet_diagnostics', sql: `CREATE TABLE IF NOT EXISTS tablet_diagnostics (id BIGSERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'tablet_diagnostics.idx', sql: `CREATE INDEX IF NOT EXISTS tablet_diagnostics_tablet_idx ON tablet_diagnostics(tablet_id, created_at DESC)` },
   // v-portal — acceso de empresas al portal de estadísticas
+  // v-sin-campañas — el anuncio pasa a tener su empresa y un nombre público;
+  // las playlists se pueden pausar. El borrado de campañas va en
+  // removeCampaignsOnce() (necesita copiar datos antes de borrar).
+  { name: 'ads.client_id', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS client_id INT REFERENCES clients(id)` },
+  { name: 'ads.public_name', sql: `ALTER TABLE ads ADD COLUMN IF NOT EXISTS public_name TEXT` },
+  { name: 'ads.client_idx', sql: `CREATE INDEX IF NOT EXISTS ads_client_id_idx ON ads(client_id)` },
+  { name: 'playlists.active', sql: `ALTER TABLE playlists ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true` },
   { name: 'client_users', sql: `CREATE TABLE IF NOT EXISTS client_users (id SERIAL PRIMARY KEY, client_id INT NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE, email TEXT NOT NULL UNIQUE, password_hash TEXT, active BOOLEAN NOT NULL DEFAULT true, session_version INT NOT NULL DEFAULT 0, failed_logins INT NOT NULL DEFAULT 0, locked_until TIMESTAMPTZ, invite_token_hash TEXT UNIQUE, invite_expires_at TIMESTAMPTZ, invited_at TIMESTAMPTZ, reset_token_hash TEXT UNIQUE, reset_expires_at TIMESTAMPTZ, last_login_at TIMESTAMPTZ, last_login_ip TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
 ];
 
@@ -255,6 +254,45 @@ async function autoBlockFleetOnce() {
   }
 }
 
+// One-shot (pedido del usuario, 2026-10-30): se eliminan las campañas. Antes
+// de borrar, cada anuncio hereda la empresa de su campaña, y sus fechas (el
+// día de fin de campaña era inclusivo: termina al final de ese día). Los
+// anuncios de campañas pausadas o archivadas quedan pausados. Las métricas se
+// ponen en cero y todas las playlists quedan pausadas para probar desde cero.
+// Todo en una transacción; guardado por systemConfig para no repetirse.
+async function removeCampaignsOnce() {
+  const KEY = 'campaigns_removed_v1';
+  try {
+    const done = await prisma.systemConfig.findUnique({ where: { key: KEY } });
+    if (done) return;
+    const [{ exists }] = await prisma.$queryRawUnsafe(`SELECT to_regclass('public.campaigns') IS NOT NULL AS exists`);
+    const stmts = [];
+    if (exists) {
+      stmts.push(
+        `UPDATE ads a SET client_id = c.client_id FROM campaigns c WHERE a.campaign_id = c.id AND a.client_id IS NULL`,
+        `UPDATE ads a SET starts_at = COALESCE(a.starts_at, c.start_date), ends_at = COALESCE(a.ends_at, c.end_date + INTERVAL '1 day') FROM campaigns c WHERE a.campaign_id = c.id`,
+        `UPDATE ads a SET active = false FROM campaigns c WHERE a.campaign_id = c.id AND (c.active = false OR c.deleted_at IS NOT NULL)`,
+      );
+    }
+    stmts.push(
+      `TRUNCATE metrics`,
+      `ALTER TABLE metrics DROP COLUMN IF EXISTS campaign_id`,
+      `ALTER TABLE ads DROP COLUMN IF EXISTS campaign_id`,
+      `DROP TABLE IF EXISTS comments`,
+      `DROP TABLE IF EXISTS campaign_clients`,
+      `DROP TABLE IF EXISTS campaign_templates`,
+      `DROP TABLE IF EXISTS campaigns`,
+      `UPDATE playlists SET active = false, version = version + 1, content_hash = NULL`,
+      `DELETE FROM system_config WHERE key = 'campaign_schedule_checked_at'`,
+    );
+    await prisma.$transaction(stmts.map((sql) => prisma.$executeRawUnsafe(sql)));
+    await prisma.systemConfig.create({ data: { key: KEY, value: new Date().toISOString() } });
+    console.log('[migrate] campañas eliminadas, métricas en cero y playlists pausadas');
+  } catch (err) {
+    console.error(`[migrate] removeCampaignsOnce FAILED: ${err.message}`);
+  }
+}
+
 async function runStartupMigrations() {
   for (const m of MIGRATIONS) {
     try {
@@ -264,6 +302,7 @@ async function runStartupMigrations() {
       console.error(`[migrate] ${m.name} — FAILED: ${err.message}`);
     }
   }
+  await removeCampaignsOnce();
   await hardenPublicSchema();
   await autoBlockFleetOnce();
   // En segundo plano para no demorar el arranque (Render marca el deploy como

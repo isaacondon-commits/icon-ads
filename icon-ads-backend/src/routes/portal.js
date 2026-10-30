@@ -1,5 +1,5 @@
-// Portal de empresas: estadísticas de SOLO LECTURA de las campañas que la
-// empresa paga. Todo lo que se devuelve sale filtrado por req.portal.clientId,
+// Portal de empresas: estadísticas de SOLO LECTURA de los anuncios de la
+// empresa. Todo lo que se devuelve sale filtrado por req.portal.clientId,
 // que viene de la sesión y nunca de la URL. Sin datos de GPS, tablets
 // individuales, choferes, precios ni de otras empresas.
 //
@@ -16,7 +16,7 @@ const prisma = require('../lib/prisma');
 const pdf = require('../lib/pdfHelper');
 const { sendAlert } = require('../lib/alerts');
 const { sendReset } = require('../lib/portalMailer');
-const { campaignEndsAt } = require('../lib/campaignSchedule');
+const { isAdPlayable } = require('../lib/adSchedule');
 const {
   signSession, setSessionCookie, clearSessionCookie, newOneTimeToken, hashToken,
   passwordProblem, hashPassword, checkPassword, lockoutFor, RESET_TTL_MS,
@@ -198,11 +198,21 @@ const MVD_OFFSET_MS = 3 * 60 * 60 * 1000; // Montevideo = UTC-3, sin horario de 
 const DAY_MS = 86400000;
 const MAX_RANGE_DAYS = 366;
 
-function campaignStatus(c, now = new Date()) {
-  if (campaignEndsAt(c) <= now) return 'finalizada';
-  if (new Date(c.startDate) > now) return 'programada';
-  if (!c.active) return 'pausada';
-  return 'activa';
+// Anuncios de la empresa. Un anuncio es de UNA empresa (ads.client_id), así
+// que todo sale de acá — las playlists mezclan empresas y nunca se exponen.
+
+// El portal muestra el "nombre público" del anuncio; si no tiene, "Anuncio N"
+// (numerado por fecha de alta, estable). Nunca el nombre interno / de archivo.
+function labelAds(ads) {
+  const sorted = [...ads].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id - b.id);
+  return new Map(sorted.map((a, i) => [a.id, a.publicName || `Anuncio ${i + 1}`]));
+}
+
+function adStatus(ad, now = new Date()) {
+  if (ad.endsAt && new Date(ad.endsAt) < now) return 'finalizado';
+  if (ad.startsAt && new Date(ad.startsAt) > now) return 'programado';
+  if (!ad.active || ad.approvalStatus !== 'approved') return 'pausado';
+  return 'activo';
 }
 
 function localDay(d) {
@@ -222,28 +232,54 @@ function parseRange(q) {
   return { from, to, fromStr, toStr };
 }
 
-// Campañas de ESTA empresa (sólo las que paga). Si viene campaignId, tiene que
-// ser una de ellas — si no, 404 (no se distingue "no existe" de "es de otro").
+// Anuncios de ESTA empresa (incluye archivados: sus reproducciones pasadas
+// siguen contando). Si viene adId, tiene que ser uno de ellos — si no, 404 (no
+// se distingue "no existe" de "es de otra empresa").
 async function scope(req) {
-  const campaigns = await prisma.campaign.findMany({
-    where: { clientId: req.portal.clientId, deletedAt: null },
-    select: { id: true, name: true, startDate: true, endDate: true, active: true },
-    orderBy: { startDate: 'desc' },
+  const ads = await prisma.ad.findMany({
+    where: { clientId: req.portal.clientId },
+    select: { id: true, publicName: true, type: true, active: true, approvalStatus: true, startsAt: true, endsAt: true, deletedAt: true, createdAt: true },
   });
-  let ids = campaigns.map((c) => c.id);
-  if (req.query.campaignId !== undefined && req.query.campaignId !== '') {
-    const id = Number(req.query.campaignId);
+  const labels = labelAds(ads);
+  let ids = ads.map((a) => a.id);
+  if (req.query.adId !== undefined && req.query.adId !== '') {
+    const id = Number(req.query.adId);
     if (!Number.isInteger(id) || !ids.includes(id)) return { notFound: true };
     ids = [id];
   }
-  return { campaigns, ids };
+  return { ads, labels, ids };
 }
 
-async function buildStats(ids, from, to) {
-  const empty = {
-    totals: { plays: 0, completedPlays: 0, completionRate: 0, tablets: 0, ads: 0, secondsOnScreen: 0 },
-    daily: [], hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })), byCampaign: [], byAd: [], byZone: [],
-  };
+// Tablets donde cada anuncio está corriendo AHORA: anuncio reproducible, en
+// una playlist activa asignada a la tablet, y tablet no bloqueada. Devuelve
+// { perAd: Map(adId -> cantidad), total: tablets distintas }.
+async function tabletsNow(ads) {
+  const playable = ads.filter((a) => !a.deletedAt && isAdPlayable(a)).map((a) => a.id);
+  if (!playable.length) return { perAd: new Map(), total: 0 };
+  const links = await prisma.playlistAd.findMany({
+    where: { adId: { in: playable }, playlist: { active: true } },
+    select: { adId: true, playlistId: true },
+  });
+  const playlistIds = [...new Set(links.map((l) => l.playlistId))];
+  const tablets = playlistIds.length
+    ? await prisma.tablet.findMany({ where: { playlistId: { in: playlistIds }, manualStatus: { not: 'bloqueada' } }, select: { id: true, playlistId: true } })
+    : [];
+  const byPlaylist = new Map();
+  for (const t of tablets) (byPlaylist.get(t.playlistId) || byPlaylist.set(t.playlistId, []).get(t.playlistId)).push(t.id);
+  const perAdSets = new Map();
+  for (const l of links) {
+    const set = perAdSets.get(l.adId) || perAdSets.set(l.adId, new Set()).get(l.adId);
+    for (const id of byPlaylist.get(l.playlistId) || []) set.add(id);
+  }
+  const all = new Set();
+  const perAd = new Map();
+  for (const [adId, set] of perAdSets) { perAd.set(adId, set.size); for (const id of set) all.add(id); }
+  return { perAd, total: all.size };
+}
+
+async function buildStats(sc, from, to) {
+  const { ids, labels, ads } = sc;
+  const now = await tabletsNow(ads.filter((a) => ids.includes(a.id)));
   const fill = (rows) => {
     const map = new Map(rows.map((r) => [r.date, Number(r.count)]));
     const out = [];
@@ -253,16 +289,29 @@ async function buildStats(ids, from, to) {
     }
     return out;
   };
-  if (!ids.length) return { ...empty, daily: fill([]) };
+  const rate = (done, total) => (total ? Math.round((done / total) * 1000) / 10 : 0);
+  // Período anterior de la misma duración, para la comparación.
+  const span = to.getTime() - from.getTime() + 1;
+  const prevFrom = new Date(from.getTime() - span);
+  const prevTo = new Date(from.getTime() - 1);
+
+  if (!ids.length) {
+    return {
+      totals: { plays: 0, completedPlays: 0, completionRate: 0, tablets: 0, tabletsNow: 0, secondsOnScreen: 0, previousPlays: 0, changePct: null },
+      daily: fill([]), hourly: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 })), byAd: [],
+    };
+  }
 
   const inIds = Prisma.join(ids);
-  const where = Prisma.sql`m.campaign_id IN (${inIds}) AND m.played_at BETWEEN ${from} AND ${to}`;
-  const [totals, daily, hourly, byCampaign, byAd, byZone] = await Promise.all([
+  const where = Prisma.sql`m.ad_id IN (${inIds}) AND m.played_at BETWEEN ${from} AND ${to}`;
+  const [totals, prev, daily, hourly, byAd] = await Promise.all([
     prisma.$queryRaw(Prisma.sql`
       SELECT COUNT(*)::int AS plays, COALESCE(SUM(CASE WHEN m.completed THEN 1 ELSE 0 END), 0)::int AS completed,
-             COUNT(DISTINCT m.tablet_id)::int AS tablets, COUNT(DISTINCT m.ad_id)::int AS ads,
-             COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
+             COUNT(DISTINCT m.tablet_id)::int AS tablets, COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
       FROM metrics m WHERE ${where}`),
+    prisma.$queryRaw(Prisma.sql`
+      SELECT COUNT(*)::int AS plays FROM metrics m
+      WHERE m.ad_id IN (${inIds}) AND m.played_at BETWEEN ${prevFrom} AND ${prevTo}`),
     prisma.$queryRaw(Prisma.sql`
       SELECT TO_CHAR(DATE(m.played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
       FROM metrics m WHERE ${where} GROUP BY 1 ORDER BY 1`),
@@ -270,55 +319,65 @@ async function buildStats(ids, from, to) {
       SELECT EXTRACT(HOUR FROM m.played_at AT TIME ZONE 'America/Montevideo')::int AS hour, COUNT(*)::int AS count
       FROM metrics m WHERE ${where} GROUP BY 1`),
     prisma.$queryRaw(Prisma.sql`
-      SELECT m.campaign_id AS id, COUNT(*)::int AS plays, COUNT(DISTINCT m.tablet_id)::int AS tablets
+      SELECT m.ad_id AS id, COUNT(*)::int AS plays,
+             COALESCE(SUM(CASE WHEN m.completed THEN 1 ELSE 0 END), 0)::int AS completed,
+             COUNT(DISTINCT m.tablet_id)::int AS tablets, COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
       FROM metrics m WHERE ${where} GROUP BY 1`),
-    prisma.$queryRaw(Prisma.sql`
-      SELECT a.name AS name, a.type::text AS type, c.name AS campaign, COUNT(*)::int AS plays,
-             COALESCE(SUM(CASE WHEN m.completed THEN 1 ELSE 0 END), 0)::int AS completed
-      FROM metrics m JOIN ads a ON a.id = m.ad_id JOIN campaigns c ON c.id = m.campaign_id
-      WHERE ${where} GROUP BY a.id, a.name, a.type, c.name ORDER BY plays DESC LIMIT 100`),
-    // Zona = la etiqueta de zona cargada a mano en la tablet. Nunca GPS.
-    prisma.$queryRaw(Prisma.sql`
-      SELECT t.zone AS zone, COUNT(*)::int AS plays
-      FROM metrics m JOIN tablets t ON t.id = m.tablet_id
-      WHERE ${where} AND t.zone IS NOT NULL AND t.zone <> '' GROUP BY 1 ORDER BY plays DESC LIMIT 20`),
   ]);
 
   const t = totals[0] || {};
   const plays = Number(t.plays || 0);
   const completed = Number(t.completed || 0);
+  const previousPlays = Number(prev[0]?.plays || 0);
   const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
   for (const r of hourly) hours[Number(r.hour)].count = Number(r.count);
+  const adById = new Map(ads.map((a) => [a.id, a]));
+  const playedIds = new Set(byAd.map((r) => Number(r.id)));
+  // Por anuncio: los que se reprodujeron en el rango + los que están
+  // corriendo ahora aunque todavía no sumen reproducciones.
+  const rows = [
+    ...byAd.map((r) => ({ id: Number(r.id), plays: Number(r.plays), completed: Number(r.completed), tablets: Number(r.tablets), seconds: Number(r.seconds) })),
+    ...[...now.perAd.keys()].filter((id) => !playedIds.has(id)).map((id) => ({ id, plays: 0, completed: 0, tablets: 0, seconds: 0 })),
+  ];
   return {
     totals: {
-      plays, completedPlays: completed,
-      completionRate: plays ? Math.round((completed / plays) * 1000) / 10 : 0,
-      tablets: Number(t.tablets || 0), ads: Number(t.ads || 0), secondsOnScreen: Number(t.seconds || 0),
+      plays, completedPlays: completed, completionRate: rate(completed, plays),
+      tablets: Number(t.tablets || 0), tabletsNow: now.total, secondsOnScreen: Number(t.seconds || 0),
+      previousPlays, changePct: previousPlays ? Math.round(((plays - previousPlays) / previousPlays) * 1000) / 10 : null,
     },
     daily: fill(daily),
     hourly: hours,
-    byCampaign: byCampaign.map((r) => ({ id: Number(r.id), plays: Number(r.plays), tablets: Number(r.tablets) })),
-    byAd: byAd.map((r) => ({
-      name: r.name, type: r.type, campaign: r.campaign, plays: Number(r.plays),
-      completionRate: Number(r.plays) ? Math.round((Number(r.completed) / Number(r.plays)) * 1000) / 10 : 0,
-    })),
-    byZone: byZone.map((r) => ({ zone: r.zone, plays: Number(r.plays) })),
+    byAd: rows
+      .map((r) => {
+        const ad = adById.get(r.id);
+        return {
+          id: r.id, name: labels.get(r.id), type: ad?.type, status: ad ? (ad.deletedAt ? 'finalizado' : adStatus(ad)) : 'finalizado',
+          plays: r.plays, completionRate: rate(r.completed, r.plays), tablets: r.tablets,
+          secondsOnScreen: r.seconds, tabletsNow: now.perAd.get(r.id) ?? 0,
+        };
+      })
+      .sort((a, b) => b.plays - a.plays || b.tabletsNow - a.tabletsNow),
   };
 }
 
-router.get('/campaigns', async (req, res, next) => {
+router.get('/ads', async (req, res, next) => {
   try {
-    const { campaigns } = await scope({ ...req, query: {} });
-    const ids = campaigns.map((c) => c.id);
-    const totals = ids.length
-      ? await prisma.metric.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids } }, _count: { _all: true }, _max: { playedAt: true } })
-      : [];
-    const byId = new Map(totals.map((t) => [t.campaignId, t]));
-    res.json(campaigns.map((c) => ({
-      id: c.id, name: c.name, startDate: c.startDate, endDate: c.endDate, status: campaignStatus(c),
-      totalPlays: byId.get(c.id)?._count._all ?? 0,
-      lastPlayAt: byId.get(c.id)?._max.playedAt ?? null,
-    })));
+    const sc = await scope({ ...req, query: {} });
+    const visible = sc.ads.filter((a) => !a.deletedAt && a.approvalStatus === 'approved');
+    const ids = visible.map((a) => a.id);
+    const [totals, now] = await Promise.all([
+      ids.length ? prisma.metric.groupBy({ by: ['adId'], where: { adId: { in: ids } }, _count: { _all: true }, _max: { playedAt: true } }) : [],
+      tabletsNow(visible),
+    ]);
+    const byId = new Map(totals.map((t) => [t.adId, t]));
+    res.json(visible
+      .map((a) => ({
+        id: a.id, name: sc.labels.get(a.id), type: a.type, startsAt: a.startsAt, endsAt: a.endsAt, status: adStatus(a),
+        totalPlays: byId.get(a.id)?._count._all ?? 0,
+        lastPlayAt: byId.get(a.id)?._max.playedAt ?? null,
+        tabletsNow: now.perAd.get(a.id) ?? 0,
+      }))
+      .sort((x, y) => String(x.name).localeCompare(String(y.name), 'es', { numeric: true })));
   } catch (err) { next(err); }
 });
 
@@ -326,11 +385,9 @@ router.get('/stats', async (req, res, next) => {
   try {
     const range = parseRange(req.query);
     if (range.error) return res.status(400).json({ error: range.error });
-    const s = await scope(req);
-    if (s.notFound) return res.status(404).json({ error: 'Campaña no encontrada.' });
-    const stats = await buildStats(s.ids, range.from, range.to);
-    const names = new Map(s.campaigns.map((c) => [c.id, c]));
-    stats.byCampaign = stats.byCampaign.map((r) => ({ ...r, name: names.get(r.id)?.name, status: campaignStatus(names.get(r.id)) }));
+    const sc = await scope(req);
+    if (sc.notFound) return res.status(404).json({ error: 'Anuncio no encontrado.' });
+    const stats = await buildStats(sc, range.from, range.to);
     res.json({ from: range.fromStr, to: range.toStr, ...stats });
   } catch (err) { next(err); }
 });
@@ -340,7 +397,7 @@ router.get('/stats', async (req, res, next) => {
 const LOGO = path.join(__dirname, '../../assets/iconads-logo.png');
 const fmtInt = (n) => Number(n).toLocaleString('es-AR');
 const fmtDay = (s) => s.split('-').reverse().join('/');
-const STATUS_LABEL = { activa: 'Activa', programada: 'Programada', pausada: 'Pausada', finalizada: 'Finalizada' };
+const STATUS_LABEL = { activo: 'Activo', programado: 'Programado', pausado: 'Pausado', finalizado: 'Finalizado' };
 
 function pdfTable(doc, cols, rows) {
   const x0 = 50;
@@ -372,45 +429,35 @@ router.get('/report.pdf', async (req, res, next) => {
   try {
     const range = parseRange(req.query);
     if (range.error) return res.status(400).json({ error: range.error });
-    const s = await scope(req);
-    if (s.notFound) return res.status(404).json({ error: 'Campaña no encontrada.' });
-    const st = await buildStats(s.ids, range.from, range.to);
-    const camp = new Map(s.campaigns.map((c) => [c.id, c]));
-    const single = s.ids.length === 1 && req.query.campaignId ? camp.get(s.ids[0]) : null;
+    const sc = await scope(req);
+    if (sc.notFound) return res.status(404).json({ error: 'Anuncio no encontrado.' });
+    const st = await buildStats(sc, range.from, range.to);
+    const single = req.query.adId ? sc.labels.get(sc.ids[0]) : null;
 
     const doc = pdf.createDoc();
     doc.image(LOGO, 50, 36, { fit: [86, 86] });
     doc.fillColor(pdf.BLACK).fontSize(18).font('Helvetica-Bold').text('Reporte de reproducciones', 150, 50);
     doc.fontSize(11).font('Helvetica').fillColor(pdf.GRAY)
       .text(req.portal.clientName, 150, 74)
-      .text(`${single ? `Campaña: ${single.name} — ` : ''}Del ${fmtDay(range.fromStr)} al ${fmtDay(range.toStr)}`, 150, 90);
+      .text(`${single ? `Anuncio: ${single} — ` : ''}Del ${fmtDay(range.fromStr)} al ${fmtDay(range.toStr)}`, 150, 90);
     doc.y = 135;
 
+    const change = st.totals.changePct === null ? '' : ` (${st.totals.changePct >= 0 ? '+' : ''}${st.totals.changePct}% vs. período anterior)`;
     pdf.sectionTitle(doc, 'Resumen');
-    pdf.row(doc, 'Reproducciones', fmtInt(st.totals.plays), true);
+    pdf.row(doc, 'Reproducciones', `${fmtInt(st.totals.plays)}${change}`, true);
     pdf.row(doc, 'Reproducciones completas', `${fmtInt(st.totals.completedPlays)} (${st.totals.completionRate}%)`);
-    pdf.row(doc, 'Tiempo en pantalla', `${fmtInt(Math.round(st.totals.secondsOnScreen / 60))} minutos`);
-    pdf.row(doc, 'Taxis que la mostraron', fmtInt(st.totals.tablets));
-    pdf.row(doc, 'Anuncios reproducidos', fmtInt(st.totals.ads));
+    pdf.row(doc, 'Minutos al aire', fmtInt(Math.round(st.totals.secondsOnScreen / 60)));
+    pdf.row(doc, 'Taxis que lo mostraron', fmtInt(st.totals.tablets));
+    pdf.row(doc, 'Taxis donde corre hoy', fmtInt(st.totals.tabletsNow));
 
-    if (!single && st.byCampaign.length) {
-      pdf.sectionTitle(doc, 'Por campaña');
-      pdfTable(doc,
-        [{ label: 'Campaña', w: 0.46 }, { label: 'Estado', w: 0.16 }, { label: 'Taxis', w: 0.14, align: 'right' }, { label: 'Reproducciones', w: 0.24, align: 'right' }],
-        st.byCampaign.sort((a, b) => b.plays - a.plays).map((r) => {
-          const c = camp.get(r.id);
-          return [c?.name, STATUS_LABEL[campaignStatus(c)], fmtInt(r.tablets), fmtInt(r.plays)];
-        }));
-    }
-
-    if (st.byAd.length) {
+    if (!single && st.byAd.length) {
       pdf.sectionTitle(doc, 'Por anuncio');
       pdfTable(doc,
-        [{ label: 'Anuncio', w: 0.42 }, { label: 'Tipo', w: 0.12 }, { label: 'Completas', w: 0.18, align: 'right' }, { label: 'Reproducciones', w: 0.28, align: 'right' }],
-        st.byAd.map((a) => [a.name, a.type === 'video' ? 'Video' : 'Imagen', `${a.completionRate}%`, fmtInt(a.plays)]));
+        [{ label: 'Anuncio', w: 0.34 }, { label: 'Estado', w: 0.14 }, { label: 'Taxis hoy', w: 0.12, align: 'right' }, { label: 'Taxis', w: 0.1, align: 'right' }, { label: 'Completas', w: 0.13, align: 'right' }, { label: 'Reprod.', w: 0.17, align: 'right' }],
+        st.byAd.map((a) => [a.name, STATUS_LABEL[a.status], fmtInt(a.tabletsNow), fmtInt(a.tablets), `${a.completionRate}%`, fmtInt(a.plays)]));
     }
 
-    // Distribución por hora: barras.
+    // Horas pico: barras.
     if (st.totals.plays) {
       if (doc.y > doc.page.height - 200) { doc.addPage(); doc.y = 50; }
       pdf.sectionTitle(doc, 'Reproducciones por hora del día');
@@ -424,12 +471,6 @@ router.get('/report.pdf', async (req, res, next) => {
         doc.fontSize(6.5).fillColor(pdf.GRAY).text(String(h.hour).padStart(2, '0'), 50 + i * barW, baseY + 3, { width: barW, align: 'center' });
       });
       doc.y = baseY + 20;
-    }
-
-    if (st.byZone.length) {
-      pdf.sectionTitle(doc, 'Por zona');
-      pdfTable(doc, [{ label: 'Zona', w: 0.7 }, { label: 'Reproducciones', w: 0.3, align: 'right' }],
-        st.byZone.map((z) => [z.zone, fmtInt(z.plays)]));
     }
 
     pdf.sectionTitle(doc, 'Reproducciones por día');

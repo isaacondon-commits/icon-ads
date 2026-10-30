@@ -3,15 +3,16 @@ const { Prisma } = require('@prisma/client');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
 const latencyTracker = require('../lib/latencyTracker');
+const { isAdPlayable } = require('../lib/adSchedule');
 
 router.use(requireAuth);
 
-// Fragmento SQL opcional para filtrar metrics por campaña y/o tablet. `prefix`
-// es el alias de la tabla metrics en la query ('' o 'm').
-function metricFilter(prefix, campaignId, tabletId) {
+// Fragmento SQL opcional para filtrar metrics por empresa (la del anuncio) y/o
+// tablet. `prefix` es el alias de la tabla metrics en la query ('' o 'm').
+function metricFilter(prefix, clientId, tabletId) {
   const col = prefix ? Prisma.raw(`${prefix}.`) : Prisma.raw('');
   const parts = [];
-  if (Number.isFinite(campaignId)) parts.push(Prisma.sql`${col}campaign_id = ${campaignId}`);
+  if (Number.isFinite(clientId)) parts.push(Prisma.sql`${col}ad_id IN (SELECT id FROM ads WHERE client_id = ${clientId})`);
   if (Number.isFinite(tabletId)) parts.push(Prisma.sql`${col}tablet_id = ${tabletId}`);
   return parts.length ? Prisma.sql` AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
 }
@@ -56,17 +57,17 @@ router.get('/', async (req, res, next) => {
     const mvdMidnightUtc = Date.parse(`${todayMvdStr}T00:00:00Z`) + MVD_OFFSET_MS;
     const sevenDaysAgo = new Date(mvdMidnightUtc - 6 * 86400000);
 
-    // Expiring campaigns: active, not deleted, ending within 7 days
+    // Anuncios que terminan en los próximos 7 días
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const inSevenDays = new Date(today);
     inSevenDays.setDate(inSevenDays.getDate() + 7);
 
-    const [tabletList, clientCount, campaignCount, adCount, dailyRows, campaignRows, totalPlays, expiringCampaigns] =
+    const [tabletList, clientCount, playlistCount, adCount, dailyRows, clientRows, totalPlays, expiringAds] =
       await Promise.all([
         prisma.tablet.findMany({ select: { lastSync: true } }),
         prisma.client.count({ where: { active: true, deletedAt: null } }),
-        prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+        prisma.playlist.count({ where: { active: true } }),
         prisma.ad.count({ where: { active: true, deletedAt: null } }),
         prisma.$queryRaw`
           SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
@@ -74,15 +75,15 @@ router.get('/', async (req, res, next) => {
           GROUP BY 1 ORDER BY 1 ASC
         `,
         prisma.$queryRaw`
-          SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
-          FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+          SELECT c.id AS "clientId", c.name AS "clientName", COUNT(m.id)::int AS count
+          FROM metrics m JOIN ads a ON a.id = m.ad_id JOIN clients c ON c.id = a.client_id
           GROUP BY c.id, c.name ORDER BY count DESC LIMIT 10
         `,
         prisma.metric.count(),
-        prisma.campaign.findMany({
-          where: { active: true, deletedAt: null, endDate: { lte: inSevenDays, gte: today } },
+        prisma.ad.findMany({
+          where: { active: true, deletedAt: null, endsAt: { lte: inSevenDays, gte: today } },
           include: { client: { select: { name: true } } },
-          orderBy: { endDate: 'asc' },
+          orderBy: { endsAt: 'asc' },
         }),
       ]);
 
@@ -104,21 +105,21 @@ router.get('/', async (req, res, next) => {
     res.json({
       tablets: { total: tabletList.length, online: onlineCount },
       clients: clientCount,
-      campaigns: campaignCount,
+      playlists: playlistCount,
       ads: adCount,
       totalPlays,
       dailyPlays,
-      playsByCampaign: campaignRows.map((r) => ({
-        campaignId: Number(r.campaignId),
-        campaignName: r.campaignName,
+      playsByClient: clientRows.map((r) => ({
+        clientId: Number(r.clientId),
+        clientName: r.clientName,
         count: Number(r.count),
       })),
-      expiringCampaigns: expiringCampaigns.map((c) => ({
-        id: c.id,
-        name: c.name,
-        clientName: c.client?.name ?? '—',
-        endDate: c.endDate,
-        daysLeft: Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000),
+      expiringAds: expiringAds.map((a) => ({
+        id: a.id,
+        name: a.name,
+        clientName: a.client?.name ?? '—',
+        endsAt: a.endsAt,
+        daysLeft: Math.ceil((new Date(a.endsAt).getTime() - Date.now()) / 86400000),
       })),
     });
   } catch (err) {
@@ -126,44 +127,14 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// GET /api/stats/roi — campaigns ranked by estimated revenue (#15)
-router.get('/roi', async (req, res, next) => {
-  try {
-    const rows = await prisma.$queryRaw`
-      SELECT c.id AS "campaignId", c.name AS "campaignName",
-             cl.name AS "clientName",
-             c.cpm, c.budget, c.target_impressions AS "targetImpressions",
-             COUNT(m.id)::int AS plays,
-             ROUND((COUNT(m.id)::float / 1000 * COALESCE(c.cpm, 5))::numeric, 2) AS "estimatedRevenue"
-      FROM campaigns c
-      LEFT JOIN metrics m ON m.campaign_id = c.id
-      LEFT JOIN clients cl ON cl.id = c.client_id
-      WHERE c.deleted_at IS NULL
-      GROUP BY c.id, c.name, cl.name, c.cpm, c.budget, c.target_impressions
-      ORDER BY "estimatedRevenue" DESC
-      LIMIT 20
-    `;
-    res.json(rows.map((r) => ({
-      campaignId: Number(r.campaignId),
-      campaignName: r.campaignName,
-      clientName: r.clientName ?? '—',
-      cpm: r.cpm !== null ? Number(r.cpm) : null,
-      budget: r.budget !== null ? Number(r.budget) : null,
-      targetImpressions: r.targetImpressions !== null ? Number(r.targetImpressions) : null,
-      plays: Number(r.plays),
-      estimatedRevenue: Number(r.estimatedRevenue),
-    })));
-  } catch (err) { next(err); }
-});
-
 // GET /api/stats/weekly — week-over-week for last N weeks (#20)
 router.get('/weekly', async (req, res, next) => {
   try {
     const weeks = Math.min(8, parseInt(req.query.weeks) || 4);
-    const campaignId = intParam(req.query.campaignId);
+    const clientId = intParam(req.query.clientId);
     const tabletId = intParam(req.query.tabletId);
     const extra = {
-      ...(Number.isFinite(campaignId) ? { campaignId } : {}),
+      ...(Number.isFinite(clientId) ? { ad: { clientId } } : {}),
       ...(Number.isFinite(tabletId) ? { tabletId } : {}),
     };
     // Ventanas de 7 días RODANTES ancladas en "ahora" — la más reciente (w=0)
@@ -188,16 +159,16 @@ router.get('/weekly', async (req, res, next) => {
   }
 });
 
-// GET /api/stats/daily?from=&to=&campaignId=&tabletId= — reproducciones por día
+// GET /api/stats/daily?from=&to=&clientId=&tabletId= — reproducciones por día
 router.get('/daily', async (req, res, next) => {
   try {
     const { from, to } = mvdRange(req.query.from, req.query.to);
-    const campaignId = intParam(req.query.campaignId);
+    const clientId = intParam(req.query.clientId);
     const tabletId = intParam(req.query.tabletId);
     const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
       FROM metrics
-      WHERE played_at BETWEEN ${from} AND ${to} ${metricFilter('', campaignId, tabletId)}
+      WHERE played_at BETWEEN ${from} AND ${to} ${metricFilter('', clientId, tabletId)}
       GROUP BY 1 ORDER BY 1 ASC
     `);
     res.json(zeroFillDaily(rows, from, to));
@@ -206,62 +177,78 @@ router.get('/daily', async (req, res, next) => {
   }
 });
 
-// GET /api/stats/range?from=&to=&campaignId=&tabletId= — plays filtered by date range (#13)
+// GET /api/stats/range?from=&to=&clientId=&tabletId= — todo lo del rango (#13):
+// totales, por día (reproducciones y tablets activas), por empresa (con
+// segundos al aire), por tablet y por anuncio (con % completado, errores y en
+// cuántos taxis distintos pasó).
 router.get('/range', async (req, res, next) => {
   try {
     const { from, to } = mvdRange(req.query.from, req.query.to);
-    const campaignId = intParam(req.query.campaignId);
-    const tabletId = intParam(req.query.tabletId);
-    const f = (p) => metricFilter(p, campaignId, tabletId);
+    const f = (p) => metricFilter(p, intParam(req.query.clientId), intParam(req.query.tabletId));
 
-    const [aggRows, dailyRows, campaignRows, tabletRows, adRows] = await Promise.all([
+    const [aggRows, dailyRows, clientRows, tabletRows, adRows] = await Promise.all([
       prisma.$queryRaw(Prisma.sql`
         SELECT
           COUNT(*)::int AS "totalPlays",
-          COUNT(DISTINCT campaign_id)::int AS "distinctCampaigns",
           COUNT(DISTINCT tablet_id)::int AS "distinctTablets",
           COUNT(DISTINCT ad_id)::int AS "distinctAds",
-          COALESCE(SUM(CASE WHEN completed THEN 1 ELSE 0 END), 0)::int AS "completedPlays"
+          COALESCE(SUM(CASE WHEN completed THEN 1 ELSE 0 END), 0)::int AS "completedPlays",
+          COALESCE(SUM(CASE WHEN error THEN 1 ELSE 0 END), 0)::int AS "errorPlays",
+          COALESCE(SUM(duration_played_s), 0)::bigint AS "totalSeconds"
         FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
       `),
       prisma.$queryRaw(Prisma.sql`
-        SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date, COUNT(*)::int AS count
+        SELECT TO_CHAR(DATE(played_at AT TIME ZONE 'America/Montevideo'), 'YYYY-MM-DD') AS date,
+               COUNT(*)::int AS count, COUNT(DISTINCT tablet_id)::int AS tablets
         FROM metrics WHERE played_at BETWEEN ${from} AND ${to} ${f('')}
         GROUP BY 1 ORDER BY 1 ASC
       `),
       prisma.$queryRaw(Prisma.sql`
-        SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
-        FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+        SELECT c.id AS "clientId", c.name AS "clientName", COUNT(m.id)::int AS count,
+               COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
+        FROM metrics m JOIN ads a ON a.id = m.ad_id JOIN clients c ON c.id = a.client_id
         WHERE m.played_at BETWEEN ${from} AND ${to} ${f('m')}
-        GROUP BY c.id, c.name ORDER BY count DESC LIMIT 10
+        GROUP BY c.id, c.name ORDER BY count DESC
       `),
       prisma.$queryRaw(Prisma.sql`
-        SELECT t.id AS "tabletId", t.name AS "tabletName", COUNT(m.id)::int AS count
+        SELECT t.id AS "tabletId", t.name AS "tabletName", COUNT(m.id)::int AS count,
+               COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
         FROM metrics m JOIN tablets t ON m.tablet_id = t.id
         WHERE m.played_at BETWEEN ${from} AND ${to} ${f('m')}
-        GROUP BY t.id, t.name ORDER BY count DESC LIMIT 10
+        GROUP BY t.id, t.name ORDER BY count DESC
       `),
       prisma.$queryRaw(Prisma.sql`
-        SELECT a.id AS "adId", a.name AS "adName", COUNT(m.id)::int AS count
-        FROM metrics m JOIN ads a ON m.ad_id = a.id
+        SELECT a.id AS "adId", a.name AS "adName", a.public_name AS "publicName", c.name AS "clientName",
+               COUNT(m.id)::int AS count,
+               COALESCE(SUM(CASE WHEN m.completed THEN 1 ELSE 0 END), 0)::int AS completed,
+               COALESCE(SUM(CASE WHEN m.error THEN 1 ELSE 0 END), 0)::int AS errors,
+               COUNT(DISTINCT m.tablet_id)::int AS tablets,
+               COALESCE(SUM(m.duration_played_s), 0)::bigint AS seconds
+        FROM metrics m JOIN ads a ON m.ad_id = a.id LEFT JOIN clients c ON c.id = a.client_id
         WHERE m.played_at BETWEEN ${from} AND ${to} ${f('m')}
-        GROUP BY a.id, a.name ORDER BY count DESC LIMIT 10
+        GROUP BY a.id, a.name, a.public_name, c.name ORDER BY count DESC
       `),
     ]);
 
     const agg = aggRows[0] || {};
+    const tabletsByDay = new Map(dailyRows.map((r) => [String(r.date).slice(0, 10), Number(r.tablets)]));
     res.json({
       from: from.toISOString(),
       to: to.toISOString(),
       totalPlays: Number(agg.totalPlays ?? 0),
       completedPlays: Number(agg.completedPlays ?? 0),
-      distinctCampaigns: Number(agg.distinctCampaigns ?? 0),
+      errorPlays: Number(agg.errorPlays ?? 0),
+      totalSeconds: Number(agg.totalSeconds ?? 0),
       distinctTablets: Number(agg.distinctTablets ?? 0),
       distinctAds: Number(agg.distinctAds ?? 0),
-      dailyPlays: zeroFillDaily(dailyRows, from, to),
-      playsByCampaign: campaignRows.map((r) => ({ campaignId: Number(r.campaignId), campaignName: r.campaignName, count: Number(r.count) })),
-      playsByTablet: tabletRows.map((r) => ({ tabletId: Number(r.tabletId), tabletName: r.tabletName, count: Number(r.count) })),
-      playsByAd: adRows.map((r) => ({ adId: Number(r.adId), adName: r.adName, count: Number(r.count) })),
+      dailyPlays: zeroFillDaily(dailyRows, from, to).map((d) => ({ ...d, tablets: tabletsByDay.get(d.date) ?? 0 })),
+      playsByClient: clientRows.map((r) => ({ clientId: Number(r.clientId), clientName: r.clientName, count: Number(r.count), seconds: Number(r.seconds) })),
+      playsByTablet: tabletRows.map((r) => ({ tabletId: Number(r.tabletId), tabletName: r.tabletName, count: Number(r.count), seconds: Number(r.seconds) })),
+      playsByAd: adRows.map((r) => ({
+        adId: Number(r.adId), adName: r.adName, publicName: r.publicName, clientName: r.clientName ?? null,
+        count: Number(r.count), completed: Number(r.completed), errors: Number(r.errors),
+        tablets: Number(r.tablets), seconds: Number(r.seconds),
+      })),
     });
   } catch (err) {
     next(err);
@@ -281,7 +268,7 @@ router.get('/by-tablet-ad', async (req, res, next) => {
       JOIN tablets t ON m.tablet_id = t.id
       JOIN ads a ON m.ad_id = a.id
       WHERE m.played_at BETWEEN ${from} AND ${to}
-      ${metricFilter('m', intParam(req.query.campaignId), intParam(req.query.tabletId))}
+      ${metricFilter('m', intParam(req.query.clientId), intParam(req.query.tabletId))}
       GROUP BY t.id, t.name, a.id, a.name
       ORDER BY t.name ASC, count DESC
     `);
@@ -302,7 +289,7 @@ router.get('/heatmap', async (req, res, next) => {
     const rows = await prisma.$queryRaw(Prisma.sql`
       SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour, COUNT(*)::int AS count
       FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
-      ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
+      ${metricFilter('', intParam(req.query.clientId), intParam(req.query.tabletId))}
       GROUP BY hour ORDER BY hour ASC
     `);
     const heatmap = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
@@ -323,7 +310,7 @@ router.get('/heatmap-by-day', async (req, res, next) => {
              EXTRACT(HOUR FROM played_at AT TIME ZONE 'America/Montevideo')::int AS hour,
              COUNT(*)::int AS count
       FROM metrics WHERE played_at BETWEEN ${from} AND ${to}
-      ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
+      ${metricFilter('', intParam(req.query.clientId), intParam(req.query.tabletId))}
       GROUP BY 1, 2
       ORDER BY 1 ASC, 2 ASC
     `);
@@ -343,7 +330,7 @@ router.get('/completion', async (req, res, next) => {
         SUM(CASE WHEN m.completed THEN 1 ELSE 0 END)::int AS "completedPlays"
       FROM metrics m JOIN ads a ON m.ad_id = a.id
       WHERE m.played_at BETWEEN ${from} AND ${to}
-      ${metricFilter('m', intParam(req.query.campaignId), intParam(req.query.tabletId))}
+      ${metricFilter('m', intParam(req.query.clientId), intParam(req.query.tabletId))}
       GROUP BY a.id, a.name ORDER BY "totalPlays" DESC LIMIT 15
     `);
     res.json(rows.map((r) => ({
@@ -373,8 +360,7 @@ router.get('/metrics', async (req, res, next) => {
         orderBy: { playedAt: 'desc' },
         include: {
           tablet: { select: { name: true } },
-          ad: { select: { name: true } },
-          campaign: { select: { name: true } },
+          ad: { select: { name: true, client: { select: { name: true } } } },
         },
       }),
     ]);
@@ -384,7 +370,7 @@ router.get('/metrics', async (req, res, next) => {
         id: m.id,
         tabletName: m.tablet.name,
         adName: m.ad.name,
-        campaignName: m.campaign.name,
+        clientName: m.ad.client?.name ?? null,
         playedAt: m.playedAt,
         durationPlayedS: m.durationPlayedS,
         completed: m.completed,
@@ -400,19 +386,18 @@ router.get('/metrics/export', async (req, res, next) => {
     const metrics = await prisma.metric.findMany({
       include: {
         tablet: { select: { name: true, deviceId: true } },
-        ad: { select: { name: true } },
-        campaign: { select: { name: true } },
+        ad: { select: { name: true, client: { select: { name: true } } } },
       },
       orderBy: { playedAt: 'desc' },
     });
-    const header = 'id,tablet,device_id,ad,campaign,played_at,duration_s,completed,error';
+    const header = 'id,tablet,device_id,ad,empresa,played_at,duration_s,completed,error';
     const rows = metrics.map((m) =>
       [
         m.id,
         `"${m.tablet.name.replace(/"/g, '""')}"`,
         m.tablet.deviceId,
         `"${m.ad.name.replace(/"/g, '""')}"`,
-        `"${m.campaign.name.replace(/"/g, '""')}"`,
+        `"${(m.ad.client?.name ?? '').replace(/"/g, '""')}"`,
         m.playedAt.toISOString(),
         m.durationPlayedS,
         m.completed ? 1 : 0,
@@ -474,8 +459,8 @@ router.get('/occupancy', async (req, res, next) => {
               select: {
                 ad: {
                   select: {
-                    durationS: true,
-                    campaign: { select: { active: true, deletedAt: true } },
+                    durationS: true, clientId: true, active: true, deletedAt: true,
+                    approvalStatus: true, startsAt: true, endsAt: true,
                   },
                 },
               },
@@ -489,7 +474,7 @@ router.get('/occupancy', async (req, res, next) => {
       const ads = t.playlist?.playlistAds ?? [];
       const totalDurationS = ads.reduce((s, pa) => s + pa.ad.durationS, 0);
       const paidDurationS = ads
-        .filter((pa) => pa.ad.campaign.active && !pa.ad.campaign.deletedAt)
+        .filter((pa) => pa.ad.clientId && isAdPlayable(pa.ad))
         .reduce((s, pa) => s + pa.ad.durationS, 0);
       const occupancyPct = totalDurationS > 0 ? Math.round((paidDurationS / totalDurationS) * 100) : 0;
       return { tabletId: t.id, tabletName: t.name, zone: t.zone, totalDurationS, paidDurationS, occupancyPct };
@@ -589,7 +574,7 @@ router.get('/monthly', async (req, res, next) => {
         COUNT(*)::int AS count
       FROM metrics
       WHERE played_at >= NOW() - INTERVAL '12 months'
-      ${metricFilter('', intParam(req.query.campaignId), intParam(req.query.tabletId))}
+      ${metricFilter('', intParam(req.query.clientId), intParam(req.query.tabletId))}
       GROUP BY DATE_TRUNC('month', played_at AT TIME ZONE 'America/Montevideo')
       ORDER BY month
     `);
@@ -631,7 +616,7 @@ router.get('/ads-no-plays', async (req, res, next) => {
       where: { active: true, deletedAt: null, approvalStatus: 'approved', metrics: { none: {} } },
       select: {
         id: true, name: true, type: true, durationS: true, createdAt: true,
-        campaign: { select: { id: true, name: true, active: true } },
+        client: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

@@ -18,9 +18,4 @@ async function bumpPlaylistsForAdIds(adIds) {
   console.log(`[bumpPlaylists] bumped ${playlistIds.length} playlist(s) — adIds=[${adIds.join(',')}]`);
 }
 
-async function bumpPlaylistsForCampaignId(campaignId) {
-  const ads = await prisma.ad.findMany({ where: { campaignId }, select: { id: true } });
-  await bumpPlaylistsForAdIds(ads.map((a) => a.id));
-}
-
-module.exports = { bumpPlaylistsForAdIds, bumpPlaylistsForCampaignId };
+module.exports = { bumpPlaylistsForAdIds };

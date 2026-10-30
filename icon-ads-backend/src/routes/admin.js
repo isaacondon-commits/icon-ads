@@ -16,7 +16,7 @@ const firebaseAdmin = require('../lib/firebase-admin');
 const forceApkFlags = require('../lib/forceApkFlags');
 const forceSyncFlags = require('../lib/forceSyncFlags');
 const screenshotFlags = require('../lib/screenshotFlags');
-const { isAdPlayable } = require('../lib/campaignSchedule');
+const { isAdPlayable } = require('../lib/adSchedule');
 
 const apkUpload = multer({
   storage: multer.memoryStorage(),
@@ -213,7 +213,7 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
     const id = Number(req.params.id);
     const pl = await prisma.playlist.findUnique({
       where: { id },
-      include: { playlistAds: { include: { ad: { include: { campaign: true } } }, orderBy: { order: 'asc' } } },
+      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
     });
     if (!pl) return res.status(404).json({ error: 'No existe' });
     const ads = pl.playlistAds
@@ -362,7 +362,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
       prisma.playlist.findMany({
         select: {
           id: true, name: true, version: true,
-          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true, campaign: { select: { active: true, deletedAt: true, startDate: true, endDate: true } } } } } },
+          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true } } } },
         },
       }),
       prisma.metric.count(),
@@ -451,12 +451,12 @@ router.get('/dashboard-stats', requireAuth, async (req, res, next) => {
     const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
     const onlineThreshold = new Date(now.getTime() - 10 * 60 * 1000);
 
-    const [tablets, clients, campaigns, ads, totalPlays, pendingAds] = await Promise.all([
+    const [tablets, clients, playlists, ads, totalPlays, pendingAds] = await Promise.all([
       prisma.tablet.findMany({
         select: { id: true, name: true, zone: true, lastSync: true, status: true },
       }),
       prisma.client.count({ where: { active: true, deletedAt: null } }),
-      prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+      prisma.playlist.count({ where: { active: true } }),
       prisma.ad.count({ where: { active: true, deletedAt: null } }),
       prisma.metric.count(),
       prisma.ad.count({ where: { approvalStatus: 'pending', deletedAt: null } }),
@@ -491,7 +491,7 @@ router.get('/dashboard-stats', requireAuth, async (req, res, next) => {
           : null,
         pendingAds: pendingAds > 0 ? `${pendingAds} anuncio(s) pendiente(s) de aprobación` : null,
       },
-      counts: { clients, campaigns, ads, totalPlays, pendingAds },
+      counts: { clients, playlists, ads, totalPlays, pendingAds },
       generatedAt: now.toISOString(),
     });
   } catch (err) {
@@ -571,12 +571,11 @@ router.get('/stats/zones', requireAuth, async (req, res, next) => {
 // GET /api/admin/backup — full JSON export of key data (#42)
 router.get('/backup', requireAuth, requireAdmin, async (req, res, next) => {
   try {
-    const [clients, campaigns, ads, playlists, tablets] = await Promise.all([
+    const [clients, ads, playlists, tablets] = await Promise.all([
       prisma.client.findMany({ where: { deletedAt: null } }),
-      prisma.campaign.findMany({ where: { deletedAt: null } }),
       prisma.ad.findMany({
         where: { deletedAt: null },
-        select: { id: true, campaignId: true, name: true, type: true, filename: true, durationS: true, active: true, approvalStatus: true, priority: true, tags: true, createdAt: true, updatedAt: true },
+        select: { id: true, clientId: true, name: true, publicName: true, type: true, filename: true, durationS: true, active: true, approvalStatus: true, priority: true, tags: true, createdAt: true, updatedAt: true },
       }),
       prisma.playlist.findMany({ include: { playlistAds: { select: { adId: true, order: true } } } }),
       prisma.tablet.findMany({
@@ -589,8 +588,8 @@ router.get('/backup', requireAuth, requireAdmin, async (req, res, next) => {
     res.json({
       exportedAt: new Date().toISOString(),
       version: '1.0',
-      counts: { clients: clients.length, campaigns: campaigns.length, ads: ads.length, playlists: playlists.length, tablets: tablets.length },
-      data: { clients, campaigns, ads, playlists, tablets },
+      counts: { clients: clients.length, ads: ads.length, playlists: playlists.length, tablets: tablets.length },
+      data: { clients, ads, playlists, tablets },
     });
   } catch (err) { next(err); }
 });
@@ -598,12 +597,11 @@ router.get('/backup', requireAuth, requireAdmin, async (req, res, next) => {
 // GET /api/admin/export/excel — multi-sheet XLSX export (#64)
 router.get('/export/excel', requireAuth, async (req, res, next) => {
   try {
-    const [clients, campaigns, ads, tablets] = await Promise.all([
+    const [clients, ads, tablets] = await Promise.all([
       prisma.client.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
-      prisma.campaign.findMany({ where: { deletedAt: null }, include: { client: { select: { name: true } } }, orderBy: { name: 'asc' } }),
       prisma.ad.findMany({
         where: { deletedAt: null },
-        include: { campaign: { select: { name: true } } },
+        include: { client: { select: { name: true } } },
         orderBy: { name: 'asc' },
       }),
       prisma.tablet.findMany({ orderBy: { name: 'asc' } }),
@@ -617,14 +615,8 @@ router.get('/export/excel', requireAuth, async (req, res, next) => {
       Creado: new Date(c.createdAt).toISOString().slice(0, 10),
     }))), 'Clientes');
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(campaigns.map((c) => ({
-      ID: c.id, Nombre: c.name, Cliente: c.client?.name ?? '', Inicio: c.startDate ? new Date(c.startDate).toISOString().slice(0, 10) : '',
-      Fin: c.endDate ? new Date(c.endDate).toISOString().slice(0, 10) : '',
-      CPM: c.cpm ?? '', Presupuesto: c.budget ?? '', Activa: c.active ? 'Sí' : 'No',
-    }))), 'Campañas');
-
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ads.map((a) => ({
-      ID: a.id, Nombre: a.name, Tipo: a.type, Campaña: a.campaign?.name ?? '',
+      ID: a.id, Nombre: a.name, 'Nombre público': a.publicName ?? '', Tipo: a.type, Empresa: a.client?.name ?? '',
       Duración: a.durationS, Prioridad: a.priority, Estado: a.approvalStatus,
       Activo: a.active ? 'Sí' : 'No', Creado: new Date(a.createdAt).toISOString().slice(0, 10),
     }))), 'Anuncios');
@@ -648,11 +640,11 @@ router.get('/export/excel', requireAuth, async (req, res, next) => {
 // GET /api/admin/export/pptx — PowerPoint metrics export (#40)
 router.get('/export/pptx', requireAuth, async (req, res, next) => {
   try {
-    const [totalPlays, tabletCount, clientCount, campaignCount, weeklyRows, topCampaigns] = await Promise.all([
+    const [totalPlays, tabletCount, clientCount, adCount, weeklyRows, topClients] = await Promise.all([
       prisma.metric.count(),
       prisma.tablet.count(),
       prisma.client.count({ where: { active: true, deletedAt: null } }),
-      prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+      prisma.ad.count({ where: { active: true, deletedAt: null, approvalStatus: 'approved' } }),
       prisma.$queryRaw`
         SELECT TO_CHAR(DATE_TRUNC('week', played_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS week, COUNT(*)::int AS count
         FROM metrics WHERE played_at >= NOW() - INTERVAL '8 weeks'
@@ -660,7 +652,7 @@ router.get('/export/pptx', requireAuth, async (req, res, next) => {
       `,
       prisma.$queryRaw`
         SELECT c.name, COUNT(m.id)::int AS plays
-        FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+        FROM metrics m JOIN ads a ON a.id = m.ad_id JOIN clients c ON c.id = a.client_id
         GROUP BY c.id, c.name ORDER BY plays DESC LIMIT 5
       `,
     ]);
@@ -683,7 +675,7 @@ router.get('/export/pptx', requireAuth, async (req, res, next) => {
       { label: 'Reproducciones totales', value: totalPlays.toLocaleString('es-AR') },
       { label: 'Tablets activas', value: String(tabletCount) },
       { label: 'Clientes activos', value: String(clientCount) },
-      { label: 'Campañas activas', value: String(campaignCount) },
+      { label: 'Anuncios activos', value: String(adCount) },
     ];
     kpis.forEach((k, i) => {
       const x = (i % 2) * 4.8 + 0.3;
@@ -693,12 +685,12 @@ router.get('/export/pptx', requireAuth, async (req, res, next) => {
       s2.addText(k.label, { x, y: y + 1.0, w: 4.3, h: 0.5, fontSize: 11, color: '6B7280', align: 'center' });
     });
 
-    // Slide 3 — Top campaigns
-    if (topCampaigns.length > 0) {
+    // Slide 3 — Top empresas
+    if (topClients.length > 0) {
       const s3 = pptx.addSlide();
-      s3.addText('Top 5 campañas por reproducciones', { x: 0.5, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: '111827' });
-      const maxPlays = Math.max(...topCampaigns.map((c) => Number(c.plays)), 1);
-      topCampaigns.forEach((c, i) => {
+      s3.addText('Top 5 empresas por reproducciones', { x: 0.5, y: 0.3, w: 9, h: 0.6, fontSize: 24, bold: true, color: '111827' });
+      const maxPlays = Math.max(...topClients.map((c) => Number(c.plays)), 1);
+      topClients.forEach((c, i) => {
         const y = 1.2 + i * 0.8;
         const barW = (Number(c.plays) / maxPlays) * 7;
         s3.addText(String(c.name).slice(0, 30), { x: 0.3, y, w: 3, h: 0.5, fontSize: 11, color: '111827' });
@@ -747,28 +739,10 @@ router.post('/demo-seed', requireAuth, requireAdmin, async (req, res, next) => {
       },
     });
 
-    const now = new Date();
-    const start = new Date(now); start.setDate(start.getDate() - 30);
-    const end = new Date(now); end.setDate(end.getDate() + 60);
-
-    const campaign = await prisma.campaign.create({
-      data: {
-        clientId: demoClient.id,
-        name: 'Campaña demo — Lanzamiento',
-        startDate: start,
-        endDate: end,
-        cpm: 5,
-        budget: 500,
-        targetImpressions: 100000,
-        observations: 'Campaña de ejemplo generada automáticamente.',
-        active: true,
-      },
-    });
 
     res.status(201).json({
       message: 'Demo data seeded',
       client: { id: demoClient.id, name: demoClient.name },
-      campaign: { id: campaign.id, name: campaign.name },
     });
   } catch (err) { next(err); }
 });

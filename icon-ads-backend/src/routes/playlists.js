@@ -27,7 +27,7 @@ router.get('/', async (req, res, next) => {
   try {
     const playlists = await prisma.playlist.findMany({
       include: {
-        playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } },
+        playlistAds: { include: { ad: { include: { client: { select: { id: true, name: true } } } } }, orderBy: { order: 'asc' } },
         _count: { select: { tablets: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -56,7 +56,7 @@ router.get('/:id', async (req, res, next) => {
       where: { id: Number(req.params.id) },
       include: {
         playlistAds: {
-          include: { ad: { include: { campaign: { select: { id: true, name: true } } } } },
+          include: { ad: { include: { client: { select: { id: true, name: true } } } } },
           orderBy: { order: 'asc' },
         },
       },
@@ -96,6 +96,22 @@ router.delete('/:id', async (req, res, next) => {
     next(err);
   }
 });
+
+// PATCH /:id/pause | /:id/resume — una playlist pausada no se reproduce: las
+// tablets que la tienen asignada borran su copia local y muestran el
+// institucional (ver /api/device/sync). Al reanudar la vuelven a descargar.
+for (const [action, active] of [['pause', false], ['resume', true]]) {
+  router.patch(`/:id/${action}`, async (req, res, next) => {
+    try {
+      const playlist = await prisma.playlist.update({ where: { id: Number(req.params.id) }, data: { active } });
+      await audit(req, active ? 'RESUME' : 'PAUSE', 'playlist', playlist.id, `${active ? 'Reanudada' : 'Pausada'} "${playlist.name}"`);
+      res.json(playlist);
+    } catch (err) {
+      if (err.code === 'P2025') return res.status(404).json({ error: 'Playlist not found' });
+      next(err);
+    }
+  });
+}
 
 // POST /:id/ads — replace ads + bump version + save version snapshot (#17)
 router.post('/:id/ads', async (req, res, next) => {

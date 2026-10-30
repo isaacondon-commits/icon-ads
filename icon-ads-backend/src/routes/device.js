@@ -19,7 +19,7 @@ const { sendAlert } = require('../lib/alerts');
 const freezeState = require('../lib/freezeState');
 const r2 = require('../lib/r2');
 const zipDispatch = require('../lib/zipDispatch');
-const { isAdPlayable } = require('../lib/campaignSchedule');
+const { isAdPlayable } = require('../lib/adSchedule');
 
 // Sirve un ZIP que ya está en disco. Si R2 está configurado con URL pública, lo
 // sube a R2 y responde un 302 (Render manda ~200 bytes; la tablet baja de R2,
@@ -103,7 +103,6 @@ const registerLimiter = rateLimit({
 const metricsSchema = z.array(
   z.object({
     adId: z.number().int().positive(),
-    campaignId: z.number().int().positive(),
     playedAt: z.string().datetime(),
     durationPlayedS: z.number().int().min(0),
     completed: z.boolean(),
@@ -213,7 +212,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     const playerOk = req.query.playerOk !== undefined ? req.query.playerOk === 'true' : undefined;
     const lastAdAgoS = req.query.lastAdAgoS !== undefined ? parseInt(req.query.lastAdAgoS) : undefined;
     // onFallback: la app está mostrando SÓLO el video institucional de respaldo
-    // (campaignId < 0) => no logró cargar/descargar su playlist real.
+    // => no logró cargar/descargar su playlist real (o su playlist está pausada).
     const onFallback = req.query.onFallback !== undefined ? req.query.onFallback === 'true' : undefined;
     // Brillo automático manejado por la app: lux medido y si la tablet tiene
     // sensor de luz (si no lo tiene, el brillo auto no puede adaptar).
@@ -317,8 +316,11 @@ router.get('/sync', requireDevice, async (req, res, next) => {
     }
 
     const playlist = await prisma.playlist.findUnique({ where: { id: tablet.playlistId } });
-    if (!playlist) {
-      console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} no encontrada en DB`);
+    // Playlist inexistente o pausada: igual que "sin playlist" — la app borra su
+    // copia local y pasa el institucional. Al reanudarla la vuelve a bajar
+    // (installedPlaylistId queda en -1 / versión local 0).
+    if (!playlist || !playlist.active) {
+      console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} ${playlist ? 'pausada' : 'no encontrada en DB'}`);
       return res.json({ needsUpdate: false, version: 0, noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
@@ -374,7 +376,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: tablet.playlistId },
-      include: { playlistAds: { include: { ad: { include: { campaign: true } } }, orderBy: { order: 'asc' } } },
+      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
     });
     if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 
@@ -382,9 +384,8 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
     const cacheDir = path.join(__dirname, '../../cache');
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
 
-    // Sólo anuncios reproducibles: activos, aprobados, dentro de su ventana y con
-    // la campaña activa y VIGENTE (una campaña vencida o pausada no entra al
-    // paquete). Se dedupe por filename para que un mismo archivo no entre dos
+    // Sólo anuncios reproducibles: activos, aprobados y dentro de su ventana de
+    // fechas. Se dedupe por filename para que un mismo archivo no entre dos
     // veces al ZIP (aunque el anuncio esté repetido en la lista, cosa que sí se
     // refleja en adsPayload/orden).
     const now = new Date();
@@ -394,7 +395,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     const adsPayload = activeAds.map(({ ad, order }) => ({
       id: ad.id, name: ad.name, type: ad.type, filename: ad.filename,
-      duration_s: ad.durationS, order, campaignId: ad.campaignId,
+      duration_s: ad.durationS, order,
     }));
 
     const hash = crypto
@@ -620,11 +621,10 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
     const metrics = [];
     for (const m of raw) {
       if (!m || typeof m !== 'object') continue;
+      // campaignId (APK <= 1.50) se ignora: la empresa sale del anuncio.
       const adId = Number(m.adId);
-      const campaignId = Number(m.campaignId);
       const t = Date.parse(m.playedAt);
       if (!Number.isInteger(adId) || adId <= 0) continue;
-      if (!Number.isInteger(campaignId) || campaignId <= 0) continue;
       if (!Number.isFinite(t)) continue;
       const key = `${adId}|${t}`;
       if (seen.has(key)) continue;
@@ -632,7 +632,6 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
       metrics.push({
         tabletId,
         adId,
-        campaignId,
         playedAt: new Date(t),
         durationPlayedS: Math.max(0, Math.round(Number(m.durationPlayedS) || 0)),
         completed: m.completed === true,
@@ -674,32 +673,6 @@ router.post('/metrics', requireDevice, async (req, res, next) => {
       }
     }
 
-    // Auto-pausa por max_impressions (#7) — una query agrupada, y sólo si
-    // alguna campaña del lote tiene tope configurado (antes eran N COUNT(*)
-    // secuenciales que se volvían lentos y hacían solapar las subidas).
-    const campaignIds = [...new Set(metrics.map((m) => m.campaignId))];
-    if (campaignIds.length) {
-      try {
-        const capped = await prisma.campaign.findMany({
-          where: { id: { in: campaignIds }, active: true, maxImpressions: { not: null } },
-          select: { id: true, maxImpressions: true },
-        });
-        if (capped.length) {
-          const counts = await prisma.metric.groupBy({
-            by: ['campaignId'],
-            where: { campaignId: { in: capped.map((c) => c.id) } },
-            _count: { _all: true },
-          });
-          const countMap = Object.fromEntries(counts.map((c) => [c.campaignId, c._count._all]));
-          for (const c of capped) {
-            if ((countMap[c.id] ?? 0) >= c.maxImpressions) {
-              await prisma.campaign.update({ where: { id: c.id }, data: { active: false } }).catch(() => {});
-              console.log(`[metrics] Campaña ${c.id} autopausada: ${countMap[c.id]}/${c.maxImpressions}`);
-            }
-          }
-        }
-      } catch { /* non-fatal */ }
-    }
 
     res.json({ saved });
   } catch (err) {

@@ -18,12 +18,12 @@ router.get('/summary', async (req, res, next) => {
     const [
       tabletList,
       clientCount,
-      campaignCount,
+      playlistCount,
       adCount,
       totalPlays,
       dailyRows7,
-      campaignRows,
-      expiringCampaigns,
+      clientRows,
+      expiringAds,
       dailyRows30,
       auditLogs,
     ] = await Promise.all([
@@ -32,7 +32,7 @@ router.get('/summary', async (req, res, next) => {
         orderBy: { name: 'asc' },
       }),
       prisma.client.count({ where: { active: true, deletedAt: null } }),
-      prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+      prisma.playlist.count({ where: { active: true } }),
       prisma.ad.count({ where: { active: true, deletedAt: null } }),
       prisma.metric.count(),
       prisma.$queryRaw`
@@ -41,14 +41,14 @@ router.get('/summary', async (req, res, next) => {
         GROUP BY DATE(played_at AT TIME ZONE 'UTC') ORDER BY date ASC
       `,
       prisma.$queryRaw`
-        SELECT c.id AS "campaignId", c.name AS "campaignName", COUNT(m.id)::int AS count
-        FROM metrics m JOIN campaigns c ON m.campaign_id = c.id
+        SELECT c.id AS "clientId", c.name AS "clientName", COUNT(m.id)::int AS count
+        FROM metrics m JOIN ads a ON a.id = m.ad_id JOIN clients c ON c.id = a.client_id
         GROUP BY c.id, c.name ORDER BY count DESC LIMIT 10
       `,
-      prisma.campaign.findMany({
-        where: { active: true, deletedAt: null, endDate: { lte: inSevenDays, gte: today } },
+      prisma.ad.findMany({
+        where: { active: true, deletedAt: null, endsAt: { lte: inSevenDays, gte: today } },
         include: { client: { select: { name: true } } },
-        orderBy: { endDate: 'asc' },
+        orderBy: { endsAt: 'asc' },
       }),
       prisma.$queryRaw`
         SELECT DATE(played_at AT TIME ZONE 'UTC') AS date, COUNT(*)::int AS count
@@ -111,19 +111,19 @@ router.get('/summary', async (req, res, next) => {
       stats: {
         tablets: { total: tabletList.length, online: onlineCount },
         clients: clientCount,
-        campaigns: campaignCount,
+        playlists: playlistCount,
         ads: adCount,
         totalPlays,
         dailyPlays,
-        playsByCampaign: campaignRows.map((r) => ({
-          campaignId: Number(r.campaignId),
-          campaignName: r.campaignName,
+        playsByClient: clientRows.map((r) => ({
+          clientId: Number(r.clientId),
+          clientName: r.clientName,
           count: Number(r.count),
         })),
-        expiringCampaigns: expiringCampaigns.map((c) => ({
-          id: c.id, name: c.name, clientName: c.client?.name ?? '—',
-          endDate: c.endDate,
-          daysLeft: Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000),
+        expiringAds: expiringAds.map((a) => ({
+          id: a.id, name: a.name, clientName: a.client?.name ?? '—',
+          endsAt: a.endsAt,
+          daysLeft: Math.ceil((new Date(a.endsAt).getTime() - Date.now()) / 86400000),
         })),
       },
       monitor,

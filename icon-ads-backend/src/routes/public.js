@@ -17,13 +17,13 @@ router.use(requireApiKey);
 // GET /api/v1/public/stats
 router.get('/stats', async (req, res, next) => {
   try {
-    const [totalPlays, tabletCount, activeCampaigns, activeClients] = await Promise.all([
+    const [totalPlays, tabletCount, activeAds, activeClients] = await Promise.all([
       prisma.metric.count(),
       prisma.tablet.count(),
-      prisma.campaign.count({ where: { active: true, deletedAt: null } }),
+      prisma.ad.count({ where: { active: true, deletedAt: null, approvalStatus: 'approved' } }),
       prisma.client.count({ where: { active: true, deletedAt: null } }),
     ]);
-    res.json({ totalPlays, tabletCount, activeCampaigns, activeClients, timestamp: new Date().toISOString() });
+    res.json({ totalPlays, tabletCount, activeAds, activeClients, timestamp: new Date().toISOString() });
   } catch (err) { next(err); }
 });
 
@@ -43,17 +43,5 @@ router.get('/zones', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /api/v1/public/campaigns
-router.get('/campaigns', async (req, res, next) => {
-  try {
-    const campaigns = await prisma.campaign.findMany({
-      where: { active: true, deletedAt: null },
-      select: { id: true, name: true, startDate: true, endDate: true, active: true },
-      orderBy: { startDate: 'desc' },
-      take: 50,
-    });
-    res.json(campaigns);
-  } catch (err) { next(err); }
-});
 
 module.exports = router;

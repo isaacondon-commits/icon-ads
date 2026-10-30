@@ -14,6 +14,7 @@ const { audit } = require('../lib/auditLog');
 const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
 const { mp4DurationSeconds } = require('../lib/mp4Duration');
 const { purgeAd } = require('../lib/purgeAd');
+const { setAdPlaylists, bumpPlaylists } = require('../lib/adPlaylists');
 
 const IMAGE_MAX = 10 * 1024 * 1024;
 const VIDEO_MAX = 100 * 1024 * 1024;
@@ -75,9 +76,19 @@ const parseTags = (v) => {
   return String(v).split(',').map((s) => s.trim()).filter(Boolean);
 };
 
+// Ids de playlists: JSON array (body JSON) o "1,2,3" (multipart).
+const parseIds = (v) => {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return [];
+  if (Array.isArray(v)) return v;
+  return String(v).split(',').map((x) => x.trim()).filter(Boolean);
+};
+
 const adSchema = z.object({
-  campaignId: z.coerce.number().int().positive(),
+  clientId: z.coerce.number().int().positive(),
   name: z.string().min(1),
+  publicName: z.preprocess((v) => (v == null || String(v).trim() === '' ? null : String(v).trim()), z.string().max(120).nullable().optional()),
+  playlistIds: z.preprocess(parseIds, z.array(z.coerce.number().int().positive()).max(50).optional()),
   type: z.enum(['video', 'image']),
   durationS: z.coerce.number().int().positive(),
   priority: z.coerce.number().int().min(0).optional(),
@@ -88,12 +99,23 @@ const adSchema = z.object({
   tags: z.preprocess(parseTags, z.array(z.string()).optional()),
 });
 
+const clientExists = async (id) => !!(await prisma.client.findFirst({ where: { id, deletedAt: null }, select: { id: true } }));
+
+// Un anuncio nuevo entra a las playlists elegidas al crearlo. Si queda
+// pendiente de aprobación no se reproduce todavía (isAdPlayable), así que no
+// se fuerza la descarga: la versión sube recién al aprobarlo.
+async function placeInPlaylists(ad, playlistIds) {
+  if (!playlistIds?.length) return;
+  const changed = await setAdPlaylists(ad.id, playlistIds);
+  if (ad.approvalStatus === 'approved') await bumpPlaylists(changed);
+}
+
 // GET /archived — soft-deleted ads (#5)
 router.get('/archived', async (req, res, next) => {
   try {
     const ads = await prisma.ad.findMany({
       where: { NOT: { deletedAt: null } },
-      include: { campaign: { select: { id: true, name: true, clientId: true, client: { select: { name: true } } } } },
+      include: { client: { select: { id: true, name: true } } },
       orderBy: { deletedAt: 'desc' },
     });
     res.json(ads);
@@ -107,7 +129,7 @@ router.get('/', async (req, res, next) => {
     const tag = req.query.tag ? String(req.query.tag) : undefined;
     const ads = await prisma.ad.findMany({
       where: { deletedAt: null, ...(tag ? { tags: { has: tag } } : {}) },
-      include: { campaign: { select: { id: true, name: true, active: true, deletedAt: true, startDate: true, endDate: true } } },
+      include: { client: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
     const delivery = await adDeliveryInfo(ads);
@@ -204,20 +226,22 @@ router.post('/confirm', async (req, res, next) => {
     if (!r2.isConfigured && !supabaseStorage.isConfigured) {
       return res.status(503).json({ error: 'Direct upload not configured' });
     }
-    const { key, publicUrl, thumbnailUrl, campaignId, name, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.extend({
+    const { key, publicUrl, thumbnailUrl, clientId, name, publicName, playlistIds, type, durationS, priority, targetUrl, startsAt, endsAt, tags } = adSchema.extend({
       key: z.string().min(1),
       publicUrl: z.string().url(),
     }).parse(req.body);
+    if (!(await clientExists(clientId))) return res.status(400).json({ error: 'La empresa no existe' });
     const filename = path.basename(key);
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     // El archivo ya está en storage: un HEAD da su peso sin bajarlo.
     const fileSize = await remoteFileSize(publicUrl);
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl: publicUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize,
+      data: { clientId, name, publicName: publicName ?? null, type, fileUrl: publicUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
-      include: { campaign: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true } } },
     });
+    await placeInPlaylists(ad, playlistIds);
     await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" via direct upload (${approvalStatus})`);
     res.status(201).json(ad);
   } catch (err) {
@@ -242,7 +266,8 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       return res.status(400).json({ error: 'El archivo no es una imagen o video válido (firma inválida)' });
     }
 
-    const { campaignId, name, type, durationS, priority, targetUrl, thumbnailUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
+    const { clientId, name, publicName, playlistIds, type, durationS, priority, targetUrl, thumbnailUrl, startsAt, endsAt, tags } = adSchema.parse(req.body);
+    if (!(await clientExists(clientId))) return res.status(400).json({ error: 'La empresa no existe' });
 
     // El video no puede durar más que la duración configurada para el anuncio:
     // si dura más, se cortaría en pantalla. Se acepta hasta 0.5s de margen.
@@ -284,11 +309,12 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     // Approval: superadmin → approved immediately; admin → pending (#26)
     const approvalStatus = req.user?.role === 'superadmin' ? 'approved' : 'pending';
     const ad = await prisma.ad.create({
-      data: { campaignId, name, type, fileUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize: fileBuffer.length,
+      data: { clientId, name, publicName: publicName ?? null, type, fileUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize: fileBuffer.length,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
-      include: { campaign: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true } } },
     });
+    await placeInPlaylists(ad, playlistIds);
     await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus}) via ${storage}`);
     res.status(201).json(ad);
   } catch (err) {
@@ -320,7 +346,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const ad = await prisma.ad.findUnique({
       where: { id: Number(req.params.id), deletedAt: null },
-      include: { campaign: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true } } },
     });
     if (!ad) return res.status(404).json({ error: 'Ad not found' });
     res.json(ad);
@@ -331,14 +357,17 @@ router.get('/:id', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const data = adSchema.partial().parse(req.body);
-    if (data.campaignId != null) {
-      const campaign = await prisma.campaign.findFirst({ where: { id: data.campaignId, deletedAt: null }, select: { id: true } });
-      if (!campaign) return res.status(400).json({ error: 'La campaña no existe' });
-    }
-    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
-    await audit(req, 'UPDATE', 'ad', ad.id, `Updated "${ad.name}"`);
+    const { playlistIds, ...data } = adSchema.partial().parse(req.body);
+    if (data.clientId != null && !(await clientExists(data.clientId))) return res.status(400).json({ error: 'La empresa no existe' });
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data, include: { client: { select: { id: true, name: true } } } });
+    // Primero se suben las playlists donde ya estaba (por si cambió algo que
+    // se ve en pantalla); después se ajusta en cuáles está y se suben ésas.
     await bumpPlaylistsForAdIds([ad.id]);
+    if (playlistIds) {
+      const changed = await setAdPlaylists(ad.id, playlistIds);
+      if (ad.approvalStatus === 'approved') await bumpPlaylists(changed);
+    }
+    await audit(req, 'UPDATE', 'ad', ad.id, `Updated "${ad.name}"`);
     res.json(ad);
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });

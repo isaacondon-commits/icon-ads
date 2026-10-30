@@ -13,13 +13,20 @@ router.param('id', (req, res, next, id) => {
   next();
 });
 
-// A client's campaigns = ones they bill (clientId) OR are tagged on as an
-// additional client (#multi-client) — used everywhere a client's own page
-// lists "their" campaigns.
-const campaignsForClientWhere = (id) => ({
-  deletedAt: null,
-  OR: [{ clientId: id }, { additionalClients: { some: { clientId: id } } }],
-});
+// Anuncios de una empresa + sus reproducciones (y segundos al aire).
+async function clientAdsWithStats(id) {
+  const [ads, agg] = await Promise.all([
+    prisma.ad.findMany({ where: { clientId: id, deletedAt: null }, orderBy: { createdAt: 'desc' } }),
+    prisma.metric.groupBy({
+      by: ['adId'],
+      where: { ad: { clientId: id } },
+      _count: { id: true },
+      _sum: { durationPlayedS: true },
+    }),
+  ]);
+  const map = Object.fromEntries(agg.map((r) => [r.adId, { plays: r._count.id, totalSeconds: r._sum.durationPlayedS ?? 0 }]));
+  return ads.map((a) => ({ ...a, stats: map[a.id] ?? { plays: 0, totalSeconds: 0 } }));
+}
 
 const clientSchema = z.object({
   name: z.string().min(1),
@@ -94,13 +101,11 @@ router.post('/', requireAdmin, async (req, res, next) => {
 router.get('/:id/proposal', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const [client, campaigns, metricsAgg] = await Promise.all([
+    const [client, ads] = await Promise.all([
       prisma.client.findUnique({ where: { id, deletedAt: null } }),
-      prisma.campaign.findMany({ where: campaignsForClientWhere(id), orderBy: { startDate: 'desc' } }),
-      prisma.metric.groupBy({ by: ['campaignId'], where: { campaign: campaignsForClientWhere(id) }, _count: { id: true } }),
+      clientAdsWithStats(id),
     ]);
     if (!client) return res.status(404).json({ error: 'Client not found' });
-    const playMap = Object.fromEntries(metricsAgg.map((r) => [r.campaignId, r._count.id]));
 
     const doc = pdf.createDoc();
     res.setHeader('Content-Type', 'application/pdf');
@@ -116,22 +121,20 @@ router.get('/:id/proposal', async (req, res, next) => {
     if (client.phone) pdf.row(doc, 'Teléfono', client.phone);
     if (client.address) pdf.row(doc, 'Dirección', client.address);
 
-    pdf.sectionTitle(doc, 'Resumen de campañas');
-    const totalPlays = Object.values(playMap).reduce((s, v) => s + v, 0);
-    const activeCampaigns = campaigns.filter((c) => c.active).length;
-    pdf.row(doc, 'Campañas activas', activeCampaigns);
-    pdf.row(doc, 'Total campañas', campaigns.length);
+    pdf.sectionTitle(doc, 'Resumen de anuncios');
+    const totalPlays = ads.reduce((n, a) => n + a.stats.plays, 0);
+    pdf.row(doc, 'Anuncios activos', ads.filter((a) => a.active && a.approvalStatus === 'approved').length);
+    pdf.row(doc, 'Total anuncios', ads.length);
     pdf.row(doc, 'Total reproducciones', totalPlays.toLocaleString('es-AR'), true);
 
-    if (campaigns.length > 0) {
-      pdf.sectionTitle(doc, 'Detalle de campañas');
-      for (const c of campaigns.slice(0, 20)) {
-        const plays = playMap[c.id] ?? 0;
-        const revenue = c.cpm ? (plays / 1000) * c.cpm : null;
+    if (ads.length > 0) {
+      pdf.sectionTitle(doc, 'Detalle de anuncios');
+      for (const a of ads.slice(0, 20)) {
+        const window = a.startsAt || a.endsAt ? `${a.startsAt ? pdf.fmtDate(a.startsAt) : '…'} – ${a.endsAt ? pdf.fmtDate(a.endsAt) : '…'}  ·  ` : '';
         doc.moveDown(0.3);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor(pdf.BLACK).text(c.name, 50);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(pdf.BLACK).text(a.publicName || a.name, 50);
         doc.fontSize(9).font('Helvetica').fillColor(pdf.GRAY)
-          .text(`${pdf.fmtDate(c.startDate)} – ${pdf.fmtDate(c.endDate)}  ·  ${plays.toLocaleString()} reproducciones${c.cpm ? `  ·  CPM $${c.cpm}` : ''}${revenue ? `  ·  Ingreso est. $${revenue.toFixed(2)}` : ''}`, 50);
+          .text(`${window}${a.stats.plays.toLocaleString('es-AR')} reproducciones`, 50);
       }
     }
 
@@ -147,35 +150,16 @@ router.get('/:id/proposal', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /:id — full profile with campaigns + metrics aggregate (#8)
+// GET /:id — perfil con sus anuncios + reproducciones de cada uno (#8)
 router.get('/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const [client, campaigns, metricsAgg] = await Promise.all([
+    const [client, ads] = await Promise.all([
       prisma.client.findUnique({ where: { id, deletedAt: null } }),
-      prisma.campaign.findMany({
-        where: campaignsForClientWhere(id),
-        include: {
-          client: { select: { id: true, name: true } },
-          additionalClients: { include: { client: { select: { id: true, name: true } } } },
-          ads: { where: { deletedAt: null } },
-          _count: { select: { metrics: true } },
-        },
-        orderBy: { startDate: 'desc' },
-      }),
-      prisma.metric.groupBy({
-        by: ['campaignId'],
-        where: { campaign: campaignsForClientWhere(id) },
-        _count: { id: true },
-        _sum: { durationPlayedS: true },
-      }),
+      clientAdsWithStats(id),
     ]);
     if (!client) return res.status(404).json({ error: 'Client not found' });
-    const aggMap = Object.fromEntries(
-      metricsAgg.map((r) => [r.campaignId, { plays: r._count.id, totalSeconds: r._sum.durationPlayedS ?? 0 }])
-    );
-    const campaignsWithStats = campaigns.map((c) => ({ ...c, stats: aggMap[c.id] ?? { plays: 0, totalSeconds: 0 } }));
-    res.json({ ...client, campaigns: campaignsWithStats });
+    res.json({ ...client, ads });
   } catch (err) {
     next(err);
   }

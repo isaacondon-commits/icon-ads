@@ -16,12 +16,12 @@ router.get('/', async (req, res, next) => {
        FROM system_alerts WHERE acknowledged_at IS NULL ORDER BY id DESC LIMIT 50`,
     ).catch(() => []);
 
-    const [pendingAds, expiringCampaigns, offlineTablets, allTablets] = await Promise.all([
+    const [pendingAds, expiringAds, offlineTablets, allTablets] = await Promise.all([
       prisma.ad.count({ where: { approvalStatus: 'pending', deletedAt: null } }),
-      prisma.campaign.findMany({
-        where: { active: true, deletedAt: null, endDate: { lte: inSevenDays, gte: today } },
-        select: { id: true, name: true, endDate: true },
-        orderBy: { endDate: 'asc' },
+      prisma.ad.findMany({
+        where: { active: true, deletedAt: null, endsAt: { lte: inSevenDays, gte: today } },
+        select: { id: true, name: true, endsAt: true },
+        orderBy: { endsAt: 'asc' },
       }),
       prisma.tablet.findMany({
         where: { lastSync: { lt: twoHoursAgo }, manualStatus: { not: 'mantenimiento' } },
@@ -48,15 +48,15 @@ router.get('/', async (req, res, next) => {
     }
 
     res.json({
-      total: pendingAds + expiringCampaigns.length + offlineTablets.length,
+      total: pendingAds + expiringAds.length + offlineTablets.length,
       pendingAds,
       monitorAlerts,
       systemAlerts: (systemAlerts || []).map((a) => ({ ...a, id: Number(a.id) })),
       systemAlertCount: (systemAlerts || []).length,
-      expiringCampaigns: expiringCampaigns.map((c) => ({
-        id: c.id,
-        name: c.name,
-        daysLeft: Math.ceil((new Date(c.endDate).getTime() - Date.now()) / 86400000),
+      expiringAds: expiringAds.map((a) => ({
+        id: a.id,
+        name: a.name,
+        daysLeft: Math.ceil((new Date(a.endsAt).getTime() - Date.now()) / 86400000),
       })),
       offlineTablets: offlineTablets.map((t) => ({
         id: t.id,

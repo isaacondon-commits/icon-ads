@@ -39,25 +39,25 @@ router.get('/', async (req, res, next) => {
         playlist: {
           select: {
             id: true, name: true, version: true,
-            playlistAds: { select: { ad: { select: { campaign: { select: { id: true, name: true } } } } } },
+            playlistAds: { select: { ad: { select: { client: { select: { id: true, name: true } } } } } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
-    // Campañas a las que "pertenece" cada tablet = campañas con al menos un
-    // anuncio en la playlist asignada (deduplicadas).
+    // Empresas que pasan en cada tablet = empresas con al menos un anuncio en
+    // la playlist asignada (deduplicadas).
     const shaped = tablets.map((t) => {
       const byId = new Map();
       for (const pa of t.playlist?.playlistAds ?? []) {
-        const c = pa.ad?.campaign;
+        const c = pa.ad?.client;
         if (c) byId.set(c.id, c.name);
       }
-      const campaigns = [...byId].map(([id, name]) => ({ id, name }));
+      const clients = [...byId].map(([id, name]) => ({ id, name }));
       const playlist = t.playlist
         ? { id: t.playlist.id, name: t.playlist.name, version: t.playlist.version }
         : null;
-      return { ...t, playlist, campaigns };
+      return { ...t, playlist, clients };
     });
     res.json(shaped);
   } catch (err) {

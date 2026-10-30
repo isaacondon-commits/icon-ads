@@ -17,10 +17,14 @@ const mockDb = {
     { id: 2, name: 'Empresa Dos', active: true, deletedAt: null },
   ],
   clientUsers: [],
-  campaigns: [
-    { id: 10, clientId: 1, name: 'Campaña de Uno', startDate: new Date('2026-01-01'), endDate: new Date('2027-01-01'), active: true, deletedAt: null },
-    { id: 20, clientId: 2, name: 'Campaña de Dos', startDate: new Date('2026-01-01'), endDate: new Date('2027-01-01'), active: true, deletedAt: null },
+  // Los dos anuncios están en la MISMA playlist (las playlists mezclan
+  // empresas): la empresa 1 no tiene que ver nada del anuncio 20.
+  ads: [
+    { id: 10, clientId: 1, name: 'archivo_uno_1920x1080.mp4', publicName: null, type: 'video', active: true, approvalStatus: 'approved', startsAt: null, endsAt: null, deletedAt: null, createdAt: new Date('2026-01-01') },
+    { id: 20, clientId: 2, name: 'archivo_dos.jpg', publicName: 'Promo Dos', type: 'image', active: true, approvalStatus: 'approved', startsAt: null, endsAt: null, deletedAt: null, createdAt: new Date('2026-01-01') },
   ],
+  playlistAds: [{ adId: 10, playlistId: 5 }, { adId: 20, playlistId: 5 }],
+  tablets: [{ id: 1, playlistId: 5 }, { id: 2, playlistId: 5 }],
   rawQueries: [],
 };
 const PASSWORD = 'Un4-clave-larga!';
@@ -47,8 +51,14 @@ jest.mock('../src/lib/prisma', () => ({
     findUnique: jest.fn(async ({ where }) => mockWithClient(mockDb.clientUsers.find((u) => mockMatches(u, where)))),
     update: jest.fn(async ({ where, data }) => mockApplyData(mockDb.clientUsers.find((u) => mockMatches(u, where)), data)),
   },
-  campaign: {
-    findMany: jest.fn(async ({ where }) => mockDb.campaigns.filter((c) => c.clientId === where.clientId && c.deletedAt === null)),
+  ad: {
+    findMany: jest.fn(async ({ where }) => mockDb.ads.filter((a) => a.clientId === where.clientId)),
+  },
+  playlistAd: {
+    findMany: jest.fn(async ({ where }) => mockDb.playlistAds.filter((l) => where.adId.in.includes(l.adId))),
+  },
+  tablet: {
+    findMany: jest.fn(async ({ where }) => mockDb.tablets.filter((t) => where.playlistId.in.includes(t.playlistId))),
   },
   metric: { groupBy: jest.fn(async () => []) },
   auditLog: { create: jest.fn(async () => ({})) },
@@ -141,19 +151,22 @@ describe('aislamiento entre empresas', () => {
     expect(res.status).toBe(200);
     expect(res.body.clientName).toBe('Empresa Uno');
   });
-  it('/campaigns lista sólo sus campañas', async () => {
-    const res = await request(app).get('/api/portal/campaigns').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
+  it('/ads lista sólo sus anuncios, sin el nombre interno', async () => {
+    const res = await request(app).get('/api/portal/ads').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
     expect(res.status).toBe(200);
-    expect(res.body.map((c) => c.id)).toEqual([10]);
+    expect(res.body.map((a) => a.id)).toEqual([10]);
+    expect(res.body[0].name).toBe('Anuncio 1');
+    expect(JSON.stringify(res.body)).not.toMatch(/archivo_/);
+    expect(res.body[0].tabletsNow).toBe(2);
   });
-  it('pedir la campaña de otra empresa da 404', async () => {
-    for (const p of ['/api/portal/stats?campaignId=20', '/api/portal/report.pdf?campaignId=20']) {
+  it('pedir el anuncio de otra empresa da 404', async () => {
+    for (const p of ['/api/portal/stats?adId=20', '/api/portal/report.pdf?adId=20']) {
       const res = await request(app).get(p).set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
       expect(res.status).toBe(404);
     }
     expect(mockDb.rawQueries).toHaveLength(0);
   });
-  it('las consultas de estadísticas sólo usan campañas propias', async () => {
+  it('las consultas de estadísticas sólo usan anuncios propios', async () => {
     const res = await request(app).get('/api/portal/stats?clientId=2').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
     expect(res.status).toBe(200);
     expect(mockDb.rawQueries.length).toBeGreaterThan(0);
@@ -162,8 +175,15 @@ describe('aislamiento entre empresas', () => {
       expect(q.values).not.toContain(20);
     }
   });
-  it('un id de campaña no numérico da 404', async () => {
-    const res = await request(app).get('/api/portal/stats?campaignId=10%20OR%201=1').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
+  it('las estadísticas no traen nombres internos ni anuncios ajenos', async () => {
+    const res = await request(app).get('/api/portal/stats').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
+    expect(res.status).toBe(200);
+    expect(res.body.byAd.map((a) => a.id)).toEqual([10]);
+    expect(JSON.stringify(res.body)).not.toMatch(/archivo_|Promo Dos/);
+    expect(res.body.totals.tabletsNow).toBe(2);
+  });
+  it('un id de anuncio no numérico da 404', async () => {
+    const res = await request(app).get('/api/portal/stats?adId=10%20OR%201=1').set(PROXY).set('Cookie', sessionCookie(mockDb.clientUsers[0]));
     expect(res.status).toBe(404);
   });
 });
@@ -203,7 +223,7 @@ describe('política de contraseñas', () => {
 });
 
 describe('PDF', () => {
-  it('genera el reporte de las campañas propias', async () => {
+  it('genera el reporte de los anuncios propios', async () => {
     const res = await request(app).get('/api/portal/report.pdf?from=2026-10-01&to=2026-10-07').set(PROXY)
       .set('Cookie', sessionCookie(mockDb.clientUsers.find((u) => u.id === 200)))
       .buffer(true).parse((r, cb) => { const c = []; r.on('data', (d) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });

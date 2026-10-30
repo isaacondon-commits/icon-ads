@@ -9,7 +9,6 @@ const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const clientRoutes = require('./routes/clients');
-const campaignRoutes = require('./routes/campaigns');
 const adRoutes = require('./routes/ads');
 const playlistRoutes = require('./routes/playlists');
 const tabletRoutes = require('./routes/tablets');
@@ -21,7 +20,6 @@ const notificationRoutes = require('./routes/notifications');
 const settingsRoutes = require('./routes/settings');
 const dashboardRoutes = require('./routes/dashboard');
 const notesRoutes = require('./routes/notes');
-const templatesRoutes = require('./routes/templates');
 const favoritesRoutes = require('./routes/favorites');
 const remindersRoutes = require('./routes/reminders');
 const abtestsRoutes = require('./routes/abtests');
@@ -42,7 +40,7 @@ const firebaseAdmin = require('./lib/firebase-admin');
 const { withCache } = require('./lib/cache');
 const { sendTabletOfflineAlert } = require('./lib/mailer');
 const syslog = require('./lib/systemLog');
-const { checkCampaignSchedule } = require('./lib/campaignSchedule');
+const { checkAdSchedule } = require('./lib/adSchedule');
 const { backfillAdSizes } = require('./lib/adFileSize');
 
 const app = express();
@@ -190,7 +188,6 @@ app.get('/p/apk', apkProxyLimiter, async (req, res, next) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/clients', clientRoutes);
-app.use('/api/campaigns', campaignRoutes);
 app.use('/api/ads', adRoutes);
 app.use('/api/playlists', playlistRoutes);
 app.use('/api/tablets', tabletRoutes);
@@ -202,7 +199,6 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dashboard', withCache(5 * 60 * 1000), dashboardRoutes);
 app.use('/api/notes', notesRoutes);
-app.use('/api/templates', templatesRoutes);
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/reminders', remindersRoutes);
 app.use('/api/abtests', abtestsRoutes);
@@ -236,7 +232,6 @@ const swaggerSpec = swaggerJsdoc({
     tags: [
       { name: 'Auth', description: 'Autenticación y sesión' },
       { name: 'Clients', description: 'Gestión de clientes publicitarios' },
-      { name: 'Campaigns', description: 'Campañas publicitarias' },
       { name: 'Ads', description: 'Anuncios y archivos multimedia' },
       { name: 'Playlists', description: 'Listas de reproducción' },
       { name: 'Tablets', description: 'Dispositivos en campo' },
@@ -257,12 +252,8 @@ swaggerSpec.paths = {
   '/api/auth/logout': { post: { tags: ['Auth'], summary: 'Logout', responses: { 204: { description: 'Logged out' } } } },
   '/api/auth/me': { get: { tags: ['Auth'], summary: 'Get current user', responses: { 200: { description: 'User object' } } } },
   '/api/clients': { get: { tags: ['Clients'], summary: 'List all active clients', responses: { 200: { description: 'Array of clients' } } }, post: { tags: ['Clients'], summary: 'Create a client', responses: { 201: { description: 'Created client' } } } },
-  '/api/clients/{id}': { get: { tags: ['Clients'], summary: 'Get client profile with campaigns', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Client profile' }, 404: { description: 'Not found' } } }, put: { tags: ['Clients'], summary: 'Update client', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated client' } } }, delete: { tags: ['Clients'], summary: 'Soft-delete client', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
+  '/api/clients/{id}': { get: { tags: ['Clients'], summary: 'Get client profile with ads', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Client profile' }, 404: { description: 'Not found' } } }, put: { tags: ['Clients'], summary: 'Update client', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated client' } } }, delete: { tags: ['Clients'], summary: 'Soft-delete client', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
   '/api/clients/{id}/proposal': { get: { tags: ['Clients'], summary: 'Download proposal PDF (#32)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'PDF file', content: { 'application/pdf': {} } } } } },
-  '/api/campaigns': { get: { tags: ['Campaigns'], summary: 'List all campaigns', responses: { 200: { description: 'Array of campaigns' } } }, post: { tags: ['Campaigns'], summary: 'Create a campaign', responses: { 201: { description: 'Created campaign' } } } },
-  '/api/campaigns/{id}': { get: { tags: ['Campaigns'], summary: 'Get campaign detail', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Campaign detail' } } }, put: { tags: ['Campaigns'], summary: 'Update campaign', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated' } } }, delete: { tags: ['Campaigns'], summary: 'Delete campaign', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
-  '/api/campaigns/{id}/certificate': { get: { tags: ['Campaigns'], summary: 'Download campaign certificate PDF (#51)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'PDF certificate', content: { 'application/pdf': {} } } } } },
-  '/api/campaigns/{id}/contract': { get: { tags: ['Campaigns'], summary: 'Download digital contract PDF (#56)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'PDF contract', content: { 'application/pdf': {} } } } } },
   '/api/ads': { get: { tags: ['Ads'], summary: 'List all ads', responses: { 200: { description: 'Array of ads' } } } },
   '/api/tablets': { get: { tags: ['Tablets'], summary: 'List all tablets', responses: { 200: { description: 'Array of tablets' } } } },
   '/api/stats': { get: { tags: ['Stats'], summary: 'Global stats summary', responses: { 200: { description: 'Stats object' } } } },
@@ -274,14 +265,13 @@ swaggerSpec.paths = {
   '/api/admin/export/excel': { get: { tags: ['Admin'], summary: 'Multi-sheet Excel export (#64)', responses: { 200: { description: 'XLSX file' } } } },
   '/api/admin/export/pptx': { get: { tags: ['Admin'], summary: 'PowerPoint metrics export (#40)', responses: { 200: { description: 'PPTX file' } } } },
   '/api/admin/export/tablets': { get: { tags: ['Admin'], summary: 'Tablets CSV export', responses: { 200: { description: 'CSV file' } } } },
-  '/api/admin/demo-seed': { post: { tags: ['Admin'], summary: 'Seed demo client + campaign (#63)', responses: { 201: { description: 'Demo data created' }, 409: { description: 'Already seeded' } } } },
+  '/api/admin/demo-seed': { post: { tags: ['Admin'], summary: 'Seed demo client (#63)', responses: { 201: { description: 'Demo data created' }, 409: { description: 'Already seeded' } } } },
   '/api/admin/api-keys': { get: { tags: ['Admin'], summary: 'List public API keys (#70)', responses: { 200: { description: 'Array of API keys (masked)' } } }, post: { tags: ['Admin'], summary: 'Create API key (#70)', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } } }, responses: { 201: { description: 'Created API key (full key shown once)' } } } },
   '/api/admin/api-keys/{id}': { delete: { tags: ['Admin'], summary: 'Revoke API key (#70)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Revoked' } } } },
   '/api/zones': { get: { tags: ['Admin'], summary: 'List geofence zones with tablet counts (#67)', responses: { 200: { description: 'Array of zones' } } }, post: { tags: ['Admin'], summary: 'Create zone (#67)', responses: { 201: { description: 'Created zone' } } } },
   '/api/zones/{id}': { put: { tags: ['Admin'], summary: 'Update zone (#67)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated zone' } } }, delete: { tags: ['Admin'], summary: 'Delete zone (#67)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' } } } },
   '/api/v1/public/stats': { get: { tags: ['Public API'], summary: 'Summary stats (requires X-API-Key header) (#70)', security: [{ apiKeyHeader: [] }], responses: { 200: { description: 'Stats object' }, 401: { description: 'No API key' }, 403: { description: 'Invalid key' } } } },
   '/api/v1/public/zones': { get: { tags: ['Public API'], summary: 'Zones with tablet counts (requires X-API-Key) (#70)', security: [{ apiKeyHeader: [] }], responses: { 200: { description: 'Array of zone stats' } } } },
-  '/api/v1/public/campaigns': { get: { tags: ['Public API'], summary: 'Active campaigns list (requires X-API-Key) (#70)', security: [{ apiKeyHeader: [] }], responses: { 200: { description: 'Array of campaigns' } } } },
   '/api/notes': { get: { tags: ['Notes'], summary: 'List admin notes', responses: { 200: { description: 'Array of notes' } } }, post: { tags: ['Notes'], summary: 'Create note', responses: { 201: { description: 'Created note' } } } },
   '/api/reminders': { get: { tags: ['Reminders'], summary: 'List reminders', responses: { 200: { description: 'Array of reminders' } } }, post: { tags: ['Reminders'], summary: 'Create reminder', responses: { 201: { description: 'Created reminder' } } } },
   '/api/reminders/{id}': { patch: { tags: ['Reminders'], summary: 'Update reminder (toggle done, edit)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Updated reminder' } } }, delete: { tags: ['Reminders'], summary: 'Delete reminder', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 204: { description: 'Deleted' } } } },
@@ -434,7 +424,7 @@ setInterval(async () => {
   } catch (err) { console.warn('[driver-points]', err.message); }
 }, 24 * 60 * 60 * 1000);
 
-// #61 — WhatsApp via CallMeBot when campaign(s) expire today
+// #61 — WhatsApp via CallMeBot cuando hay anuncios que terminan hoy
 setInterval(async () => {
   try {
     const [phoneCfg, apikeyCfg] = await Promise.all([
@@ -444,49 +434,29 @@ setInterval(async () => {
     if (!phoneCfg?.value || !apikeyCfg?.value) return;
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-    const expiring = await prisma.campaign.findMany({
-      where: { active: true, deletedAt: null, endDate: { gte: todayStart, lte: todayEnd } },
+    const expiring = await prisma.ad.findMany({
+      where: { active: true, deletedAt: null, endsAt: { gte: todayStart, lte: todayEnd } },
       include: { client: { select: { name: true } } },
     });
     if (expiring.length === 0) return;
-    const names = expiring.map((c) => `"${c.name}" (${c.client?.name ?? '?'})`).join(', ');
-    const text = encodeURIComponent(`ICON ADS: ${expiring.length} campaña(s) vence(n) hoy: ${names}`);
+    const names = expiring.map((a) => `"${a.publicName || a.name}" (${a.client?.name ?? '?'})`).join(', ');
+    const text = encodeURIComponent(`ICON ADS: ${expiring.length} anuncio(s) termina(n) hoy: ${names}`);
     fetch(`https://api.callmebot.com/whatsapp.php?phone=${phoneCfg.value}&text=${text}&apikey=${apikeyCfg.value}`)
       .catch((e) => console.warn('[callmebot-expire]', e.message));
-    console.log(`[campaign-expire] ${expiring.length} campañas vencen hoy — WhatsApp enviado`);
+    console.log(`[ad-expire] ${expiring.length} anuncios terminan hoy — WhatsApp enviado`);
   } catch (err) {
-    console.warn('[campaign-expire]', err.message);
+    console.warn('[ad-expire]', err.message);
   }
 }, 24 * 60 * 60 * 1000);
 
-// Campañas vencidas: se desactivan solas y dejan de reproducirse (las playlists
-// afectadas suben de versión). También detecta campañas que arrancan y anuncios
-// que entran/salen de su ventana. Cada 5 min + al arrancar.
-setInterval(checkCampaignSchedule, 5 * 60 * 1000);
-setTimeout(checkCampaignSchedule, 30 * 1000);
+// Anuncios que entran/salen de su ventana de fechas: las playlists afectadas
+// suben de versión. Cada 5 min + al arrancar.
+setInterval(checkAdSchedule, 5 * 60 * 1000);
+setTimeout(checkAdSchedule, 30 * 1000);
 
 // Peso de los anuncios viejos (sin file_size): HEAD a la URL pública, una vez.
 setTimeout(() => backfillAdSizes().catch((e) => console.warn('[ad-size]', e.message)), 60 * 1000);
 
-// #4 — Daily auto-archive expired campaigns (opt-in via settings)
-setInterval(async () => {
-  try {
-    const cfg = await prisma.systemConfig.findUnique({ where: { key: 'auto_archive_expired' } });
-    if (cfg?.value !== 'true') return;
-    const now = new Date();
-    // El día de fin es inclusive: vence al terminar ese día (endDate + 24 h).
-    const result = await prisma.campaign.updateMany({
-      where: { endDate: { lte: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, deletedAt: null },
-      data: { active: false, deletedAt: now },
-    });
-    if (result.count > 0) {
-      console.log(`[auto-archive] ${result.count} campañas vencidas archivadas`);
-      syslog.addEvent('AUTO_ARCHIVE', 'campaign', null, `${result.count} campañas vencidas archivadas automáticamente`);
-    }
-  } catch (err) {
-    console.warn('[auto-archive]', err.message);
-  }
-}, 24 * 60 * 60 * 1000);
 
 // GPS location history cleanup — keep 7 days
 setInterval(async () => {
@@ -527,14 +497,13 @@ setTimeout(runMaintenanceRules, 2 * 60 * 1000);
 // #42 — Daily backup log
 setInterval(async () => {
   try {
-    const [clients, campaigns, ads, playlists, tablets] = await Promise.all([
+    const [clients, ads, playlists, tablets] = await Promise.all([
       prisma.client.count({ where: { deletedAt: null } }),
-      prisma.campaign.count({ where: { deletedAt: null } }),
       prisma.ad.count({ where: { deletedAt: null } }),
       prisma.playlist.count(),
       prisma.tablet.count(),
     ]);
-    console.log(`[backup-log] ${new Date().toISOString()} — clients:${clients} campaigns:${campaigns} ads:${ads} playlists:${playlists} tablets:${tablets}`);
+    console.log(`[backup-log] ${new Date().toISOString()} — clients:${clients} ads:${ads} playlists:${playlists} tablets:${tablets}`);
   } catch (err) {
     console.warn('[backup-log]', err.message);
   }
@@ -558,16 +527,16 @@ async function runWeeklyBackup() {
   const tag = new Date().toISOString().slice(0, 10);
   console.log(`[weekly-backup] Iniciando backup ${tag}`);
   try {
-    const [tablets, campaigns, metrics] = await Promise.all([
+    const [tablets, ads, metrics] = await Promise.all([
       prisma.tablet.findMany(),
-      prisma.campaign.findMany({ where: { deletedAt: null }, include: { client: { select: { name: true } }, ads: { select: { id: true, name: true, type: true } } } }),
+      prisma.ad.findMany({ where: { deletedAt: null }, select: { id: true, name: true, publicName: true, type: true, clientId: true, client: { select: { name: true } } } }),
       prisma.metric.findMany({ where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } }),
     ]);
-    const csvRows = ['id,ad_id,campaign_id,played_at,duration_s,completed']
-      .concat(metrics.map((m) => `${m.id},${m.adId},${m.campaignId},${m.playedAt?.toISOString() ?? ''},${m.durationPlayedS},${m.completed}`));
+    const csvRows = ['id,tablet_id,ad_id,played_at,duration_s,completed']
+      .concat(metrics.map((m) => `${m.id},${m.tabletId},${m.adId},${m.playedAt?.toISOString() ?? ''},${m.durationPlayedS},${m.completed}`));
     const files = [
       { name: `backups/${tag}/tablets.json`, buf: Buffer.from(JSON.stringify(tablets, null, 2)), mime: 'application/json' },
-      { name: `backups/${tag}/campaigns.json`, buf: Buffer.from(JSON.stringify(campaigns, null, 2)), mime: 'application/json' },
+      { name: `backups/${tag}/ads.json`, buf: Buffer.from(JSON.stringify(ads, null, 2)), mime: 'application/json' },
       { name: `backups/${tag}/metrics.csv`, buf: Buffer.from(csvRows.join('\n')), mime: 'text/csv' },
     ];
     if (supabaseStorage.isConfigured) {
@@ -576,7 +545,7 @@ async function runWeeklyBackup() {
     } else {
       console.warn('[weekly-backup] Supabase no configurado — backup omitido');
     }
-    syslog.addEvent('WEEKLY_BACKUP', 'system', null, `Backup ${tag}: ${tablets.length} tablets, ${campaigns.length} campañas, ${metrics.length} métricas`);
+    syslog.addEvent('WEEKLY_BACKUP', 'system', null, `Backup ${tag}: ${tablets.length} tablets, ${ads.length} anuncios, ${metrics.length} métricas`);
   } catch (err) {
     console.error('[weekly-backup] Error:', err.message);
   }
