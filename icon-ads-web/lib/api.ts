@@ -99,12 +99,15 @@ export const api = {
   // Clients
   getClients: () => request<Client[]>('/api/clients'),
   createClient: (data: Partial<Client>) =>
-    request<Client>('/api/clients', { method: 'POST', body: JSON.stringify(data) }),
+    request<Client & { portalInvite?: PortalInviteResult }>('/api/clients', { method: 'POST', body: JSON.stringify(data) }),
   updateClient: (id: number, data: Partial<Client>) =>
     request<Client>(`/api/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteClient: (id: number) => request<void>(`/api/clients/${id}`, { method: 'DELETE' }),
   reactivateClient: (id: number) => request<Client>(`/api/clients/${id}/reactivate`, { method: 'PATCH' }),
   getClientProfile: (id: number) => request<ClientProfile>(`/api/clients/${id}`),
+  getClientPortal: (id: number) => request<ClientPortalStatus>(`/api/clients/${id}/portal`),
+  inviteClientPortal: (id: number) => request<PortalInviteResult>(`/api/clients/${id}/portal/invite`, { method: 'POST' }),
+  revokeClientPortal: (id: number) => request<{ ok: true }>(`/api/clients/${id}/portal/revoke`, { method: 'POST' }),
 
   // Campaigns
   getCampaigns: () => request<Campaign[]>('/api/campaigns'),
@@ -708,6 +711,13 @@ export interface TabletMonitorEntry {
   lastAdAgoS?: number | null;
   hasScreenshot?: boolean;
   lastScreenshotAt?: string | null;
+}
+export interface PortalInviteResult { sent: boolean; error?: string; expiresAt?: string }
+export interface ClientPortalStatus {
+  exists: boolean; email?: string; active?: boolean; activated?: boolean;
+  invitedAt?: string | null; inviteExpiresAt?: string | null;
+  lastLoginAt?: string | null; lastLoginIp?: string | null; lockedUntil?: string | null;
+  events?: { action: string; ip: string | null; createdAt: string }[];
 }
 export interface StorageStats {
   totalBytes: number; totalMB: number; fileCount: number; adCount: number;

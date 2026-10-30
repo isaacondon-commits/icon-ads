@@ -7,10 +7,13 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import PageShell from '@/components/ui/PageShell';
 import UiModal, { Field as UiField } from '@/components/ui/Modal';
 import { Btn, BtnLink, IconBtn, ViewToggle } from '@/components/ui/buttons';
+import ClientPortalAccess from '@/components/ClientPortalAccess';
+import { useToast } from '@/lib/toast-context';
 
 const PAGE_SIZE = 10;
 
 export default function ClientsPage() {
+  const { show } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -59,7 +62,12 @@ export default function ClientsPage() {
     try {
       const data = { name: form.name, email: form.email, phone: form.phone || undefined, company: form.company || undefined, rut: form.rut || null, address: form.address || null, color: form.color || null, contactName: form.contactName || null, contactPhone: form.contactPhone || null };
       if (editing) await api.updateClient(editing.id, data);
-      else await api.createClient(data);
+      else {
+        const created = await api.createClient(data);
+        const inv = created.portalInvite;
+        if (inv?.sent) show(`Cliente creado. Le llegó la invitación al portal a ${created.email}.`);
+        else show(`Cliente creado, pero la invitación al portal no salió: ${inv?.error ?? 'error desconocido'}. Podés reenviarla desde Editar.`, 'warning');
+      }
       setShowModal(false);
       load();
     } catch (e) {
@@ -240,6 +248,12 @@ export default function ClientsPage() {
                 <input className="input" value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} placeholder="+598 99 000 000" />
               </Field>
             </div>
+            {editing
+              ? <ClientPortalAccess clientId={editing.id} />
+              : <p className="text-xs text-[var(--muted)]">Al guardar, le llega al email del cliente una invitación al portal de estadísticas (desde empresasiconads@gmail.com).</p>}
+            {editing && form.email.trim().toLowerCase() !== editing.email.trim().toLowerCase() && (
+              <p className="text-xs text-[var(--warn)]">Cambiar el email cambia el usuario del portal: se cierran sus sesiones y hay que reenviarle la invitación.</p>
+            )}
             {error && <p className="text-red-600 text-sm">{error}</p>}
             <div className="sticky bottom-0 flex gap-2 bg-[var(--surface)] pb-1 pt-4 [&>button]:flex-1 [&>button]:justify-center">
               <Btn v="primary" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Btn>
