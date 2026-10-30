@@ -144,6 +144,8 @@ const MIGRATIONS = [
   { name: 'maintenance_rules', sql: `CREATE TABLE IF NOT EXISTS maintenance_rules (id SERIAL PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'revision', every_days INT NOT NULL, lead_days INT NOT NULL DEFAULT 3, scope TEXT NOT NULL DEFAULT 'all', scope_id INT, assignee TEXT, notify BOOLEAN NOT NULL DEFAULT true, active BOOLEAN NOT NULL DEFAULT true, starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_run_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'tablet_diagnostics', sql: `CREATE TABLE IF NOT EXISTS tablet_diagnostics (id BIGSERIAL PRIMARY KEY, tablet_id INT NOT NULL REFERENCES tablets(id) ON DELETE CASCADE, data JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
   { name: 'tablet_diagnostics.idx', sql: `CREATE INDEX IF NOT EXISTS tablet_diagnostics_tablet_idx ON tablet_diagnostics(tablet_id, created_at DESC)` },
+  // v-portal — acceso de empresas al portal de estadísticas
+  { name: 'client_users', sql: `CREATE TABLE IF NOT EXISTS client_users (id SERIAL PRIMARY KEY, client_id INT NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE, email TEXT NOT NULL UNIQUE, password_hash TEXT, active BOOLEAN NOT NULL DEFAULT true, session_version INT NOT NULL DEFAULT 0, failed_logins INT NOT NULL DEFAULT 0, locked_until TIMESTAMPTZ, invite_token_hash TEXT UNIQUE, invite_expires_at TIMESTAMPTZ, invited_at TIMESTAMPTZ, reset_token_hash TEXT UNIQUE, reset_expires_at TIMESTAMPTZ, last_login_at TIMESTAMPTZ, last_login_ip TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())` },
 ];
 
 // Garantiza el índice único metrics_natural_key (tablet_id, ad_id, played_at)

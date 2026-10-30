@@ -29,6 +29,7 @@ const referralsRoutes = require('./routes/referrals');
 const driverpointsRoutes = require('./routes/driverpoints');
 const zonesRoutes = require('./routes/zones');
 const publicRoutes = require('./routes/public');
+const portalRoutes = require('./routes/portal');
 const surveysRoutes = require('./routes/surveys');
 const maintenanceRoutes = require('./routes/maintenance');
 const swaggerUi = require('swagger-ui-express');
@@ -114,6 +115,9 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes, probá de nuevo en un minuto.' },
+  // El portal de empresas llega por el proxy de Vercel (todas las IPs serían
+  // la del proxy): tiene sus propios límites por IP real en routes/portal.js.
+  skip: (req) => req.path.startsWith('/portal/'),
 });
 app.use('/api', apiLimiter);
 app.use(express.json({ limit: '1mb' })); // 1mb para permitir capturas de pantalla en base64
@@ -208,6 +212,7 @@ app.use('/api/zones', zonesRoutes);
 app.use('/api/surveys', surveysRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/v1/public', publicRoutes);
+app.use('/api/portal', portalRoutes);
 
 // #41 — Swagger API docs at /api/docs
 const swaggerSpec = swaggerJsdoc({

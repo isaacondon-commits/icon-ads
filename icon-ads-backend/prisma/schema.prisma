@@ -42,8 +42,37 @@ model Client {
   campaignLinks     CampaignClient[]
   referralsGiven    Referral[]       @relation("ReferralReferrer")
   referralsReceived Referral[]       @relation("ReferralReferred")
+  portalUser        ClientUser?
 
   @@map("clients")
+}
+
+// Acceso de una empresa (Client) al portal de estadísticas. Uno por empresa.
+// Tabla y sesión aparte de los usuarios del panel (User): una cuenta de
+// portal nunca puede usar rutas del panel. Contraseña y tokens se guardan
+// sólo como hash.
+model ClientUser {
+  id              Int       @id @default(autoincrement())
+  clientId        Int       @unique @map("client_id")
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  email           String    @unique
+  passwordHash    String?   @map("password_hash")
+  active          Boolean   @default(true)
+  // Se incrementa para cerrar todas las sesiones abiertas al instante.
+  sessionVersion  Int       @default(0) @map("session_version")
+  failedLogins    Int       @default(0) @map("failed_logins")
+  lockedUntil     DateTime? @map("locked_until")
+  inviteTokenHash String?   @unique @map("invite_token_hash")
+  inviteExpiresAt DateTime? @map("invite_expires_at")
+  invitedAt       DateTime? @map("invited_at")
+  resetTokenHash  String?   @unique @map("reset_token_hash")
+  resetExpiresAt  DateTime? @map("reset_expires_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  lastLoginIp     String?   @map("last_login_ip")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("client_users")
 }
 
 model Campaign {

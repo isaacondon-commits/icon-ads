@@ -4,6 +4,7 @@ const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const pdf = require('../lib/pdfHelper');
+const { inviteClient, revokeClient } = require('../lib/portalInvite');
 
 router.use(requireAuth);
 
@@ -49,7 +50,15 @@ router.post('/', requireAdmin, async (req, res, next) => {
     const data = clientSchema.parse(req.body);
     const client = await prisma.client.create({ data });
     await audit(req, 'CREATE', 'client', client.id, `Created "${client.name}"`);
-    res.status(201).json(client);
+    // Toda empresa nueva recibe su invitación al portal de estadísticas.
+    let portalInvite;
+    try {
+      portalInvite = await inviteClient(client);
+      await audit(req, 'PORTAL_INVITE', 'client', client.id, portalInvite.sent ? `Invitación al portal enviada a ${client.email}` : `Invitación al portal NO enviada: ${portalInvite.error}`);
+    } catch (err) {
+      portalInvite = { sent: false, error: err.message };
+    }
+    res.status(201).json({ ...client, portalInvite });
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);
@@ -150,8 +159,20 @@ router.get('/:id', async (req, res, next) => {
 router.put('/:id', requireAdmin, async (req, res, next) => {
   try {
     const data = clientSchema.partial().parse(req.body);
+    const before = data.email ? await prisma.client.findUnique({ where: { id: Number(req.params.id) }, select: { email: true } }) : null;
     const client = await prisma.client.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
     await audit(req, 'UPDATE', 'client', client.id, `Updated "${client.name}"`);
+    // Cambió el email: es el usuario del portal. Se actualiza, se cierran las
+    // sesiones y se anulan los enlaces que hayan ido al email anterior.
+    if (before && before.email !== client.email) {
+      await prisma.clientUser.updateMany({
+        where: { clientId: client.id },
+        data: {
+          email: client.email.trim().toLowerCase(), sessionVersion: { increment: 1 },
+          inviteTokenHash: null, inviteExpiresAt: null, resetTokenHash: null, resetExpiresAt: null,
+        },
+      }).catch((err) => console.warn('[clients] email del portal:', err.message));
+    }
     res.json(client);
   } catch (err) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
@@ -167,12 +188,56 @@ router.delete('/:id', requireAdmin, async (req, res, next) => {
       where: { id: Number(req.params.id), deletedAt: null },
       data: { active: false, deletedAt: new Date() },
     });
+    await revokeClient(client.id);
     await audit(req, 'DELETE', 'client', client.id, `Deleted "${client.name}"`);
     res.status(204).send();
   } catch (err) {
     if (err.code === 'P2025') return res.status(404).json({ error: 'Client not found' });
     next(err);
   }
+});
+
+// ── Acceso al portal de estadísticas ────────────────────────────────────────
+
+// GET /:id/portal — estado del acceso + últimos ingresos
+router.get('/:id/portal', requireAdmin, async (req, res, next) => {
+  try {
+    const cu = await prisma.clientUser.findUnique({ where: { clientId: Number(req.params.id) } });
+    if (!cu) return res.json({ exists: false });
+    const events = await prisma.auditLog.findMany({
+      where: { entity: 'client_user', entityId: cu.id },
+      orderBy: { createdAt: 'desc' }, take: 15,
+      select: { action: true, ip: true, createdAt: true },
+    });
+    res.json({
+      exists: true, email: cu.email, active: cu.active, activated: !!cu.passwordHash,
+      invitedAt: cu.invitedAt, inviteExpiresAt: cu.inviteTokenHash ? cu.inviteExpiresAt : null,
+      lastLoginAt: cu.lastLoginAt, lastLoginIp: cu.lastLoginIp,
+      lockedUntil: cu.lockedUntil && cu.lockedUntil > new Date() ? cu.lockedUntil : null,
+      events,
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /:id/portal/invite — manda (o reenvía) la invitación
+router.post('/:id/portal/invite', requireAdmin, async (req, res, next) => {
+  try {
+    const client = await prisma.client.findFirst({ where: { id: Number(req.params.id), deletedAt: null } });
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    const r = await inviteClient(client);
+    await audit(req, 'PORTAL_INVITE', 'client', client.id, r.sent ? `Invitación al portal enviada a ${client.email}` : `Invitación al portal NO enviada: ${r.error}`);
+    res.status(r.sent ? 200 : 502).json(r);
+  } catch (err) { next(err); }
+});
+
+// POST /:id/portal/revoke — corta el acceso y cierra sus sesiones al instante
+router.post('/:id/portal/revoke', requireAdmin, async (req, res, next) => {
+  try {
+    const done = await revokeClient(Number(req.params.id));
+    if (!done) return res.status(404).json({ error: 'La empresa no tiene acceso al portal' });
+    await audit(req, 'PORTAL_REVOKE', 'client', Number(req.params.id), 'Acceso al portal cortado');
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 // PATCH /:id/reactivate (#34)
