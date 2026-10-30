@@ -67,7 +67,7 @@ class PlaylistRepository(private val context: Context) {
         }
     }
 
-    private fun institutionalAds() = listOf(
+    fun institutionalAds() = listOf(
         Ad(
             id = -1,
             name = "Institucional",

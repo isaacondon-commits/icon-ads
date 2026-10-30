@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { requireAuth, requireAdmin, requireCreator } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
+const { signalPlaylistChanged } = require('../lib/tabletSignals');
 
 router.use(requireAuth);
 
@@ -105,6 +106,7 @@ for (const [action, active] of [['pause', false], ['resume', true]]) {
     try {
       const playlist = await prisma.playlist.update({ where: { id: Number(req.params.id) }, data: { active } });
       await audit(req, active ? 'RESUME' : 'PAUSE', 'playlist', playlist.id, `${active ? 'Reanudada' : 'Pausada'} "${playlist.name}"`);
+      signalPlaylistChanged(playlist.id);
       res.json(playlist);
     } catch (err) {
       if (err.code === 'P2025') return res.status(404).json({ error: 'Playlist not found' });

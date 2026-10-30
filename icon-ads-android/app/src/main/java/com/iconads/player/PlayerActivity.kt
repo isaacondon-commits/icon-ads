@@ -75,6 +75,10 @@ class PlayerActivity : AppCompatActivity() {
     private val imageHandler = Handler(Looper.getMainLooper())
     private var ads: List<Ad> = emptyList()
     private var currentIndex = 0
+    // Anuncios a saltear aunque estén en el paquete (ver applySkip).
+    private var skipAdIds: Set<Int> = emptySet()
+    // Todos los anuncios del paquete están salteados: está pasando el institucional.
+    private var allSkipped = false
     private var adStartTime = 0L
     private var failCount = 0
     // Última vez que un anuncio efectivamente pasó a mostrarse (playAd()).
@@ -121,6 +125,8 @@ class PlayerActivity : AppCompatActivity() {
     private val forceSyncReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             Log.i(TAG, "force_sync (push) — sincronizando ahora")
+            val stop = intent.getIntArrayExtra(com.iconads.player.fcm.FcmService.EXTRA_STOP_AD_IDS)
+            if (stop != null && stop.isNotEmpty()) applySkip(skipAdIds + stop.toSet())
             lifecycleScope.launch { syncNow() }
         }
     }
@@ -331,6 +337,7 @@ class PlayerActivity : AppCompatActivity() {
             IntentFilter(com.iconads.player.fcm.FcmService.ACTION_FORCE_SYNC_NOW),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        applySkip(prefs.getSkipAdIds())
         accel?.let { sensorMgr?.registerListener(orientationListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
         try {
             (getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager)
@@ -648,9 +655,10 @@ class PlayerActivity : AppCompatActivity() {
             showLoading(true)
             ads = withContext(Dispatchers.IO) { playlistRepo.loadAds() }
             failCount = 0
-            currentIndex = 0
+            allSkipped = false
+            currentIndex = ads.size - 1  // playNext arranca en el 0 (o el primero no salteado)
             showLoading(false)
-            if (ads.isNotEmpty()) playAd(ads[0])
+            playNext()
         }
     }
 
@@ -658,9 +666,10 @@ class PlayerActivity : AppCompatActivity() {
         if (blockedByPanel) return
         lifecycleScope.launch {
             ads = withContext(Dispatchers.IO) { playlistRepo.loadAds() }
-            currentIndex = 0
+            currentIndex = ads.size - 1
             failCount = 0
-            if (ads.isNotEmpty()) playAd(ads[0])
+            allSkipped = false
+            playNext()
         }
     }
 
@@ -679,8 +688,44 @@ class PlayerActivity : AppCompatActivity() {
         // is already in flight (e.g. campaign expired mid-playback) — guard
         // against a modulo-by-zero crash.
         if (ads.isEmpty()) return
-        currentIndex = (currentIndex + 1) % ads.size
-        playAd(ads[currentIndex])
+        for (step in 1..ads.size) {
+            val i = (currentIndex + step) % ads.size
+            if (!isSkipped(ads[i])) {
+                currentIndex = i
+                playAd(ads[i])
+                return
+            }
+        }
+        // Todos salteados (p. ej. pausaron todo lo de la playlist): institucional
+        // hasta que vuelva algo o baje el paquete nuevo.
+        Log.i(TAG, "playNext: todos los anuncios están salteados → institucional")
+        allSkipped = true
+        ads = playlistRepo.institutionalAds()
+        currentIndex = 0
+        if (ads.isNotEmpty()) playAd(ads[0])
+    }
+
+    private fun isSkipped(ad: Ad) = !ad.isInstitutional && ad.id in skipAdIds
+
+    // Nueva lista de anuncios a saltear (sync o push). Si el que está en
+    // pantalla quedó salteado, se corta ya y pasa al siguiente. Si volvió alguno
+    // mientras se pasaba el institucional por "todos salteados", se recarga.
+    private fun applySkip(newSet: Set<Int>) {
+        if (newSet == skipAdIds) return
+        val before = skipAdIds
+        skipAdIds = newSet
+        prefs.setSkipAdIds(newSet)
+        Log.i(TAG, "applySkip: salteando [${newSet.sorted().joinToString(",")}]")
+        if (blockedByPanel) return
+        if (allSkipped) {
+            if (!newSet.containsAll(before)) loadAndPlay()
+            return
+        }
+        val current = ads.getOrNull(currentIndex) ?: return
+        if (isSkipped(current)) {
+            Log.i(TAG, "applySkip: cortando el anuncio ${current.id} que estaba en pantalla")
+            playNext()
+        }
     }
 
     private fun playAd(ad: Ad) {
@@ -1002,6 +1047,7 @@ class PlayerActivity : AppCompatActivity() {
             if (syncResp.blocked != blockedByPanel) {
                 withContext(Dispatchers.Main) { if (syncResp.blocked) enterBlocked() else exitBlocked() }
             }
+            syncResp.skipAdIds?.let { ids -> withContext(Dispatchers.Main) { applySkip(ids.toSet()) } }
             if (syncResp.screenshotRequested) {
                 Log.i(TAG, "syncNow: el panel pidió captura de pantalla")
                 withContext(Dispatchers.Main) { captureAndUploadScreenshot(token) }

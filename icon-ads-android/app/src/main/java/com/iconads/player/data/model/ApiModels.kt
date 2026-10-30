@@ -41,6 +41,9 @@ data class SyncResponse(
     val noPlaylist: Boolean = false,
     // Intervalo del ciclo de sync en segundos (server-controlado). Default 300.
     val syncIntervalS: Int = 300,
+    // Anuncios de la playlist que no pueden pasar ahora: saltearlos aunque
+    // estén en el paquete local. null = el backend no lo mandó (no tocar).
+    val skipAdIds: List<Int>? = null,
 )
 
 data class DiagnosticUpload(

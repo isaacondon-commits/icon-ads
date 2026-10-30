@@ -339,6 +339,16 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       return res.json({ needsUpdate: false, version: 0, noPlaylist: true, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS });
     }
 
+    // Anuncios de esta playlist que NO pueden pasar ahora (pausados, empresa
+    // pausada, fuera de fecha…): la APK >= 1.52 los saltea ya, aunque el
+    // paquete nuevo todavía no haya bajado.
+    const links = await prisma.playlistAd.findMany({
+      where: { playlistId: playlist.id },
+      select: { ad: { select: { id: true, active: true, deletedAt: true, approvalStatus: true, startsAt: true, endsAt: true, client: { select: { active: true, deletedAt: true } } } } },
+    });
+    const nowSync = new Date();
+    const skipAdIds = [...new Set(links.filter((l) => !isAdPlayable(l.ad, nowSync)).map((l) => l.ad.id))];
+
     // #48 — el admin forzó un sync desde el panel: baja sí o sí.
     const forced = forceSyncFlags.has(tablet.id);
     if (forced) forceSyncFlags.delete(tablet.id);
@@ -355,7 +365,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
 
     if (!needsUpdate) {
       console.log(`[sync] tablet=${tablet.id} → playlist ${tablet.playlistId} v${playlist.version} sin cambios`);
-      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS });
+      return res.json({ needsUpdate: false, version: playlist.version, rotated180: tablet.rotated180, forceApkCheck, testMode, brightnessPolicy, screenshotRequested, diagnosticRequested, blocked, brightnessSchedule, syncIntervalS, skipAdIds });
     }
 
     const motivo = forced ? 'forzado' : differentPlaylist ? `otra playlist (${installedPlaylistId}→${tablet.playlistId})` : `v${currentVersion}→v${playlist.version}`;
@@ -373,6 +383,7 @@ router.get('/sync', requireDevice, async (req, res, next) => {
       blocked,
       brightnessSchedule,
       syncIntervalS,
+      skipAdIds,
     });
   } catch (err) {
     next(err);

@@ -23,12 +23,19 @@ class FcmService : FirebaseMessagingService() {
         when (message.data["type"]) {
             "force_sync" -> {
                 Log.i(TAG, "onMessageReceived: force_sync — encolando sync inmediato")
+                // Anuncios que dejaron de poder pasar: se guardan ya (si la
+                // Activity no está viva, los aplica al volver) y van en el
+                // broadcast para cortarlos al instante si están en pantalla.
+                val stop = message.data["stopAdIds"].orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }
+                val prefs = DevicePrefs(applicationContext)
+                if (stop.isNotEmpty()) prefs.setSkipAdIds(prefs.getSkipAdIds() + stop)
                 SyncWorker.scheduleImmediate(applicationContext)
                 // Además despierta a la Activity (el intervalo de sync ahora es
                 // de minutos; sin esto las acciones del panel esperarían al
                 // próximo ciclo). La Activity es la única que saca capturas.
                 applicationContext.sendBroadcast(
-                    Intent(ACTION_FORCE_SYNC_NOW).setPackage(applicationContext.packageName),
+                    Intent(ACTION_FORCE_SYNC_NOW).setPackage(applicationContext.packageName)
+                        .putExtra(EXTRA_STOP_AD_IDS, stop.toIntArray()),
                 )
             }
             "wake" -> {
@@ -41,5 +48,6 @@ class FcmService : FirebaseMessagingService() {
     companion object {
         private const val TAG = "FcmService"
         const val ACTION_FORCE_SYNC_NOW = "com.iconads.player.FORCE_SYNC_NOW"
+        const val EXTRA_STOP_AD_IDS = "stopAdIds"
     }
 }

@@ -96,6 +96,13 @@ class DevicePrefs(context: Context) {
     fun getSyncIntervalS(): Int = prefs.getInt(KEY_SYNC_INTERVAL_S, 300)
     fun setSyncIntervalS(s: Int) = prefs.edit().putInt(KEY_SYNC_INTERVAL_S, s.coerceIn(15, 3600)).apply()
 
+    // Anuncios que hay que cortar/saltear ya (pausados en el panel, empresa
+    // pausada…) aunque sigan en el paquete local. Lo manda el backend en cada
+    // sync (skipAdIds) y el push force_sync (stopAdIds).
+    fun getSkipAdIds(): Set<Int> =
+        (prefs.getString(KEY_SKIP_AD_IDS, "") ?: "").split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+    fun setSkipAdIds(ids: Set<Int>) = prefs.edit().putString(KEY_SKIP_AD_IDS, ids.sorted().joinToString(",")).apply()
+
     companion object {
         private const val KEY_TOKEN = "device_token"
         private const val KEY_VERSION = "playlist_version"
@@ -114,6 +121,7 @@ class DevicePrefs(context: Context) {
         private const val KEY_BRIGHTNESS_POLICY = "screen_brightness_policy"
         private const val KEY_BRIGHTNESS_SCHEDULE = "screen_brightness_schedule"
         private const val KEY_SYNC_INTERVAL_S = "sync_interval_s"
+        private const val KEY_SKIP_AD_IDS = "skip_ad_ids"
 
         fun getDeviceId(context: Context): String =
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
