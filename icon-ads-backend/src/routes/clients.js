@@ -33,6 +33,29 @@ const clientSchema = z.object({
   contactPhone: z.string().nullable().optional(),
 });
 
+// El email es único en la tabla, pero los clientes borrados (soft delete)
+// siguen ahí con el suyo. Para poder dar de alta otra vez ese email, el
+// cliente borrado pasa a un email "archivado" y su acceso al portal (ya
+// cortado) se elimina. Si el email lo tiene un cliente vigente, devuelve su nombre.
+async function freeEmail(email, exceptId) {
+  const holders = await prisma.client.findMany({
+    where: { email: { equals: email, mode: 'insensitive' }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { id: true, name: true, deletedAt: true },
+  });
+  for (const c of holders) {
+    if (!c.deletedAt) return c.name;
+    await prisma.clientUser.deleteMany({ where: { clientId: c.id } });
+    await prisma.client.update({ where: { id: c.id }, data: { email: `archivado-${c.id}-${Date.now()}+${email}` } });
+  }
+  // También puede quedar un acceso al portal huérfano con ese email.
+  await prisma.clientUser.deleteMany({
+    where: { email: email.trim().toLowerCase(), client: { deletedAt: { not: null } } },
+  });
+  return null;
+}
+
+const emailTaken = (name) => ({ error: `Ya existe un cliente con ese email (${name}).` });
+
 router.get('/', async (req, res, next) => {
   try {
     const clients = await prisma.client.findMany({
@@ -48,6 +71,8 @@ router.get('/', async (req, res, next) => {
 router.post('/', requireAdmin, async (req, res, next) => {
   try {
     const data = clientSchema.parse(req.body);
+    const holder = await freeEmail(data.email);
+    if (holder) return res.status(409).json(emailTaken(holder));
     const client = await prisma.client.create({ data });
     await audit(req, 'CREATE', 'client', client.id, `Created "${client.name}"`);
     // Toda empresa nueva recibe su invitación al portal de estadísticas.
@@ -160,6 +185,10 @@ router.put('/:id', requireAdmin, async (req, res, next) => {
   try {
     const data = clientSchema.partial().parse(req.body);
     const before = data.email ? await prisma.client.findUnique({ where: { id: Number(req.params.id) }, select: { email: true } }) : null;
+    if (before && before.email.toLowerCase() !== data.email.toLowerCase()) {
+      const holder = await freeEmail(data.email, Number(req.params.id));
+      if (holder) return res.status(409).json(emailTaken(holder));
+    }
     const client = await prisma.client.update({ where: { id: Number(req.params.id), deletedAt: null }, data });
     await audit(req, 'UPDATE', 'client', client.id, `Updated "${client.name}"`);
     // Cambió el email: es el usuario del portal. Se actualiza, se cierran las
