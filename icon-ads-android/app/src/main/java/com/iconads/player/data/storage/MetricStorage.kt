@@ -17,7 +17,6 @@ class MetricStorage(context: Context) {
         dao.insert(
             MetricEntity(
                 adId = metric.adId,
-                campaignId = metric.campaignId,
                 playedAt = metric.playedAt,
                 durationPlayedS = metric.durationPlayedS,
                 completed = metric.completed,
@@ -30,7 +29,6 @@ class MetricStorage(context: Context) {
         dao.getAll().map { e ->
             MetricRecord(
                 adId = e.adId,
-                campaignId = e.campaignId,
                 playedAt = e.playedAt,
                 durationPlayedS = e.durationPlayedS,
                 completed = e.completed,

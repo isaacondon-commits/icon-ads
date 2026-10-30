@@ -8,7 +8,9 @@ data class Ad(
     val localPath: String,
     val durationS: Int,
     val sortOrder: Int,
-    val campaignId: Int,
     val playlistVersion: Int,
     val level: Int,         // 1=current, 2=backup, 3=institutional
-)
+) {
+    // El video institucional de respaldo tiene id < 0: no cuenta métricas.
+    val isInstitutional: Boolean get() = id < 0
+}

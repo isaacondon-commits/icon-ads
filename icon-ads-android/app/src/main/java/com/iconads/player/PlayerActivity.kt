@@ -633,7 +633,7 @@ class PlayerActivity : AppCompatActivity() {
                 // error -> playNext -> error... a toda velocidad.
                 when {
                     failCount < ads.size -> imageHandler.postDelayed({ playNext() }, 1500L)
-                    ads.all { it.campaignId < 0 } -> scheduleRetry()
+                    ads.all { it.isInstitutional } -> scheduleRetry()
                     else -> imageHandler.postDelayed({ activateFallback() }, 5000L)
                 }
             }
@@ -737,7 +737,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun recordMetric(completed: Boolean, error: Boolean = false) {
         val ad = ads.getOrNull(currentIndex) ?: return
-        if (ad.campaignId < 0) return
+        if (ad.isInstitutional) return
 
         val now = System.currentTimeMillis()
         while (recordTimes.isNotEmpty() && now - recordTimes.first() > 60_000L) recordTimes.removeFirst()
@@ -752,7 +752,6 @@ class PlayerActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             metricRepo.record(
                 adId = ad.id,
-                campaignId = ad.campaignId,
                 playedAt = playedAt,
                 durationPlayedS = duration,
                 completed = completed,
@@ -838,10 +837,9 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     // true = la tablet está mostrando SOLO el video institucional de respaldo
-    // (no pudo cargar su playlist real). Los ads institucionales tienen
-    // campaignId < 0.
+    // (no pudo cargar su playlist real, o su playlist está pausada).
     private fun onFallback(): Boolean =
-        ads.isNotEmpty() && ads.all { it.campaignId < 0 }
+        ads.isNotEmpty() && ads.all { it.isInstitutional }
 
     // Captura la ventana del player (incluye el video, vía PixelCopy) y la sube.
     // Enciende la pantalla si está apagada. Usa su propio scope/handler — NO

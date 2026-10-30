@@ -19,7 +19,6 @@ class MetricRepository(context: Context) {
 
     fun record(
         adId: Int,
-        campaignId: Int,
         playedAt: Long,
         durationPlayedS: Int,
         completed: Boolean,
@@ -28,7 +27,6 @@ class MetricRepository(context: Context) {
         storage.append(
             MetricRecord(
                 adId = adId,
-                campaignId = campaignId,
                 playedAt = playedAt,
                 durationPlayedS = durationPlayedS,
                 completed = completed,
@@ -53,7 +51,6 @@ class MetricRepository(context: Context) {
             val payload = slice.map { m ->
                 MetricUpload(
                     adId = m.adId,
-                    campaignId = m.campaignId,
                     playedAt = Instant.ofEpochMilli(m.playedAt)
                         .atOffset(ZoneOffset.UTC)
                         .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),

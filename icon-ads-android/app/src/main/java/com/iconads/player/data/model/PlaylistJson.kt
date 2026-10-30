@@ -18,5 +18,4 @@ data class AdJson(
     val filename: String,
     @SerializedName("duration_s") val durationS: Int,
     val order: Int,
-    val campaignId: Int,
 )

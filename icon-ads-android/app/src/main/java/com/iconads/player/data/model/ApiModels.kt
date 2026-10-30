@@ -59,7 +59,6 @@ data class HeartbeatInfo(
 
 data class MetricUpload(
     val adId: Int,
-    val campaignId: Int,
     val playedAt: String,   // ISO-8601
     val durationPlayedS: Int,
     val completed: Boolean,

@@ -53,7 +53,6 @@ class PlaylistRepository(private val context: Context) {
                         localPath = localPath,
                         durationS = ad.durationS,
                         sortOrder = ad.order,
-                        campaignId = ad.campaignId,
                         playlistVersion = json.version,
                         level = level,
                     )
@@ -77,7 +76,6 @@ class PlaylistRepository(private val context: Context) {
             localPath = "android.resource://${context.packageName}/raw/institutional",
             durationS = 30,
             sortOrder = 0,
-            campaignId = -1,
             playlistVersion = 0,
             level = LEVEL_INSTITUTIONAL,
         )
