@@ -1,10 +1,9 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const rateLimit = require('express-rate-limit');
 const prisma = require('../lib/prisma');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, signPanelToken } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 
 const loginSchema = z.object({
@@ -58,11 +57,7 @@ router.post('/login', loginLimiter, async (req, res, next) => {
     }
 
     const expiresIn = process.env.JWT_EXPIRES_IN || '8h'; // #34 — 8h default
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn }
-    );
+    const token = signPanelToken(user, expiresIn);
 
     const maxAgeMs = expiresIn === '8h' ? 8 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
     res.cookie('token', token, {

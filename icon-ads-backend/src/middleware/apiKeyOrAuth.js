@@ -1,4 +1,4 @@
-const jwt = require('jsonwebtoken');
+const { verifyPanelToken } = require('./auth');
 const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 
@@ -44,11 +44,9 @@ async function authenticate(req, res, next, { adminForWrites }) {
 
   const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
-  try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
+  const payload = verifyPanelToken(token);
+  if (!payload) return res.status(401).json({ error: 'Invalid or expired token' });
+  req.user = payload;
   if (adminForWrites && req.method !== 'GET' && !ADMIN_ROLES.includes(req.user?.role)) {
     return res.status(403).json({ error: 'Acceso denegado: se requiere rol de administrador' });
   }
