@@ -2,19 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { portal, passwordHint, PortalCampaign, PortalError, PortalStats } from '@/lib/portal';
+import { portal, passwordHint, PortalAd, PortalAdStatus, PortalError, PortalStats } from '@/lib/portal';
 import { FormError } from '@/components/portal/AuthCard';
 
-const STATUS: Record<PortalCampaign['status'], { label: string; color: string }> = {
-  activa: { label: 'Activa', color: 'var(--ok)' },
-  programada: { label: 'Programada', color: 'var(--accent)' },
-  pausada: { label: 'Pausada', color: 'var(--warn)' },
-  finalizada: { label: 'Finalizada', color: 'var(--muted)' },
+const STATUS: Record<PortalAdStatus, { label: string; color: string }> = {
+  activo: { label: 'Activo', color: 'var(--ok)' },
+  programado: { label: 'Programado', color: 'var(--accent)' },
+  pausado: { label: 'Pausado', color: 'var(--warn)' },
+  finalizado: { label: 'Finalizado', color: 'var(--muted)' },
 };
 
 const fmt = (n: number) => n.toLocaleString('es-UY');
 const dayLabel = (iso: string) => iso.slice(8, 10) + '/' + iso.slice(5, 7);
-const fullDate = (iso: string) => new Date(iso).toLocaleDateString('es-UY', { timeZone: 'America/Montevideo' });
 
 // 'YYYY-MM-DD' de hoy (o hace N días) en hora de Montevideo.
 function mvdDay(daysAgo = 0) {
@@ -30,9 +29,9 @@ const PRESETS = [
 export default function PortalStatsPage() {
   const router = useRouter();
   const [me, setMe] = useState<{ clientName: string; email: string } | null>(null);
-  const [campaigns, setCampaigns] = useState<PortalCampaign[]>([]);
+  const [ads, setAds] = useState<PortalAd[]>([]);
   const [stats, setStats] = useState<PortalStats | null>(null);
-  const [campaignId, setCampaignId] = useState('');
+  const [adId, setAdId] = useState('');
   const [from, setFrom] = useState(mvdDay(29));
   const [to, setTo] = useState(mvdDay());
   const [loadedKey, setLoadedKey] = useState('');
@@ -45,16 +44,16 @@ export default function PortalStatsPage() {
   }, [router]);
 
   useEffect(() => {
-    Promise.all([portal.me(), portal.campaigns()])
-      .then(([m, c]) => { setMe(m); setCampaigns(c); })
+    Promise.all([portal.me(), portal.ads()])
+      .then(([m, a]) => { setMe(m); setAds(a); })
       .catch((err) => { if (!onAuthError(err)) setError(err.message); });
   }, [onAuthError]);
 
   const query = useMemo(() => {
     const q = new URLSearchParams({ from, to });
-    if (campaignId) q.set('campaignId', campaignId);
+    if (adId) q.set('adId', adId);
     return q;
-  }, [from, to, campaignId]);
+  }, [from, to, adId]);
 
   const key = query.toString();
   const loading = loadedKey !== key;
@@ -80,6 +79,9 @@ export default function PortalStatsPage() {
   const t = stats?.totals;
   const dailyMax = Math.max(1, ...(stats?.daily.map((d) => d.count) ?? [1]));
   const hourlyMax = Math.max(1, ...(stats?.hourly.map((h) => h.count) ?? [1]));
+  const peak = stats?.hourly.reduce((b, h) => (h.count > b.count ? h : b), { hour: 0, count: 0 });
+  const change = t?.changePct == null ? undefined
+    : `${t.changePct >= 0 ? '+' : ''}${t.changePct}% vs. el período anterior`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
@@ -101,10 +103,10 @@ export default function PortalStatsPage() {
       {/* Filtros */}
       <section className="card mb-6 flex flex-wrap items-end gap-3 px-5 py-4">
         <div className="min-w-[200px] flex-1">
-          <label htmlFor="camp" className="mb-1 block text-xs text-[var(--muted)]">Campaña</label>
-          <select id="camp" value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className="input h-10">
-            <option value="">Todas mis campañas</option>
-            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <label htmlFor="ad" className="mb-1 block text-xs text-[var(--muted)]">Anuncio</label>
+          <select id="ad" value={adId} onChange={(e) => setAdId(e.target.value)} className="input h-10">
+            <option value="">Todos mis anuncios</option>
+            {ads.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div>
@@ -129,11 +131,12 @@ export default function PortalStatsPage() {
       {error && <div className="mb-6"><FormError message={error} /></div>}
 
       {/* Totales */}
-      <section className={`mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4 ${loading ? 'opacity-60' : ''}`}>
-        <Kpi label="Reproducciones" value={t ? fmt(t.plays) : '—'} />
-        <Kpi label="Completas" value={t ? `${t.completionRate}%` : '—'} hint={t ? `${fmt(t.completedPlays)} de ${fmt(t.plays)}` : undefined} />
-        <Kpi label="Tiempo en pantalla" value={t ? `${fmt(Math.round(t.secondsOnScreen / 60))} min` : '—'} />
-        <Kpi label="Taxis que la mostraron" value={t ? fmt(t.tablets) : '—'} />
+      <section className={`mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5 ${loading ? 'opacity-60' : ''}`}>
+        <Kpi label="Reproducciones" value={t ? fmt(t.plays) : '—'} hint={change} />
+        <Kpi label="Vistas completas" value={t ? `${t.completionRate}%` : '—'} hint={t ? `${fmt(t.completedPlays)} de ${fmt(t.plays)}` : undefined} />
+        <Kpi label="Minutos al aire" value={t ? fmt(Math.round(t.secondsOnScreen / 60)) : '—'} />
+        <Kpi label="Taxis que lo mostraron" value={t ? fmt(t.tablets) : '—'} hint="en el período" />
+        <Kpi label="Taxis donde corre hoy" value={t ? fmt(t.tabletsNow) : '—'} hint="ahora mismo" />
       </section>
 
       {stats && (
@@ -162,7 +165,10 @@ export default function PortalStatsPage() {
 
           {/* Por hora */}
           <section className="card mb-6 px-5 py-4">
-            <h2 className="mb-4 text-sm font-semibold">¿A qué hora se ve más?</h2>
+            <h2 className="mb-1 text-sm font-semibold">¿A qué hora se ve más?</h2>
+            {peak && peak.count > 0 && (
+              <p className="mb-4 text-xs text-[var(--muted)]">Hora pico: {String(peak.hour).padStart(2, '0')}:00 a {String(peak.hour).padStart(2, '0')}:59</p>
+            )}
             {stats.totals.plays === 0 ? <Empty /> : (
               <>
                 <div className="flex h-32 items-end gap-1" role="img" aria-label="Gráfico de reproducciones por hora">
@@ -180,69 +186,44 @@ export default function PortalStatsPage() {
             )}
           </section>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Campañas */}
-            <section className="card px-5 py-4">
-              <h2 className="mb-3 text-sm font-semibold">Mis campañas</h2>
-              {campaigns.length === 0 ? <Empty text="Todavía no tenés campañas." /> : (
-                <ul className="divide-y divide-[var(--divider)]">
-                  {campaigns.map((c) => {
-                    const inRange = stats.byCampaign.find((b) => b.id === c.id);
-                    return (
-                      <li key={c.id} className="flex items-center justify-between gap-3 py-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{c.name}</p>
-                          <p className="text-xs text-[var(--muted)]">{fullDate(c.startDate)} al {fullDate(c.endDate)}</p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <span className="text-xs font-medium" style={{ color: STATUS[c.status].color }}>{STATUS[c.status].label}</span>
-                          <p className="text-sm">{fmt(inRange?.plays ?? 0)} <span className="text-xs text-[var(--muted)]">en el período</span></p>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            {/* Anuncios */}
-            <section className="card px-5 py-4">
-              <h2 className="mb-3 text-sm font-semibold">Anuncios</h2>
-              {stats.byAd.length === 0 ? <Empty /> : (
-                <ul className="divide-y divide-[var(--divider)]">
-                  {stats.byAd.map((a, i) => (
-                    <li key={`${a.name}-${i}`} className="flex items-center justify-between gap-3 py-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{a.name}</p>
-                        <p className="text-xs text-[var(--muted)]">{a.type === 'video' ? 'Video' : 'Imagen'} · {a.campaign}</p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-sm">{fmt(a.plays)}</p>
-                        <p className="text-xs text-[var(--muted)]">{a.completionRate}% completas</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
-
-          {stats.byZone.length > 0 && (
-            <section className="card mt-6 px-5 py-4">
-              <h2 className="mb-3 text-sm font-semibold">Por zona</h2>
-              <ul className="space-y-2">
-                {stats.byZone.map((z) => (
-                  <li key={z.zone} className="flex items-center gap-3 text-sm">
-                    <span className="w-40 shrink-0 truncate">{z.zone}</span>
-                    <div className="h-2 flex-1 rounded-full bg-[var(--surface-2)]">
-                      <div className="h-2 rounded-full bg-[var(--accent)]" style={{ width: `${(z.plays / stats.byZone[0].plays) * 100}%` }} />
-                    </div>
-                    <span className="w-16 text-right">{fmt(z.plays)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {/* Por anuncio */}
+          <section className="card px-5 py-4">
+            <h2 className="mb-3 text-sm font-semibold">Mis anuncios</h2>
+            {stats.byAd.length === 0 ? <Empty text={ads.length ? undefined : 'Todavía no tenés anuncios.'} /> : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-[var(--muted)]">
+                      <th className="pb-2 font-normal">Anuncio</th>
+                      <th className="pb-2 text-right font-normal">Reproducciones</th>
+                      <th className="pb-2 text-right font-normal">Completas</th>
+                      <th className="pb-2 text-right font-normal">Taxis</th>
+                      <th className="pb-2 text-right font-normal">Taxis hoy</th>
+                      <th className="pb-2 text-right font-normal">Minutos</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--divider)]">
+                    {stats.byAd.map((a) => (
+                      <tr key={a.id}>
+                        <td className="py-3 pr-3">
+                          <p className="font-medium">{a.name}</p>
+                          <p className="text-xs">
+                            <span className="text-[var(--muted)]">{a.type === 'video' ? 'Video' : 'Imagen'} · </span>
+                            <span style={{ color: STATUS[a.status].color }}>{STATUS[a.status].label}</span>
+                          </p>
+                        </td>
+                        <td className="py-3 text-right tabular-nums">{fmt(a.plays)}</td>
+                        <td className="py-3 text-right tabular-nums">{a.completionRate}%</td>
+                        <td className="py-3 text-right tabular-nums">{fmt(a.tablets)}</td>
+                        <td className="py-3 text-right tabular-nums">{fmt(a.tabletsNow)}</td>
+                        <td className="py-3 text-right tabular-nums">{fmt(Math.round(a.secondsOnScreen / 60))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
       )}
 

@@ -34,7 +34,6 @@ export default function SettingsPage() {
   const gaId = settings['ga_measurement_id'] ?? '';
   const callmebotPhone = settings['callmebot_phone'] ?? '';
   const callmebotApikey = settings['callmebot_apikey'] ?? '';
-  const autoArchive = settings['auto_archive_expired'] === 'true';
   const batteryAlertPct = settings['battery_alert_pct'] ?? '20';
 
   const [retentionInput, setRetentionInput] = useState('');
@@ -202,7 +201,7 @@ export default function SettingsPage() {
           <div className="card p-6">
             <h2 className="font-semibold mb-1">WhatsApp — alertas via CallMeBot</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-              Envía WhatsApp al número configurado cuando: (1) una tablet lleva más de 2h offline, (2) una campaña vence hoy.
+              Envía WhatsApp al número configurado cuando: (1) una tablet lleva más de 2h offline, (2) un anuncio termina hoy.
               Antes de configurar, enviá &quot;I allow callmebot to send me messages&quot; al +34644605090 en WhatsApp.
             </p>
             <div className="space-y-3">
@@ -238,25 +237,6 @@ export default function SettingsPage() {
                   {saving === 'callmebot_apikey' ? 'Guardando...' : 'Guardar API key'}
                 </button>
               </div>
-            </div>
-          </div>
-
-          {/* #4 — Auto-archive expired campaigns */}
-          <div className="card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold mb-1">Auto-archivar campañas vencidas</h2>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                  Archiva automáticamente cada 24h las campañas cuya fecha de fin ya pasó. Se pueden restaurar desde la página Archivo.
-                </p>
-              </div>
-              <button
-                onClick={() => save('auto_archive_expired', autoArchive ? 'false' : 'true')}
-                disabled={saving === 'auto_archive_expired'}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${autoArchive ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoArchive ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
             </div>
           </div>
 

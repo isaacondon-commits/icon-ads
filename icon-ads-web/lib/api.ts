@@ -67,10 +67,10 @@ async function directUploadFile(file: Blob, filename: string, contentType: strin
   return presign;
 }
 
-export interface StatsFilter { campaignId?: number | null; tabletId?: number | null; }
+export interface StatsFilter { clientId?: number | null; tabletId?: number | null; }
 function statsQs(from: string, to: string, opts?: StatsFilter): string {
   const p = new URLSearchParams({ from, to });
-  if (opts?.campaignId) p.set('campaignId', String(opts.campaignId));
+  if (opts?.clientId) p.set('clientId', String(opts.clientId));
   if (opts?.tabletId) p.set('tabletId', String(opts.tabletId));
   return p.toString();
 }
@@ -109,24 +109,6 @@ export const api = {
   inviteClientPortal: (id: number) => request<PortalInviteResult>(`/api/clients/${id}/portal/invite`, { method: 'POST' }),
   revokeClientPortal: (id: number) => request<{ ok: true }>(`/api/clients/${id}/portal/revoke`, { method: 'POST' }),
 
-  // Campaigns
-  getCampaigns: () => request<Campaign[]>('/api/campaigns'),
-  createCampaign: (data: Partial<Campaign>) =>
-    request<Campaign>('/api/campaigns', { method: 'POST', body: JSON.stringify(data) }),
-  updateCampaign: (id: number, data: Partial<Campaign>) =>
-    request<Campaign>(`/api/campaigns/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteCampaign: (id: number) => request<void>(`/api/campaigns/${id}`, { method: 'DELETE' }),
-  reactivateCampaign: (id: number) =>
-    request<Campaign>(`/api/campaigns/${id}/reactivate`, { method: 'PATCH' }),
-  pauseCampaign: (id: number) =>
-    request<Campaign>(`/api/campaigns/${id}/pause`, { method: 'PATCH' }),
-  resumeCampaign: (id: number) =>
-    request<Campaign>(`/api/campaigns/${id}/resume`, { method: 'PATCH' }),
-  getCampaignDetail: (id: number) => request<CampaignDetail>(`/api/campaigns/${id}`),
-  addComment: (campaignId: number, body: string) =>
-    request<Comment>(`/api/campaigns/${campaignId}/comments`, { method: 'POST', body: JSON.stringify({ body }) }),
-  archiveExpiredCampaigns: () =>
-    request<{ archived: number }>('/api/campaigns/archive-expired', { method: 'POST' }),
 
   // Ads
   getAds: () => request<Ad[]>('/api/ads'),
@@ -157,8 +139,12 @@ export const api = {
             key: presign.key,
             publicUrl: presign.publicUrl,
             thumbnailUrl,
-            campaignId: formData.get('campaignId'),
+            clientId: formData.get('clientId'),
             name: formData.get('name'),
+            publicName: formData.get('publicName') || null,
+            playlistIds: formData.get('playlistIds') || '',
+            startsAt: formData.get('startsAt') || null,
+            endsAt: formData.get('endsAt') || null,
             type: formData.get('type'),
             durationS: formData.get('durationS'),
             priority: formData.get('priority'),
@@ -198,7 +184,7 @@ export const api = {
   deleteAd: (id: number) => request<void>(`/api/ads/${id}`, { method: 'DELETE' }),
   bulkDeleteAds: (ids: number[]) =>
     request<{ deleted: number }>('/api/ads/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }),
-  updateAd: (id: number, data: Partial<Pick<Ad, 'campaignId' | 'name' | 'type' | 'durationS' | 'priority' | 'targetUrl' | 'tags'>>) =>
+  updateAd: (id: number, data: Partial<Pick<Ad, 'clientId' | 'name' | 'publicName' | 'type' | 'durationS' | 'priority' | 'targetUrl' | 'tags' | 'startsAt' | 'endsAt'>> & { playlistIds?: number[] }) =>
     request<Ad>(`/api/ads/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   approveAd: (id: number) => request<Ad>(`/api/ads/${id}/approve`, { method: 'PATCH' }),
   rejectAd: (id: number) => request<Ad>(`/api/ads/${id}/reject`, { method: 'PATCH' }),
@@ -213,6 +199,8 @@ export const api = {
   updatePlaylist: (id: number, data: { name: string }) =>
     request<Playlist>(`/api/playlists/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePlaylist: (id: number) => request<void>(`/api/playlists/${id}`, { method: 'DELETE' }),
+  pausePlaylist: (id: number) => request<Playlist>(`/api/playlists/${id}/pause`, { method: 'PATCH' }),
+  resumePlaylist: (id: number) => request<Playlist>(`/api/playlists/${id}/resume`, { method: 'PATCH' }),
   setPlaylistAds: (id: number, ads: { adId: number; order: number }[]) =>
     request<Playlist>(`/api/playlists/${id}/ads`, { method: 'POST', body: JSON.stringify(ads) }),
   duplicatePlaylist: (id: number) =>
@@ -226,7 +214,7 @@ export const api = {
   getWeeklyStats: (weeks?: number, opts?: StatsFilter) => {
     const p = new URLSearchParams();
     if (weeks) p.set('weeks', String(weeks));
-    if (opts?.campaignId) p.set('campaignId', String(opts.campaignId));
+    if (opts?.clientId) p.set('clientId', String(opts.clientId));
     if (opts?.tabletId) p.set('tabletId', String(opts.tabletId));
     const qs = p.toString();
     return request<WeeklyEntry[]>(`/api/stats/weekly${qs ? `?${qs}` : ''}`);
@@ -340,9 +328,6 @@ export const api = {
   // Ads with zero plays (#13)
   getAdsNoPlays: () => request<AdNoPlays[]>('/api/stats/ads-no-plays'),
 
-  // Clone campaign (#9)
-  cloneCampaign: (id: number) =>
-    request<Campaign>(`/api/campaigns/${id}/clone`, { method: 'POST' }),
 
   // Zone stats (#35)
   getZoneStats: () => request<ZoneStat[]>('/api/stats/by-zone'),
@@ -351,11 +336,9 @@ export const api = {
   getDashboardSummary: () => request<DashboardSummary>('/api/dashboard/summary'),
 
   // Archive (#5)
-  getArchivedCampaigns: () => request<ArchivedCampaign[]>('/api/campaigns/archived'),
   getArchivedAds: () => request<ArchivedAd[]>('/api/ads/archived'),
   restoreAd: (id: number) => request<Ad>(`/api/ads/${id}/restore`, { method: 'PATCH' }),
   permanentDeleteAd: (id: number) => request<void>(`/api/ads/${id}/permanent`, { method: 'DELETE' }),
-  permanentDeleteCampaign: (id: number) => request<void>(`/api/campaigns/${id}/permanent`, { method: 'DELETE' }),
 
   // Sync intervals (#14)
   getSyncIntervals: () => request<SyncInterval[]>('/api/stats/sync-intervals'),
@@ -363,17 +346,12 @@ export const api = {
   // Tablets CSV export (#24)
   getTabletsCsvUrl: () => `${BASE}/api/tablets/export`,
 
-  // ROI report (#15)
-  getRoiStats: () => request<RoiEntry[]>('/api/stats/roi'),
 
   // Ad tags (#16)
   getAdTags: () => request<string[]>('/api/ads/tags'),
   updateAdTags: (id: number, tags: string[]) =>
     request<Ad>(`/api/ads/${id}`, { method: 'PUT', body: JSON.stringify({ tags }) }),
 
-  // Transfer campaign (#18)
-  transferCampaign: (id: number, clientId: number) =>
-    request<Campaign>(`/api/campaigns/${id}/transfer`, { method: 'PATCH', body: JSON.stringify({ clientId }) }),
 
   // Paginated metrics (#22)
   getMetricsPaged: (page = 1, limit = 50) =>
@@ -386,12 +364,6 @@ export const api = {
   deleteNote: (id: number) =>
     request<void>(`/api/notes/${id}`, { method: 'DELETE' }),
 
-  // Campaign templates (#31)
-  getTemplates: () => request<CampaignTemplate[]>('/api/templates'),
-  createTemplate: (data: { name: string; cpm?: number | null; maxImpressions?: number | null; budget?: number | null; targetImpressions?: number | null; observations?: string | null }) =>
-    request<CampaignTemplate>('/api/templates', { method: 'POST', body: JSON.stringify(data) }),
-  deleteTemplate: (id: number) =>
-    request<void>(`/api/templates/${id}`, { method: 'DELETE' }),
 
   // Favorites (#44)
   getFavorites: (type?: string) => request<Favorite[]>(`/api/favorites${type ? `?type=${type}` : ''}`),
@@ -415,7 +387,7 @@ export const api = {
   // Monthly seasonality (#38)
   getMonthlyStats: (opts?: StatsFilter) => {
     const p = new URLSearchParams();
-    if (opts?.campaignId) p.set('campaignId', String(opts.campaignId));
+    if (opts?.clientId) p.set('clientId', String(opts.clientId));
     if (opts?.tabletId) p.set('tabletId', String(opts.tabletId));
     const qs = p.toString();
     return request<MonthlyEntry[]>(`/api/stats/monthly${qs ? `?${qs}` : ''}`);
@@ -428,15 +400,13 @@ export const api = {
   getPptxUrl: () => `${BASE}/api/admin/export/pptx`,
 
   // Demo seed (#63)
-  seedDemo: () => request<{ message: string; client: { id: number; name: string }; campaign: { id: number; name: string } }>('/api/admin/demo-seed', { method: 'POST' }),
+  seedDemo: () => request<{ message: string; client: { id: number; name: string } }>('/api/admin/demo-seed', { method: 'POST' }),
 
   // Health check (#50)
   getHealth: () => request<HealthCheck>('/api/health'),
 
   // PDF exports (#32 #51 #56)
   getProposalUrl: (clientId: number) => `${BASE}/api/clients/${clientId}/proposal`,
-  getCertificateUrl: (campaignId: number) => `${BASE}/api/campaigns/${campaignId}/certificate`,
-  getContractUrl: (campaignId: number) => `${BASE}/api/campaigns/${campaignId}/contract`,
 
   // A/B tests (#49)
   getAbTests: () => request<AbTest[]>('/api/abtests'),
@@ -536,9 +506,6 @@ export const api = {
   deleteSurvey: (id: number) => request<void>(`/api/surveys/${id}`, { method: 'DELETE' }),
   getSurveyResults: (id: number) => request<{ survey: Survey; answers: { option_index: number; count: number }[] }>(`/api/surveys/${id}/results`),
 
-  // Mercado Pago payment link (#54)
-  getCampaignPaymentLink: (id: number) =>
-    request<{ initPoint: string; sandboxInitPoint: string; preferenceId: string }>(`/api/campaigns/${id}/payment-link`, { method: 'POST' }),
 
   // GPS real-time locations
   getTabletLocationsLive: () => request<TabletLiveLocation[]>('/api/tablets/locations/live'),
@@ -593,39 +560,16 @@ export interface Client {
   active: boolean; deletedAt?: string; createdAt: string; updatedAt: string;
 }
 export interface ClientProfile extends Client {
-  campaigns: (Campaign & { stats: { plays: number; totalSeconds: number } })[];
+  ads: (Ad & { stats: { plays: number; totalSeconds: number } })[];
 }
-export interface Campaign {
-  id: number; clientId: number; client?: { id: number; name: string };
-  name: string; startDate: string; endDate: string; active: boolean;
-  cpm?: number | null; maxImpressions?: number | null;
-  budget?: number | null; observations?: string | null; targetImpressions?: number | null;
-  deletedAt?: string; createdAt: string; updatedAt: string;
-  _count?: { metrics: number };
-  // Calculados por GET /api/campaigns: peso total de sus anuncios (bytes),
-  // cuántos anuncios aún no tienen peso registrado, y estado de vigencia.
-  adsCount?: number; sizeBytes?: number; sizeUnknown?: number;
-  status?: 'active' | 'paused' | 'scheduled' | 'expired';
-  expired?: boolean;
-  /** Fin real de la vigencia: final del día de endDate. */
-  endsAt?: string;
-  // Clients tied to the campaign besides the billing client (clientId/client) —
-  // contract/certificate/payment-link PDFs keep using clientId only (#multi-client).
-  additionalClients?: { clientId: number; client: { id: number; name: string } }[];
-  // Write-only: full replacement set sent on create/update.
-  additionalClientIds?: number[];
-}
-export interface CampaignDetail extends Campaign {
-  ads: Ad[];
-  _count: { metrics: number };
-  playsPerDay: { date: string; count: number }[];
-  comments: Comment[];
-}
-export interface Comment { id: number; campaignId: number; authorName: string; body: string; createdAt: string; }
 export interface Ad {
-  id: number; campaignId: number;
-  campaign?: { id: number; name: string; active?: boolean; deletedAt?: string | null; startDate?: string; endDate?: string } | null;
-  name: string; type: 'video' | 'image'; fileUrl: string; thumbnailUrl?: string | null; filename: string;
+  id: number;
+  /** Empresa dueña del anuncio (null sólo en anuncios viejos sin asignar). */
+  clientId: number | null;
+  client?: { id: number; name: string } | null;
+  name: string;
+  /** Nombre que ve la empresa en su portal; si falta, "Anuncio N". */
+  publicName?: string | null; type: 'video' | 'image'; fileUrl: string; thumbnailUrl?: string | null; filename: string;
   fileSize?: number | null;
   durationS: number; active: boolean; approvalStatus: string;
   priority: number; targetUrl?: string | null; startsAt?: string | null; endsAt?: string | null;
@@ -637,13 +581,15 @@ export interface Ad {
 export interface AdDelivery {
   plays: number;
   lastPlayedAt: string | null;
-  playlists: { id: number; name: string; tablets: number }[];
+  playlists: { id: number; name: string; active: boolean; tablets: number }[];
   tablets: number;
   issue: { code: string; level: 'error' | 'info'; label: string } | null;
 }
 export interface PlaylistAd { id: number; adId: number; order: number; ad: Ad; }
 export interface Playlist {
   id: number; name: string; version: number; contentHash?: string;
+  /** Pausada: las tablets que la tienen pasan el institucional. */
+  active: boolean;
   createdAt: string; updatedAt: string;
   playlistAds?: PlaylistAd[];
   _count?: { tablets: number };
@@ -665,7 +611,8 @@ export interface Tablet {
   lux?: number | null; lightSensor?: boolean | null;
   groupId?: number | null;
   playlistId?: number | null; playlist?: { id: number; name: string; version: number };
-  campaigns?: { id: number; name: string }[];
+  /** Empresas con anuncios en la playlist asignada. */
+  clients?: { id: number; name: string }[];
   lastSync?: string | null; status: 'online' | 'offline' | 'syncing';
   manualStatus?: 'activa' | 'mantenimiento' | 'bloqueada';
   rotated180?: boolean;
@@ -725,23 +672,28 @@ export interface StorageStats {
 }
 export interface SystemStats {
   tablets: { total: number; online: number };
-  clients: number; campaigns: number; ads: number; totalPlays: number;
+  clients: number; playlists: number; ads: number; totalPlays: number;
   dailyPlays: { date: string; count: number }[];
-  playsByCampaign: { campaignId: number; campaignName: string; count: number }[];
-  expiringCampaigns: { id: number; name: string; clientName: string; endDate: string; daysLeft: number }[];
+  playsByClient: { clientId: number; clientName: string; count: number }[];
+  expiringAds: { id: number; name: string; clientName: string; endsAt: string; daysLeft: number }[];
 }
 export interface WeeklyEntry { week: string; from: string; to: string; count: number; }
 export interface DailyEntry { date: string; count: number; }
 export interface RangeStats {
   from: string; to: string; totalPlays: number;
   completedPlays: number;
-  distinctCampaigns: number;
+  errorPlays: number;
+  totalSeconds: number;
   distinctTablets: number;
   distinctAds: number;
-  dailyPlays: { date: string; count: number }[];
-  playsByCampaign: { campaignId: number; campaignName: string; count: number }[];
-  playsByTablet: { tabletId: number; tabletName: string; count: number }[];
-  playsByAd: { adId: number; adName: string; count: number }[];
+  /** tablets = tablets distintas que reprodujeron ese día. */
+  dailyPlays: { date: string; count: number; tablets: number }[];
+  playsByClient: { clientId: number; clientName: string; count: number; seconds: number }[];
+  playsByTablet: { tabletId: number; tabletName: string; count: number; seconds: number }[];
+  playsByAd: {
+    adId: number; adName: string; publicName: string | null; clientName: string | null;
+    count: number; completed: number; errors: number; tablets: number; seconds: number;
+  }[];
 }
 export interface SystemLogEntry {
   id: number; action: string; entity: string; entityId: number | null;
@@ -761,7 +713,7 @@ export interface PlaylistStat { playlistId: number; playlistName: string; tablet
 export interface TabletAdPlay { tabletId: number; tabletName: string; adId: number; adName: string; count: number; }
 export interface AdNoPlays {
   id: number; name: string; type: 'video' | 'image'; durationS: number; createdAt: string;
-  campaign: { id: number; name: string; active: boolean };
+  client: { id: number; name: string } | null;
 }
 
 export interface SystemAlert {
@@ -771,7 +723,7 @@ export interface SystemAlert {
 export interface Notifications {
   total: number; pendingAds: number; monitorAlerts?: number;
   systemAlerts?: SystemAlert[]; systemAlertCount?: number;
-  expiringCampaigns: { id: number; name: string; daysLeft: number }[];
+  expiringAds: { id: number; name: string; daysLeft: number }[];
   offlineTablets: { id: number; name: string; offlineMinutes: number | null }[];
 }
 export interface BandwidthStatus {
@@ -792,27 +744,15 @@ export interface DashboardSummary {
   recentActivity: AuditPage['logs'];
 }
 
-export interface ArchivedCampaign extends Omit<Campaign, '_count'> {
-  _count: { ads: number };
-}
-
-export interface ArchivedAd extends Ad {
-  campaign: { id: number; name: string; clientId: number; client: { name: string } };
-}
+export type ArchivedAd = Ad;
 
 export interface SyncInterval {
   tabletId: number; tabletName: string; zone: string | null;
   syncCount: number; avgMinutes: number | null;
 }
 
-export interface RoiEntry {
-  campaignId: number; campaignName: string; clientName: string;
-  cpm: number | null; budget: number | null; targetImpressions: number | null;
-  plays: number; estimatedRevenue: number;
-}
-
 export interface MetricRecord {
-  id: number; tabletName: string; adName: string; campaignName: string;
+  id: number; tabletName: string; adName: string; clientName: string | null;
   playedAt: string; durationPlayedS: number; completed: boolean; error: boolean;
 }
 
@@ -822,13 +762,6 @@ export interface MetricsPage {
 
 export interface AdminNote {
   id: number; body: string; authorName: string; createdAt: string;
-}
-
-export interface CampaignTemplate {
-  id: number; name: string;
-  cpm: number | null; maxImpressions: number | null;
-  budget: number | null; targetImpressions: number | null;
-  observations: string | null; createdAt: string;
 }
 
 export interface Favorite {

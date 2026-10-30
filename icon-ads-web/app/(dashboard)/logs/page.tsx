@@ -165,7 +165,7 @@ export default function LogsPage() {
                   <tr className="border-b" style={{ background: 'var(--bg)', borderColor: 'var(--border-md)' }}>
                     <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Tablet</th>
                     <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Anuncio</th>
-                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Campaña</th>
+                    <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Empresa</th>
                     <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Fecha</th>
                     <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Duración</th>
                     <th className="text-left px-5 py-3 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Estado</th>
@@ -179,7 +179,7 @@ export default function LogsPage() {
                       <tr key={m.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
                         <td className="px-5 py-2.5 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{m.tabletName ?? '—'}</td>
                         <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{m.adName ?? '—'}</td>
-                        <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{m.campaignName ?? '—'}</td>
+                        <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>{m.clientName ?? '—'}</td>
                         <td className="px-5 py-2.5 text-xs" style={{ color: 'var(--text-xs)' }}>
                           {new Date(m.playedAt).toLocaleString('es-AR')}
                         </td>

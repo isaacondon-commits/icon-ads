@@ -40,7 +40,7 @@ export default function CalculatorPage() {
   const weeklyRevenue = revenue / weeks;
 
   return (
-    <PageShell title="Calculadora de campaña" subtitle="Estimá impresiones e ingresos antes de crear una campaña.">
+    <PageShell title="Calculadora" subtitle="Estimá impresiones e ingresos antes de vender un anuncio.">
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card p-6 space-y-6">

@@ -5,7 +5,7 @@ import PageShell from '@/components/ui/PageShell';
 import {
   api, WeeklyEntry, RangeStats, HourlyCount, DayHourCount, CompletionRate, PlaylistStat,
   AdNoPlays, ZoneStat, SyncInterval, ZoneHourEntry, SlaStat, MonthlyEntry, DailyEntry,
-  TabletAdPlay, TabletMonitorEntry, Campaign, Tablet,
+  TabletAdPlay, TabletMonitorEntry, Client, Tablet,
 } from '@/lib/api';
 import InfoTip from '@/components/InfoTip';
 import RefreshButton from '@/components/RefreshButton';
@@ -28,9 +28,9 @@ export default function StatsPage() {
   const today = toInputDate(new Date());
   const [from, setFrom] = useState(toInputDate(firstOfMonth()));
   const [to, setTo] = useState(today);
-  const [campaignId, setCampaignId] = useState<number | ''>('');
+  const [clientId, setClientId] = useState<number | ''>('');
   const [tabletId, setTabletId] = useState<number | ''>('');
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [tablets, setTablets] = useState<Tablet[]>([]);
 
   // ── Datos ────────────────────────────────────────────────────────────────
@@ -56,12 +56,12 @@ export default function StatsPage() {
   const [expandedTablet, setExpandedTablet] = useState<number | null>(null);
 
   const filterOpts = useMemo(
-    () => ({ campaignId: campaignId || undefined, tabletId: tabletId || undefined }),
-    [campaignId, tabletId],
+    () => ({ clientId: clientId || undefined, tabletId: tabletId || undefined }),
+    [clientId, tabletId],
   );
 
   // Rango que consumen los bloques dependientes del filtro de fechas.
-  const fetchRange = (f: string, t: string, opts: { campaignId?: number; tabletId?: number }) => {
+  const fetchRange = (f: string, t: string, opts: { clientId?: number; tabletId?: number }) => {
     setLoadingRange(true);
     Promise.allSettled([
       api.getRangeStats(f, t, opts),
@@ -87,7 +87,7 @@ export default function StatsPage() {
   };
 
   const loadStatic = () => {
-    api.getCampaigns().then(setCampaigns).catch(() => {});
+    api.getClients().then((c) => setClients(c.filter((x) => !x.deletedAt))).catch(() => {});
     api.getTablets().then(setTablets).catch(() => {});
     api.getAdsNoPlays().then(setAdsNoPlays).catch(() => {});
     api.getZoneStats().then(setZoneStats).catch(() => {});
@@ -127,19 +127,19 @@ export default function StatsPage() {
     fetchRange(nf2, nt, filterOpts);
   };
 
-  const onCampaign = (v: string) => {
+  const onClient = (v: string) => {
     const id = v ? Number(v) : '';
-    setCampaignId(id);
-    fetchRange(from, to, { campaignId: id || undefined, tabletId: tabletId || undefined });
+    setClientId(id);
+    fetchRange(from, to, { clientId: id || undefined, tabletId: tabletId || undefined });
   };
   const onTablet = (v: string) => {
     const id = v ? Number(v) : '';
     setTabletId(id);
-    fetchRange(from, to, { campaignId: campaignId || undefined, tabletId: id || undefined });
+    fetchRange(from, to, { clientId: clientId || undefined, tabletId: id || undefined });
   };
 
   const filterLabel = [
-    campaignId ? `campaña "${campaigns.find((c) => c.id === campaignId)?.name ?? campaignId}"` : null,
+    clientId ? `empresa "${clients.find((c) => c.id === clientId)?.name ?? clientId}"` : null,
     tabletId ? `tablet "${tablets.find((t) => t.id === tabletId)?.name ?? tabletId}"` : null,
   ].filter(Boolean).join(' · ');
 
@@ -198,7 +198,7 @@ export default function StatsPage() {
   })();
 
   return (
-    <PageShell title="Estadísticas" subtitle="Reproducciones, campañas y tablets en el período elegido."
+    <PageShell title="Estadísticas" subtitle="Reproducciones por día, por anuncio, por empresa y por tablet en el período elegido."
       actions={<RefreshButton onClick={refreshAll} loading={refreshing} />}>
 
       {/* ══ Filtros ══ */}
@@ -221,10 +221,10 @@ export default function StatsPage() {
             <input type="date" className="input w-36" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} />
           </div>
           <div>
-            <label className="block text-[11px] mb-0.5" style={{ color: 'var(--text-muted)' }}>Campaña</label>
-            <select className="input w-44" value={campaignId} onChange={(e) => onCampaign(e.target.value)}>
+            <label className="block text-[11px] mb-0.5" style={{ color: 'var(--text-muted)' }}>Empresa</label>
+            <select className="input w-44" value={clientId} onChange={(e) => onClient(e.target.value)}>
               <option value="">Todas</option>
-              {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div>
@@ -247,13 +247,15 @@ export default function StatsPage() {
       {/* ══ Resumen ejecutivo ══ */}
       <div className="card p-6 mb-6">
         <h2 className="font-semibold mb-4">Resumen ejecutivo</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Kpi label="Impresiones (rango)" value={nf(totalImpr)}
             tip={<>Cada vez que un anuncio se mostró en una tablet dentro del rango{filterLabel ? ` y filtros (${filterLabel})` : ''}. <b>Fuente:</b> tabla <code>metrics</code> (una fila por reproducción), <code>/api/stats/range</code>.</>} />
           <Kpi label={`Promedio / día`} value={nf(avgDaily)}
             tip={<>Impresiones ÷ días del rango. Base para proyectar volumen.</>} />
-          <Kpi label="Campañas con actividad" value={range?.distinctCampaigns ?? 0}
-            tip={<>Campañas distintas con al menos una impresión en el rango{filterLabel ? ` y filtros (${filterLabel})` : ''}. <b>Fuente:</b> <code>COUNT(DISTINCT campaign_id)</code> sobre <code>metrics</code> — no está topeado, a diferencia del ranking de abajo (top 10).</>} />
+          <Kpi label="Tablets que reprodujeron" value={range?.distinctTablets ?? 0}
+            tip={<>Tablets distintas con al menos una reproducción en el rango{filterLabel ? ` y filtros (${filterLabel})` : ''}. <b>Fuente:</b> <code>COUNT(DISTINCT tablet_id)</code> sobre <code>metrics</code>.</>} />
+          <Kpi label="Minutos al aire" value={nf(Math.round((range?.totalSeconds ?? 0) / 60))}
+            tip={<>Suma del tiempo real que estuvieron en pantalla los anuncios del rango. <b>Fuente:</b> <code>metrics.duration_played_s</code>.</>} />
           <Kpi label="Tasa de finalización" value={completionPct == null ? '—' : `${completionPct}%`}
             good={completionPct != null && completionPct >= 80}
             tip={<>% de <b>todas</b> las reproducciones del rango que llegaron al final (respeta los filtros). <b>Fuente:</b> campo <code>completed</code> de <code>metrics</code>, vía <code>/api/stats/range</code>.</>} />
@@ -271,7 +273,7 @@ export default function StatsPage() {
             <InfoTip>
               <b>Día:</b> reproducciones por día del <b>rango elegido arriba</b> (con días en 0 incluidos).{' '}
               <b>Semana:</b> últimas 8 semanas móviles. <b>Mes:</b> últimos 12 meses.{' '}
-              Las tres respetan los filtros de campaña/tablet; <b>Semana y Mes ignoran el rango de fechas</b> (son ventanas fijas).{' '}
+              Las tres respetan los filtros de empresa/tablet; <b>Semana y Mes ignoran el rango de fechas</b> (son ventanas fijas).{' '}
               <b>Fuente:</b> <code>metrics.played_at</code> agrupado por fecha local (America/Montevideo).
             </InfoTip>
           </h2>
@@ -300,7 +302,7 @@ export default function StatsPage() {
         {trendMode !== 'day' && (
           <p className="text-[11px] mb-2 text-amber-500">
             La vista {trendUnit === 'semana' ? 'semanal (8 semanas móviles)' : 'mensual (12 meses)'} no usa el rango de fechas de arriba —
-            por eso su total no coincide con el de la vista Día. Los filtros de campaña/tablet sí se aplican.
+            por eso su total no coincide con el de la vista Día. Los filtros de empresa/tablet sí se aplican.
           </p>
         )}
 
@@ -386,7 +388,7 @@ export default function StatsPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               {[
                 { label: 'Total reproducciones', value: nf(range.totalPlays) },
-                { label: 'Campañas', value: range.distinctCampaigns },
+                { label: 'Minutos al aire', value: nf(Math.round(range.totalSeconds / 60)) },
                 { label: 'Tablets', value: range.distinctTablets },
                 { label: 'Días con actividad', value: `${range.dailyPlays.filter((d) => d.count > 0).length} / ${range.dailyPlays.length}` },
               ].map((s) => (
@@ -398,10 +400,13 @@ export default function StatsPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <RankTable title="Top campañas" rows={range.playsByCampaign.map((c) => ({ id: c.campaignId, name: c.campaignName, count: c.count }))} />
-              <RankTable title="Top tablets" rows={range.playsByTablet.map((t) => ({ id: t.tabletId, name: t.tabletName, count: t.count }))} />
               <div className="lg:col-span-2">
-                <RankTable title="Top 10 anuncios más reproducidos" rows={(range.playsByAd ?? []).map((a) => ({ id: a.adId, name: a.adName, count: a.count }))} />
+                <AdBreakdown rows={range.playsByAd} />
+              </div>
+              <RankTable title="Reproducciones por empresa" rows={range.playsByClient.map((c) => ({ id: c.clientId, name: c.clientName, count: c.count, sub: `${nf(Math.round(c.seconds / 60))} min` }))} />
+              <RankTable title="Reproducciones por tablet" rows={range.playsByTablet.map((t) => ({ id: t.tabletId, name: t.tabletName, count: t.count }))} />
+              <div className="lg:col-span-2">
+                <DailyTable rows={range.dailyPlays} />
               </div>
             </div>
 
@@ -663,7 +668,7 @@ export default function StatsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                <th className="text-left pb-2">Anuncio</th><th className="text-left pb-2">Tipo</th><th className="text-left pb-2">Campaña</th>
+                <th className="text-left pb-2">Anuncio</th><th className="text-left pb-2">Tipo</th><th className="text-left pb-2">Empresa</th>
                 <th className="text-right pb-2">Duración</th><th className="text-right pb-2">Creado</th>
               </tr>
             </thead>
@@ -673,7 +678,7 @@ export default function StatsPage() {
                   <td className="py-2 font-medium max-w-[180px] truncate">{a.name}</td>
                   <td className="py-2"><span className={`text-xs px-1.5 py-0.5 rounded-full ${a.type === 'video' ? 'bg-blue-100 text-blue-700' : 'bg-violet-100 text-violet-700'}`}>{a.type}</span></td>
                   <td className="py-2 max-w-[180px] truncate" style={{ color: 'var(--text-muted)' }}>
-                    {a.campaign.name}{!a.campaign.active && <span className="ml-1 text-xs text-gray-400">(pausada)</span>}
+                    {a.client?.name ?? 'Sin empresa'}
                   </td>
                   <td className="py-2 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{a.durationS}s</td>
                   <td className="py-2 text-right text-xs" style={{ color: 'var(--text-xs)' }}>{new Date(a.createdAt).toLocaleDateString('es-UY')}</td>
@@ -812,7 +817,7 @@ function HeatmapDayHour({ rows, loading, from, to, filterLabel }: {
   );
 }
 
-function RankTable({ title, rows }: { title: string; rows: { id: number; name: string; count: number }[] }) {
+function RankTable({ title, rows }: { title: string; rows: { id: number; name: string; count: number; sub?: string }[] }) {
   const max = Math.max(...rows.map((r) => r.count), 1);
   return (
     <div>
@@ -825,7 +830,7 @@ function RankTable({ title, rows }: { title: string; rows: { id: number; name: s
             {rows.map((r, i) => (
               <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
                 <td className="py-1.5 pr-2 font-bold text-xs w-5" style={{ color: 'var(--text-muted)' }}>{i + 1}</td>
-                <td className="py-1.5 truncate max-w-[220px]">{r.name}</td>
+                <td className="py-1.5 truncate max-w-[220px]">{r.name}{r.sub && <span className="ml-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>{r.sub}</span>}</td>
                 <td className="py-1.5 w-24">
                   <div className="h-1.5 rounded-full" style={{ background: 'var(--border-md)' }}>
                     <div className="h-1.5 rounded-full" style={{ width: `${(r.count / max) * 100}%`, background: ACCENT }} />
@@ -837,6 +842,83 @@ function RankTable({ title, rows }: { title: string; rows: { id: number; name: s
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+// Cada anuncio del rango: cuántas veces pasó, % visto entero, en cuántos taxis
+// distintos, errores de reproducción y minutos al aire.
+function AdBreakdown({ rows }: { rows: RangeStats['playsByAd'] }) {
+  const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
+  return (
+    <div>
+      <p className="text-sm font-medium mb-3">Reproducciones por anuncio ({rows.length})</p>
+      {rows.length === 0 ? (
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                <th className="text-left pb-2">Anuncio</th>
+                <th className="text-right pb-2">Reprod.</th>
+                <th className="text-right pb-2" title="Vistas enteras / total">Completas</th>
+                <th className="text-right pb-2" title="Tablets distintas que lo pasaron">Taxis</th>
+                <th className="text-right pb-2">Errores</th>
+                <th className="text-right pb-2">Minutos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((a) => {
+                const c = pct(a.completed, a.count);
+                return (
+                  <tr key={a.adId} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                    <td className="py-1.5 pr-2 max-w-[280px]">
+                      <p className="truncate font-medium">{a.adName}</p>
+                      <p className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>{a.clientName ?? 'Sin empresa'}{a.publicName ? ` · portal: ${a.publicName}` : ''}</p>
+                    </td>
+                    <td className="py-1.5 text-right font-medium tabular-nums">{nf(a.count)}</td>
+                    <td className={`py-1.5 text-right tabular-nums ${c < 60 ? 'text-amber-600' : ''}`}>{c}%</td>
+                    <td className="py-1.5 text-right tabular-nums">{nf(a.tablets)}</td>
+                    <td className={`py-1.5 text-right tabular-nums ${a.errors ? 'text-red-600 font-medium' : ''}`} style={a.errors ? undefined : { color: 'var(--text-muted)' }}>{nf(a.errors)}</td>
+                    <td className="py-1.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{nf(Math.round(a.seconds / 60))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Por día: reproducciones y cuántas tablets estuvieron reproduciendo.
+function DailyTable({ rows }: { rows: RangeStats['dailyPlays'] }) {
+  const fmt = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('es-UY', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  return (
+    <div>
+      <p className="text-sm font-medium mb-3">Por día</p>
+      <div className="max-h-80 overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              <th className="text-left pb-2">Día</th>
+              <th className="text-right pb-2">Reproducciones</th>
+              <th className="text-right pb-2">Tablets activas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...rows].reverse().map((d) => (
+              <tr key={d.date} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
+                <td className="py-1.5 capitalize">{fmt(d.date)}</td>
+                <td className="py-1.5 text-right font-medium tabular-nums">{nf(d.count)}</td>
+                <td className="py-1.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>{nf(d.tablets)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -3,40 +3,39 @@
 import { useEffect, useState } from 'react';
 import PageShell from '@/components/ui/PageShell';
 import { Btn } from '@/components/ui/buttons';
-import { api, Campaign } from '@/lib/api';
+import { api, Ad } from '@/lib/api';
 
 const COLORS = ['bg-blue-500','bg-violet-500','bg-amber-500','bg-emerald-500','bg-red-500','bg-pink-500','bg-cyan-500','bg-lime-500'];
 
 function daysInMonth(y: number, m: number) { return new Date(y, m + 1, 0).getDate(); }
 function firstDayOfMonth(y: number, m: number) { return new Date(y, m, 1).getDay(); }
 
+// Calendario de los anuncios con fechas (desde / hasta). Los que no tienen
+// fechas corren siempre y no se muestran acá. Un color por empresa.
 export default function CalendarPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [ads, setAds] = useState<Ad[]>([]);
   const [loading, setLoading] = useState(true);
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
 
   useEffect(() => {
-    api.getCampaigns().then(setCampaigns).finally(() => setLoading(false));
+    api.getAds().then(setAds).finally(() => setLoading(false));
   }, []);
 
   const totalDays = daysInMonth(year, month);
   const startDay = firstDayOfMonth(year, month);
 
-  // Map campaign index for stable color
-  const activeCampaigns = campaigns.filter((c) => c.active);
-  const colorMap = Object.fromEntries(activeCampaigns.map((c, i) => [c.id, COLORS[i % COLORS.length]]));
+  const dated = ads.filter((a) => a.approvalStatus === 'approved' && a.active && (a.startsAt || a.endsAt));
+  const clients = [...new Map(dated.map((a) => [a.clientId ?? 0, a.client?.name ?? 'Sin empresa'])).entries()];
+  const colorMap = Object.fromEntries(clients.map(([id], i) => [id, COLORS[i % COLORS.length]]));
 
-  function campaignsOnDay(day: number): Campaign[] {
-    const date = new Date(year, month, day);
-    return activeCampaigns.filter((c) => {
-      const start = new Date(c.startDate);
-      const end = new Date(c.endDate);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      return date >= start && date <= end;
-    });
+  function adsOnDay(day: number): Ad[] {
+    const dayStart = new Date(year, month, day, 0, 0, 0, 0).getTime();
+    const dayEnd = new Date(year, month, day, 23, 59, 59, 999).getTime();
+    return dated.filter((a) =>
+      (!a.startsAt || new Date(a.startsAt).getTime() <= dayEnd)
+      && (!a.endsAt || new Date(a.endsAt).getTime() >= dayStart));
   }
 
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
@@ -45,7 +44,7 @@ export default function CalendarPage() {
   const monthName = new Date(year, month, 1).toLocaleString('es-AR', { month: 'long', year: 'numeric' });
 
   return (
-    <PageShell title="Calendario de campañas" subtitle="Qué campañas corren cada día del mes.">
+    <PageShell title="Calendario de anuncios" subtitle="Qué anuncios con fecha corren cada día del mes (los que no tienen fecha corren siempre).">
 
       {/* Month nav */}
       <div className="flex items-center gap-4 mb-4">
@@ -75,7 +74,7 @@ export default function CalendarPage() {
 
             {Array.from({ length: totalDays }, (_, i) => i + 1).map((day) => {
               const isToday = year === today.getFullYear() && month === today.getMonth() && day === today.getDate();
-              const dayCampaigns = campaignsOnDay(day);
+              const dayAds = adsOnDay(day);
               return (
                 <div
                   key={day}
@@ -88,17 +87,17 @@ export default function CalendarPage() {
                     {day}
                   </div>
                   <div className="space-y-0.5">
-                    {dayCampaigns.slice(0, 3).map((c) => (
+                    {dayAds.slice(0, 3).map((a) => (
                       <div
-                        key={c.id}
-                        className={`text-white text-xs px-1 py-0.5 rounded truncate ${colorMap[c.id]}`}
-                        title={c.name}
+                        key={a.id}
+                        className={`text-white text-xs px-1 py-0.5 rounded truncate ${colorMap[a.clientId ?? 0]}`}
+                        title={`${a.name} — ${a.client?.name ?? 'Sin empresa'}`}
                       >
-                        {c.name}
+                        {a.name}
                       </div>
                     ))}
-                    {dayCampaigns.length > 3 && (
-                      <div className="text-xs" style={{ color: 'var(--text-xs)' }}>+{dayCampaigns.length - 3} más</div>
+                    {dayAds.length > 3 && (
+                      <div className="text-xs" style={{ color: 'var(--text-xs)' }}>+{dayAds.length - 3} más</div>
                     )}
                   </div>
                 </div>
@@ -109,12 +108,12 @@ export default function CalendarPage() {
       )}
 
       {/* Legend */}
-      {activeCampaigns.length > 0 && (
+      {clients.length > 0 && (
         <div className="mt-4 card p-4">
-          <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>Campañas activas</p>
+          <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>Empresas</p>
           <div className="flex flex-wrap gap-2">
-            {activeCampaigns.map((c) => (
-              <span key={c.id} className={`text-white text-xs px-2 py-0.5 rounded-full ${colorMap[c.id]}`}>{c.name}</span>
+            {clients.map(([id, name]) => (
+              <span key={id} className={`text-white text-xs px-2 py-0.5 rounded-full ${colorMap[id]}`}>{name}</span>
             ))}
           </div>
         </div>

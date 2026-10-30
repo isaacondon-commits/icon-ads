@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { api, Ad, Campaign, StorageStats } from '@/lib/api';
+import { api, Ad, Client, Playlist, StorageStats } from '@/lib/api';
 import PageShell from '@/components/ui/PageShell';
 import { Btn, TabPill } from '@/components/ui/buttons';
-import { AdList, AdViewer, AdActionHandlers, hasNoCampaign, neverPlayed } from '@/components/AdViews';
+import { AdList, AdViewer, AdActionHandlers, hasNoClient, neverPlayed } from '@/components/AdViews';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RefreshButton from '@/components/RefreshButton';
 import { useRole } from '@/lib/roles';
@@ -24,9 +24,25 @@ const AD_TABS = [
   { id: 'rejected', label: 'Rechazados', match: (a: Ad) => a.approvalStatus === 'rejected' },
   // Pestañas de alerta: sólo aparecen (en rojo) cuando tienen algo.
   { id: 'never', label: 'Nunca pasaron', match: (a: Ad) => neverPlayed(a), alert: true },
-  { id: 'nocampaign', label: 'Sin campaña', match: (a: Ad) => hasNoCampaign(a), alert: true },
+  { id: 'noclient', label: 'Sin empresa', match: (a: Ad) => hasNoClient(a), alert: true },
 ] as const;
 type AdTabId = typeof AD_TABS[number]['id'];
+
+// Fechas del anuncio: el panel elige días de Montevideo (UTC-3, sin horario de
+// verano). Inicio = 00:00 de ese día; fin = 23:59:59.999 (el día es inclusivo).
+const MVD_MS = 3 * 3600_000;
+const dayToStart = (d: string) => (d ? new Date(Date.parse(`${d}T00:00:00Z`) + MVD_MS).toISOString() : '');
+const dayToEnd = (d: string) => (d ? new Date(Date.parse(`${d}T00:00:00Z`) + MVD_MS + 86400_000 - 1).toISOString() : '');
+const isoToDay = (iso?: string | null) => (iso ? new Date(new Date(iso).getTime() - MVD_MS).toISOString().slice(0, 10) : '');
+
+type AdForm = {
+  clientId: string; name: string; publicName: string; type: string; durationS: string; priority: string;
+  targetUrl: string; tags: string; startsAt: string; endsAt: string; playlistIds: number[];
+};
+const EMPTY_FORM: AdForm = {
+  clientId: '', name: '', publicName: '', type: 'image', durationS: '10', priority: '0',
+  targetUrl: '', tags: '', startsAt: '', endsAt: '', playlistIds: [],
+};
 
 // Captures a frame from a video file as a JPEG blob, entirely client-side —
 // avoids needing ffmpeg on the backend just to generate a poster thumbnail.
@@ -75,6 +91,8 @@ type BatchItem = {
   name: string;
   type: 'video' | 'image';
   durationS: number;
+  /** Empresa de este archivo; '' = la elegida "para todos". */
+  clientId: string;
   videoLen?: number;
   thumbnail: Blob | null;
   status: 'pending' | 'uploading' | 'done' | 'error';
@@ -85,13 +103,14 @@ type BatchItem = {
 
 export default function AdsPage() {
   const [ads, setAds] = useState<Ad[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [tagFilter, setTagFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Ad | null>(null);
-  const [form, setForm] = useState({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
+  const [form, setForm] = useState<AdForm>(EMPTY_FORM);
   const [viewAd, setViewAd] = useState<Ad | null>(null);
   // Eliminar varios: null = modo normal; Set = modo selección activo.
   const [selected, setSelected] = useState<Set<number> | null>(null);
@@ -101,7 +120,7 @@ export default function AdsPage() {
   const [preview, setPreview] = useState<string | null>(null);  // #1
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   // Subida múltiple: cuando se eligen 2+ archivos, cada uno se sube por
-  // separado heredando campaña / prioridad / URL / tags del formulario.
+  // separado heredando empresa / fechas / playlists / prioridad / URL / tags.
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchDurAll, setBatchDurAll] = useState('');
   const [uploadPct, setUploadPct] = useState(0);                 // #3
@@ -120,8 +139,8 @@ export default function AdsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = () =>
-    Promise.all([api.getAds(), api.getCampaigns(), api.getAdTags()])
-      .then(([a, c, t]) => { setAds(a); setCampaigns(c); setAllTags(t); })
+    Promise.all([api.getAds(), api.getClients(), api.getPlaylists(), api.getAdTags()])
+      .then(([a, c, p, t]) => { setAds(a); setClients(c.filter((x) => !x.deletedAt)); setPlaylists(p); setAllTags(t); })
       .finally(() => setLoading(false));
 
   const { canCreateContent, canManage } = useRole();
@@ -135,7 +154,7 @@ export default function AdsPage() {
   const activeTabDef = AD_TABS.find((t) => t.id === activeTab)!;
   const filtered = ads.filter((a) => {
     const q = search.toLowerCase();
-    const matchSearch = a.name.toLowerCase().includes(q) || (a.campaign?.name ?? '').toLowerCase().includes(q);
+    const matchSearch = a.name.toLowerCase().includes(q) || (a.publicName ?? '').toLowerCase().includes(q) || (a.client?.name ?? '').toLowerCase().includes(q);
     const matchTag = !tagFilter || (a.tags ?? []).includes(tagFilter);
     return matchSearch && matchTag && activeTabDef.match(a);
   });
@@ -146,7 +165,7 @@ export default function AdsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ campaignId: '', name: '', type: 'image', durationS: '10', priority: '0', targetUrl: '', tags: '' });
+    setForm(EMPTY_FORM);
     setFile(null);
     setBatch([]);
     setBatchDurAll('');
@@ -161,8 +180,12 @@ export default function AdsPage() {
   const openEdit = (ad: Ad) => {
     setEditing(ad);
     setForm({
-      campaignId: ad.campaign && !ad.campaign.deletedAt ? ad.campaignId.toString() : '',
+      clientId: ad.clientId ? String(ad.clientId) : '',
       name: ad.name,
+      publicName: ad.publicName ?? '',
+      startsAt: isoToDay(ad.startsAt),
+      endsAt: isoToDay(ad.endsAt),
+      playlistIds: (ad.delivery?.playlists ?? []).map((p) => p.id),
       type: ad.type,
       durationS: ad.durationS.toString(),
       priority: ad.priority.toString(),
@@ -230,10 +253,23 @@ export default function AdsPage() {
     }
   };
 
+  // Campos comunes de la subida (simple o múltiple).
+  const datesProblem = () => (form.startsAt && form.endsAt && form.endsAt < form.startsAt ? 'La fecha de fin no puede ser anterior a la de inicio.' : '');
+  const appendShared = (fd: FormData, clientId: string) => {
+    fd.append('clientId', clientId);
+    if (form.startsAt) fd.append('startsAt', dayToStart(form.startsAt));
+    if (form.endsAt) fd.append('endsAt', dayToEnd(form.endsAt));
+    if (form.playlistIds.length) fd.append('playlistIds', form.playlistIds.join(','));
+    fd.append('priority', form.priority || '0');
+    if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
+    if (form.tags) fd.append('tags', form.tags);
+  };
+
   // #3 — upload with progress via XHR
   const handleUpload = async () => {
     if (!file) { setError('Seleccioná un archivo'); return; }
-    if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
+    if (!form.clientId) { setError('Elegí la empresa del anuncio'); return; }
+    if (datesProblem()) { setError(datesProblem()); return; }
     if (videoDuration != null && videoDuration > Number(form.durationS) + 0.5) {
       setError(`El video dura ${videoDuration.toFixed(1)}s pero configuraste ${form.durationS}s. `
         + `Subí un video más corto o poné la duración real (${Math.round(videoDuration)}s).`);
@@ -245,13 +281,11 @@ export default function AdsPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('campaignId', form.campaignId);
+      appendShared(fd, form.clientId);
       fd.append('name', form.name || file.name);
+      if (form.publicName.trim()) fd.append('publicName', form.publicName.trim());
       fd.append('type', form.type);
       fd.append('durationS', form.durationS);
-      fd.append('priority', form.priority || '0');
-      if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
-      if (form.tags) fd.append('tags', form.tags);
       if (thumbnailBlob) fd.append('thumbnail', thumbnailBlob, 'thumb.jpg');
       await api.uploadAdWithProgress(fd, setUploadPct);
       setShowModal(false);
@@ -289,6 +323,7 @@ export default function AdsPage() {
         name: f.name.replace(/\.[^.]+$/, ''),
         type: isVideo ? 'video' : 'image',
         durationS,
+        clientId: '',
         videoLen,
         thumbnail: null,
         status: invalid ? 'error' : 'pending',
@@ -321,11 +356,12 @@ export default function AdsPage() {
   const batchDurError = batch.some((b) => !b.invalid && b.status !== 'done' && (!b.durationS || durTooShort(b)));
 
   const handleBatchUpload = async () => {
-    if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
     const queue = batch
       .map((b, i) => ({ b, i }))
       .filter(({ b }) => !b.invalid && b.status !== 'done');
     if (queue.length === 0) { setError('No hay archivos válidos para subir'); return; }
+    if (queue.some(({ b }) => !(b.clientId || form.clientId))) { setError('Elegí la empresa (para todos o en cada archivo).'); return; }
+    if (datesProblem()) { setError(datesProblem()); return; }
     if (queue.some(({ b }) => !b.durationS || durTooShort(b))) {
       setError('Revisá la duración: no puede ser 0 ni menor que la del video.');
       return;
@@ -339,13 +375,10 @@ export default function AdsPage() {
       try {
         const fd = new FormData();
         fd.append('file', b.file);
-        fd.append('campaignId', form.campaignId);
+        appendShared(fd, b.clientId || form.clientId);
         fd.append('name', b.name || b.file.name);
         fd.append('type', b.type);
         fd.append('durationS', String(b.durationS));
-        fd.append('priority', form.priority || '0');
-        if (form.targetUrl) fd.append('targetUrl', form.targetUrl);
-        if (form.tags) fd.append('tags', form.tags);
         if (b.thumbnail) fd.append('thumbnail', b.thumbnail, 'thumb.jpg');
         await api.uploadAdWithProgress(fd, (p) =>
           setBatch((prev) => prev.map((x, idx) => (idx === i ? { ...x, pct: p } : x))));
@@ -369,13 +402,18 @@ export default function AdsPage() {
 
   const handleUpdate = async () => {
     if (!editing) return;
-    if (!form.campaignId) { setError('Seleccioná una campaña'); return; }
+    if (!form.clientId) { setError('Elegí la empresa del anuncio'); return; }
+    if (datesProblem()) { setError(datesProblem()); return; }
     setSaving(true);
     setError('');
     try {
       await api.updateAd(editing.id, {
-        campaignId: Number(form.campaignId),
+        clientId: Number(form.clientId),
         name: form.name,
+        publicName: form.publicName.trim() || null,
+        startsAt: dayToStart(form.startsAt) || null,
+        endsAt: dayToEnd(form.endsAt) || null,
+        playlistIds: form.playlistIds,
         type: form.type as 'video' | 'image',
         durationS: Number(form.durationS),
         priority: Number(form.priority || '0'),
@@ -534,7 +572,7 @@ export default function AdsPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           className="input flex-1 max-w-xs"
-          placeholder="Buscar por nombre o campaña..."
+          placeholder="Buscar por nombre o empresa..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
@@ -703,6 +741,13 @@ export default function AdsPage() {
                             </div>
                           )}
                           {b.error && <p className="text-red-500">{b.error}</p>}
+                          {!b.invalid && b.status !== 'done' && !saving && (
+                            <select className="input !py-0.5 !px-1 mt-0.5 w-full text-xs" value={b.clientId}
+                              onChange={(e) => setBatch((prev) => prev.map((x, idx) => (idx === i ? { ...x, clientId: e.target.value } : x)))}>
+                              <option value="">{form.clientId ? `Empresa: ${clients.find((c) => String(c.id) === form.clientId)?.name ?? ''} (la de todos)` : 'Empresa: elegir…'}</option>
+                              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          )}
                           {!b.invalid && b.videoLen != null && (
                             <p className={durTooShort(b) ? 'text-red-500 font-medium' : 'text-gray-400'}>
                               El video dura {b.videoLen.toFixed(1)}s
@@ -770,24 +815,41 @@ export default function AdsPage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Campaña</label>
-                <select className="input" value={form.campaignId} onChange={(e) => setForm({ ...form, campaignId: e.target.value })}>
-                  <option value="">Seleccionar campaña</option>
-                  {campaigns.filter(c => c.active || String(c.id) === form.campaignId).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}{c.active ? '' : ' (inactiva)'}</option>
-                  ))}
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Empresa{batch.length > 0 && <span className="text-gray-400 font-normal"> (para todos; se puede cambiar en cada archivo)</span>}
+                </label>
+                <select className="input" value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })}>
+                  <option value="">Elegir empresa</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+              </div>
+              <PlaylistPicker playlists={playlists} value={form.playlistIds} onChange={(ids) => setForm({ ...form, playlistIds: ids })}
+                pendingNote={!editing} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Desde <span className="text-gray-400 font-normal">(opcional)</span></label>
+                  <input type="date" className="input" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hasta <span className="text-gray-400 font-normal">(inclusive)</span></label>
+                  <input type="date" className="input" value={form.endsAt} min={form.startsAt || undefined} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} />
+                </div>
               </div>
               {batch.length > 0 ? (
                 <p className="text-xs text-gray-500">
                   Cada archivo se sube como un anuncio aparte. El nombre y el tipo salen del archivo; la duración
-                  se detecta en los videos y podés ajustarla arriba. Comparten campaña, prioridad, URL destino y tags.
+                  se detecta en los videos y podés ajustarla arriba. Comparten fechas, playlists, prioridad, URL destino y tags.
+                  En el portal de la empresa se ven como &quot;Anuncio 1, 2…&quot; hasta que les pongas un nombre público (Editar).
                 </p>
               ) : (
               <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre <span className="text-gray-400 font-normal">(interno)</span></label>
                 <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del anuncio" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre público <span className="text-gray-400 font-normal">(lo ve la empresa en su portal)</span></label>
+                <input className="input" value={form.publicName} maxLength={120} onChange={(e) => setForm({ ...form, publicName: e.target.value })} placeholder='Ej: "Promo verano" — si lo dejás vacío: "Anuncio 1, 2…"' />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -850,19 +912,19 @@ export default function AdsPage() {
   );
 }
 
-// Detalle de las pestañas de alerta, como tooltip: "Sin campaña" explica qué
+// Detalle de las pestañas de alerta, como tooltip: "Sin empresa" explica qué
 // pasa; "Nunca pasaron" agrupa los anuncios por motivo.
 function AlertTip({ tab, ads }: { tab: AdTabId; ads: Ad[] }) {
   const box = 'rounded-xl border p-3 text-sm shadow-lg';
-  if (tab === 'nocampaign') {
-    const n = ads.filter(hasNoCampaign).length;
+  if (tab === 'noclient') {
+    const n = ads.filter(hasNoClient).length;
     return (
       <div className={`${box} border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950`}>
         <p className="font-semibold text-red-800 dark:text-red-200">
-          {n === 1 ? '1 anuncio no tiene campaña' : `${n} anuncios no tienen campaña`}
+          {n === 1 ? '1 anuncio no tiene empresa' : `${n} anuncios no tienen empresa`}
         </p>
         <p className="mt-1 text-red-700/90 dark:text-red-300/90">
-          Su campaña fue archivada o eliminada, así que no se reproducen. Asignales una campaña (Editar) o eliminalos.
+          No se reproducen y no suman a ningún portal. Asignales la empresa desde Editar, o eliminalos.
         </p>
       </div>
     );
@@ -883,6 +945,39 @@ function AlertTip({ tab, ads }: { tab: AdTabId; ads: Ad[] }) {
           <li key={label}>· {label}: <span className="font-semibold">{n}</span></li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// Playlists en las que entra el anuncio. Puede ir a varias; para repetirlo
+// dentro de una misma playlist, se agrega otra vez desde la pantalla Playlists.
+function PlaylistPicker({ playlists, value, onChange, pendingNote }: {
+  playlists: Playlist[]; value: number[]; onChange: (ids: number[]) => void; pendingNote: boolean;
+}) {
+  const toggle = (id: number) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Playlists <span className="text-gray-400 font-normal">(podés elegir varias)</span></label>
+      {playlists.length === 0 ? (
+        <p className="text-xs text-gray-500">Todavía no hay playlists. Podés crearlas después y agregar el anuncio desde ahí.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {playlists.map((p) => {
+            const on = value.includes(p.id);
+            return (
+              <button key={p.id} type="button" onClick={() => toggle(p.id)} aria-pressed={on}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${on
+                  ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                  : 'border-[var(--border)] text-[var(--text-2)] hover:border-[var(--accent)]'}`}>
+                {on ? '✓ ' : ''}{p.name}{!p.active ? ' (pausada)' : ''}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {pendingNote && value.length > 0 && (
+        <p className="mt-1 text-xs text-gray-500">Entra al final de cada playlist y empieza a pasar cuando lo aprobás.</p>
+      )}
     </div>
   );
 }

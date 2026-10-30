@@ -16,7 +16,6 @@ const NAV_ICONS: Record<string, string> = {
   '/monitor': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   '/map': 'M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
   '/clients': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
-  '/campaigns': 'M12 3l9 9-9 9-9-9z',
   '/ads': 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   '/playlists': 'M4 6h16M4 12h16M4 18h16',
   '/tablets/compare': 'M3 6h18v12H3zM3 12h18',
@@ -53,7 +52,6 @@ const linkGroups = [
   {
     id: 'publicidad', label: 'Publicidad', links: [
       { href: '/clients', label: 'Clientes', icon: '⊛' },
-      { href: '/campaigns', label: 'Campañas', icon: '◈' },
       { href: '/ads', label: 'Anuncios', icon: '◉' },
       { href: '/playlists', label: 'Playlists', icon: '≡' },
     ],
@@ -287,10 +285,10 @@ export default function Sidebar({ open = false, onNavigate }: { open?: boolean; 
                       <span className="text-xs">{notifications.pendingAds} anuncio{notifications.pendingAds !== 1 ? 's' : ''} pendiente{notifications.pendingAds !== 1 ? 's' : ''} de aprobación</span>
                     </Link>
                   )}
-                  {notifications.expiringCampaigns.map((c) => (
-                    <Link href="/campaigns" key={c.id} onClick={() => setShowNotif(false)} className="flex items-start gap-2 px-3 py-2 hover:bg-red-50 dark:hover:bg-red-950/20 border-b" style={{ borderColor: 'var(--border)' }}>
+                  {notifications.expiringAds.map((c) => (
+                    <Link href="/ads" key={c.id} onClick={() => setShowNotif(false)} className="flex items-start gap-2 px-3 py-2 hover:bg-red-50 dark:hover:bg-red-950/20 border-b" style={{ borderColor: 'var(--border)' }}>
                       <span className="text-red-500 shrink-0">⏰</span>
-                      <span className="text-xs">{c.name} vence en {c.daysLeft}d</span>
+                      <span className="text-xs">{c.name} termina en {c.daysLeft}d</span>
                     </Link>
                   ))}
                   {notifications.offlineTablets.map((t) => (

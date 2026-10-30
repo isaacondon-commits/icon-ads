@@ -21,7 +21,7 @@ const ROUTES: Record<string, 'GET' | 'POST'> = {
   'password/reset': 'POST',
   'password/change': 'POST',
   'me': 'GET',
-  'campaigns': 'GET',
+  'ads': 'GET',
   'stats': 'GET',
   'report.pdf': 'GET',
 };

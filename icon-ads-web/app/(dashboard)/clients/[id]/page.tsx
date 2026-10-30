@@ -6,6 +6,11 @@ import { api, ClientProfile } from '@/lib/api';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4'];
 
+const adState = (a: ClientProfile['ads'][number]) =>
+  a.approvalStatus === 'pending' ? ['Pendiente', 'bg-amber-100 text-amber-700']
+    : a.approvalStatus === 'rejected' ? ['Rechazado', 'bg-red-100 text-red-700']
+      : a.active ? ['Activo', 'bg-emerald-100 text-emerald-700'] : ['Pausado', 'bg-gray-100 text-gray-500'];
+
 export default function ClientProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -22,10 +27,11 @@ export default function ClientProfilePage() {
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Cargando perfil...</p>;
   if (!profile) return null;
 
-  const totalPlays = profile.campaigns.reduce((s, c) => s + c.stats.plays, 0);
-  const totalSeconds = profile.campaigns.reduce((s, c) => s + c.stats.totalSeconds, 0);
-  const activeCampaigns = profile.campaigns.filter((c) => c.active).length;
-  const maxPlays = Math.max(...profile.campaigns.map((c) => c.stats.plays), 1);
+  const totalPlays = profile.ads.reduce((s, a) => s + a.stats.plays, 0);
+  const totalSeconds = profile.ads.reduce((s, a) => s + a.stats.totalSeconds, 0);
+  const activeAds = profile.ads.filter((a) => a.active && a.approvalStatus === 'approved').length;
+  const maxPlays = Math.max(...profile.ads.map((a) => a.stats.plays), 1);
+  const byPlays = [...profile.ads].sort((a, b) => b.stats.plays - a.stats.plays);
 
   return (
     <div>
@@ -60,7 +66,7 @@ export default function ClientProfilePage() {
         {/* Summary row */}
         <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t" style={{ borderColor: 'var(--border-md)' }}>
           {[
-            { label: 'Campañas activas', value: activeCampaigns },
+            { label: 'Anuncios activos', value: activeAds },
             { label: 'Total reproducciones', value: totalPlays.toLocaleString() },
             { label: 'Tiempo total (min)', value: Math.floor(totalSeconds / 60).toLocaleString() },
           ].map((s) => (
@@ -72,58 +78,14 @@ export default function ClientProfilePage() {
         </div>
       </div>
 
-      {/* #37 — Price history */}
-      {profile.campaigns.some((c) => c.cpm != null || c.budget != null) && (() => {
-        const priced = [...profile.campaigns]
-          .filter((c) => c.cpm != null || c.budget != null)
-          .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-        return (
-          <div className="card p-6 mb-6">
-            <h2 className="font-semibold mb-4">Historial de precios</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                    <th className="text-left pb-2">Campaña</th>
-                    <th className="text-left pb-2">Período</th>
-                    <th className="text-right pb-2">CPM</th>
-                    <th className="text-right pb-2">Presupuesto</th>
-                    <th className="text-right pb-2">Meta impr.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {priced.map((c) => (
-                    <tr key={c.id} className="border-t" style={{ borderColor: 'var(--border-md)' }}>
-                      <td className="py-2.5 font-medium max-w-[180px] truncate">{c.name}</td>
-                      <td className="py-2.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {new Date(c.startDate).toLocaleDateString('es-AR')} — {new Date(c.endDate).toLocaleDateString('es-AR')}
-                      </td>
-                      <td className="py-2.5 text-right tabular-nums font-medium">
-                        {c.cpm != null ? `$${c.cpm}` : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                      </td>
-                      <td className="py-2.5 text-right tabular-nums">
-                        {c.budget != null ? <span className="text-emerald-600 font-medium">${c.budget}</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                      </td>
-                      <td className="py-2.5 text-right tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                        {c.targetImpressions != null ? c.targetImpressions.toLocaleString() : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })()}
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Campaign list */}
+        {/* Anuncios de la empresa */}
         <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b font-semibold" style={{ borderColor: 'var(--border-md)' }}>
-            Campañas ({profile.campaigns.length})
+            Anuncios ({profile.ads.length})
           </div>
-          {profile.campaigns.length === 0 ? (
-            <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin campañas.</p>
+          {profile.ads.length === 0 ? (
+            <p className="px-5 py-4 text-sm" style={{ color: 'var(--text-muted)' }}>Sin anuncios.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
@@ -134,36 +96,40 @@ export default function ClientProfilePage() {
                 </tr>
               </thead>
               <tbody>
-                {profile.campaigns.map((c) => (
-                  <tr key={c.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
-                    <td className="px-5 py-2.5 font-medium">{c.name}</td>
-                    <td className="px-5 py-2.5" style={{ color: 'var(--text-muted)' }}>{c.stats.plays.toLocaleString()}</td>
-                    <td className="px-5 py-2.5">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {c.active ? 'Activa' : 'Inactiva'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {profile.ads.map((a) => {
+                  const [label, cls] = adState(a);
+                  return (
+                    <tr key={a.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                      <td className="px-5 py-2.5">
+                        <p className="font-medium">{a.name}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>En el portal: {a.publicName || 'Anuncio N (sin nombre público)'}</p>
+                      </td>
+                      <td className="px-5 py-2.5" style={{ color: 'var(--text-muted)' }}>{a.stats.plays.toLocaleString()}</td>
+                      <td className="px-5 py-2.5">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{label}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* #9 — Campaign comparison bar chart */}
+        {/* Comparativa de anuncios */}
         <div className="card p-6">
-          <h2 className="font-semibold mb-4">Comparativa de campañas</h2>
-          {profile.campaigns.length === 0 ? (
+          <h2 className="font-semibold mb-4">Reproducciones por anuncio</h2>
+          {profile.ads.length === 0 ? (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos.</p>
           ) : (
             <div className="space-y-3">
-              {profile.campaigns.map((c, i) => {
-                const pct = Math.round((c.stats.plays / maxPlays) * 100);
+              {byPlays.map((a, i) => {
+                const pct = Math.round((a.stats.plays / maxPlays) * 100);
                 return (
-                  <div key={c.id}>
+                  <div key={a.id}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="truncate max-w-[180px]">{c.name}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>{c.stats.plays.toLocaleString()}</span>
+                      <span className="truncate max-w-[180px]">{a.name}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>{a.stats.plays.toLocaleString()}</span>
                     </div>
                     <div className="w-full h-2 rounded-full" style={{ background: 'var(--border-md)' }}>
                       <div

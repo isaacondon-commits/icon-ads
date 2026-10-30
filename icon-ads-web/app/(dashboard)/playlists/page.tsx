@@ -68,6 +68,22 @@ export default function PlaylistsPage() {
     }
   };
 
+  // Pausar una playlist: las tablets que la tienen pasan el institucional
+  // hasta que se reanude (no se toca qué tablet tiene qué playlist).
+  const [toggling, setToggling] = useState<number | null>(null);
+  const handleTogglePause = async (p: Playlist) => {
+    setToggling(p.id);
+    try {
+      if (p.active) await api.pausePlaylist(p.id);
+      else await api.resumePlaylist(p.id);
+      await load();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'No se pudo cambiar el estado');
+    } finally {
+      setToggling(null);
+    }
+  };
+
   const handleDuplicate = async (id: number) => {
     setDuplicating(id);
     try { await api.duplicatePlaylist(id); load(); } finally { setDuplicating(null); }
@@ -185,11 +201,18 @@ export default function PlaylistsPage() {
             const repeated = Object.entries(repeatCounts).filter(([, n]) => n > 1);
             const fmtS = (s: number) => s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
             return (
-              <div key={p.id} className="card p-5">
+              <div key={p.id} className={`card p-5 ${p.active ? '' : 'opacity-80 border-l-4 border-l-amber-400'}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div>
-                      <h2 className="font-semibold">{p.name}</h2>
+                      <h2 className="font-semibold">
+                        {p.name}
+                        {!p.active && (
+                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                            Pausada — sus tablets pasan el institucional
+                          </span>
+                        )}
+                      </h2>
                       <p className="text-xs mt-0.5" style={{ color: 'var(--text-xs)' }}>
                         v{p.version} · {p._count?.tablets ?? 0} tablets · editada {new Date(p.updatedAt).toLocaleDateString('es-AR')}
                       </p>
@@ -199,6 +222,9 @@ export default function PlaylistsPage() {
                     </span>
                   </div>
                   <div className="flex gap-2 flex-wrap justify-end">
+                    <Btn size="sm" icon={p.active ? 'pause' : 'play'} v={p.active ? undefined : 'ok'} onClick={() => handleTogglePause(p)} disabled={toggling === p.id}>
+                      {toggling === p.id ? '…' : p.active ? 'Pausar' : 'Reanudar'}
+                    </Btn>
                     <Btn size="sm" icon="edit" v="accent" onClick={() => openEditAds(p)}>Editar anuncios</Btn>
                     <Btn size="sm" icon="eye" onClick={() => setPreviewPlaylist(p)}>Vista previa</Btn>
                     <Btn size="sm" icon="calendar" onClick={() => openVersions(p)}>Versiones</Btn>
@@ -305,14 +331,14 @@ export default function PlaylistsPage() {
                 <p className="text-xs font-medium mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Anuncios disponibles</p>
                 <input
                   className="input mb-2"
-                  placeholder="Buscar anuncio o campaña..."
+                  placeholder="Buscar anuncio o empresa..."
                   value={adSearch}
                   onChange={(e) => setAdSearch(e.target.value)}
                 />
                 {ads
                   .filter((ad) => {
                     const q = adSearch.toLowerCase();
-                    return ad.name.toLowerCase().includes(q) || (ad.campaign?.name ?? '').toLowerCase().includes(q);
+                    return ad.name.toLowerCase().includes(q) || (ad.client?.name ?? '').toLowerCase().includes(q);
                   })
                   .map((ad) => {
                     const count = countInSelection(ad.id);
@@ -320,7 +346,7 @@ export default function PlaylistsPage() {
                       <button key={ad.id} onClick={() => addAd(ad.id)} className="w-full flex items-center gap-3 p-2 rounded-lg border text-left hover:bg-gray-50 dark:hover:bg-gray-800" style={{ borderColor: 'var(--border-md)' }}>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{ad.name}</p>
-                          <p className="text-xs" style={{ color: 'var(--text-xs)' }}>{ad.campaign?.name} · {ad.durationS}s</p>
+                          <p className="text-xs" style={{ color: 'var(--text-xs)' }}>{ad.client?.name ?? 'Sin empresa'} · {ad.durationS}s</p>
                         </div>
                         {count > 0 && (
                           <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-medium shrink-0">×{count}</span>

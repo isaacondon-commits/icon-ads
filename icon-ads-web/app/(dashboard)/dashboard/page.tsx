@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import PageShell from '@/components/ui/PageShell';
 import { BtnLink } from '@/components/ui/buttons';
 import Link from 'next/link';
-import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry, AuditPage, RangeStats, DashboardSummary } from '@/lib/api';
+import { api, SystemStats, TabletMonitorEntry, StorageStats, WeeklyEntry, AuditPage, DashboardSummary } from '@/lib/api';
 import UruguayMap from '@/components/UruguayMap';
 
 const CHART_COLORS = ['#3b82f6','#8b5cf6','#f59e0b','#10b981','#ef4444','#06b6d4','#ec4899','#84cc16'];
@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [lastWeek, setLastWeek] = useState<WeeklyEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentActivity, setRecentActivity] = useState<AuditPage['logs']>([]);
-  const [trend30d, setTrend30d] = useState<RangeStats['dailyPlays']>([]);
+  const [trend30d, setTrend30d] = useState<{ date: string; count: number }[]>([]);
   const [serverLatencyMs, setServerLatencyMs] = useState<number | null>(null);
   const [weather, setWeather] = useState<{ temp: number; code: number } | null>(null);
   const isMonday = new Date().getDay() === 1;
@@ -73,7 +73,7 @@ export default function DashboardPage() {
   const statCards = [
     { label: 'Tablets', value: stats.tablets.total, sub: `${stats.tablets.online} online`, color: 'bg-blue-500' },
     { label: 'Clientes', value: stats.clients, color: 'bg-violet-500' },
-    { label: 'Campañas', value: stats.campaigns, color: 'bg-amber-500' },
+    { label: 'Playlists activas', value: stats.playlists, color: 'bg-amber-500' },
     { label: 'Total reproducciones', value: stats.totalPlays.toLocaleString(), color: 'bg-emerald-500' },
   ];
 
@@ -123,7 +123,6 @@ export default function DashboardPage() {
         {[
           { href: '/monitor?nueva=1', label: '+ Nueva tablet', color: 'border-blue-200 text-blue-700 hover:bg-blue-50' },
           { href: '/clients', label: '+ Nuevo cliente', color: 'border-violet-200 text-violet-700 hover:bg-violet-50' },
-          { href: '/campaigns', label: '+ Nueva campaña', color: 'border-amber-200 text-amber-700 hover:bg-amber-50' },
           { href: '/ads', label: '+ Subir anuncio', color: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' },
           { href: '/stats', label: 'Ver estadísticas', color: 'border-gray-200 text-gray-600 hover:bg-gray-50' },
         ].map((a) => (
@@ -158,21 +157,21 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* #8 — Próximas a vencer (7 días) — alert cards */}
-      {stats.expiringCampaigns.filter((c) => c.daysLeft <= 7).length > 0 && (
+      {/* #8 — Anuncios que terminan en 7 días — alert cards */}
+      {stats.expiringAds.filter((c) => c.daysLeft <= 7).length > 0 && (
         <div className="mb-6">
           <h2 className="font-semibold mb-3 flex items-center gap-2 text-sm">
             <span>⏰</span>
-            <span>Próximas a vencer</span>
+            <span>Anuncios que terminan</span>
             <span className="text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-              {stats.expiringCampaigns.filter((c) => c.daysLeft <= 7).length} en los próximos 7 días
+              {stats.expiringAds.filter((c) => c.daysLeft <= 7).length} en los próximos 7 días
             </span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {stats.expiringCampaigns.filter((c) => c.daysLeft <= 7).map((c) => (
+            {stats.expiringAds.filter((c) => c.daysLeft <= 7).map((c) => (
               <Link
                 key={c.id}
-                href="/campaigns"
+                href="/ads"
                 className="card p-4 border-l-4 hover:shadow-md transition-shadow"
                 style={{ borderLeftColor: c.daysLeft <= 2 ? '#ef4444' : c.daysLeft <= 5 ? '#f59e0b' : '#eab308' }}
               >
@@ -188,7 +187,7 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.clientName}</p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-xs)' }}>
-                  Vence: {new Date(c.endDate).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  Termina: {new Date(c.endsAt).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                 </p>
               </Link>
             ))}
@@ -230,7 +229,7 @@ export default function DashboardPage() {
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <BarChart data={stats.dailyPlays} />
-        <DonutChart data={stats.playsByCampaign} />
+        <DonutChart data={stats.playsByClient} />
       </div>
 
       {/* #12 — 30-day trend line chart */}
@@ -398,7 +397,7 @@ function BarChart({ data }: { data: SystemStats['dailyPlays'] }) {
   );
 }
 
-function DonutChart({ data }: { data: SystemStats['playsByCampaign'] }) {
+function DonutChart({ data }: { data: SystemStats['playsByClient'] }) {
   const total = data.reduce((s, d) => s + d.count, 0);
   const segments = (() => {
     if (total === 0) return [];
@@ -414,7 +413,7 @@ function DonutChart({ data }: { data: SystemStats['playsByCampaign'] }) {
 
   return (
     <div className="card p-6">
-      <h2 className="font-semibold mb-5">Reproducciones por campaña</h2>
+      <h2 className="font-semibold mb-5">Reproducciones por empresa</h2>
       {total === 0 ? (
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Sin datos aún.</p>
       ) : (
@@ -430,9 +429,9 @@ function DonutChart({ data }: { data: SystemStats['playsByCampaign'] }) {
           />
           <div className="flex-1 space-y-2 overflow-hidden">
             {segments.map((s) => (
-              <div key={s.campaignId} className="flex items-center gap-2 text-sm min-w-0">
+              <div key={s.clientId} className="flex items-center gap-2 text-sm min-w-0">
                 <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: s.color }} />
-                <span className="truncate flex-1">{s.campaignName}</span>
+                <span className="truncate flex-1">{s.clientName}</span>
                 <span className="shrink-0" style={{ color: 'var(--text-xs)' }}>{s.pct.toFixed(1)}%</span>
               </div>
             ))}

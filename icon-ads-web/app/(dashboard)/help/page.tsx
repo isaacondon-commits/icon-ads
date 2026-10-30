@@ -21,12 +21,12 @@ export default function HelpPage() {
       ],
     },
     {
-      title: 'Campañas y Anuncios',
+      title: 'Anuncios y Playlists',
       items: [
-        'Creá una campaña por cliente con fechas de inicio y fin.',
-        'Subí anuncios (imagen o video) y asignálos a campañas.',
-        'Los anuncios deben estar aprobados para aparecer en las playlists.',
-        'Las campañas vencidas se marcan automáticamente como inactivas.',
+        'Subí anuncios (imagen o video), elegí su empresa y en qué playlists entran.',
+        'Los anuncios deben estar aprobados para reproducirse.',
+        'Con fechas Desde/Hasta el anuncio arranca y termina solo.',
+        'Pausar una playlist hace que sus tablets pasen el video institucional.',
       ],
     },
     {
@@ -51,7 +51,7 @@ export default function HelpPage() {
       title: 'Estadísticas',
       items: [
         'El dashboard muestra el resumen ejecutivo con reproducciones de los últimos 7 días.',
-        'En Estadísticas podés filtrar por rango de fechas y ver datos por campaña y tablet.',
+        'En Estadísticas podés filtrar por rango de fechas y ver datos por empresa, anuncio y tablet.',
         'Exportá métricas detalladas a CSV desde el botón correspondiente.',
       ],
     },

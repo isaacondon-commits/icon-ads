@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Ad, BASE } from '@/lib/api';
-import { Icon } from '@/components/CampaignActions';
+import { Icon } from '@/components/ui/Icon';
 import { VARIANT } from '@/components/ui/buttons';
 
 // Piezas de la página de Anuncios: fila de lista, tarjeta de grilla y el visor
@@ -11,8 +11,9 @@ import { VARIANT } from '@/components/ui/buttons';
 
 export const mediaUrl = (fileUrl: string) => (fileUrl.startsWith('http') ? fileUrl : `${BASE}${fileUrl}`);
 
-export function hasNoCampaign(ad: Ad) {
-  return ad.delivery?.issue?.code === 'no_campaign' || !ad.campaign || !!ad.campaign.deletedAt;
+/** Anuncio sin empresa asignada (sólo pasa con anuncios viejos). */
+export function hasNoClient(ad: Ad) {
+  return !ad.clientId;
 }
 
 /** Aprobado y nunca reproducido en ninguna tablet. */
@@ -27,6 +28,9 @@ function formatBytes(bytes?: number | null) {
   if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
+
+// Día local de Montevideo (UTC-3) de una fecha guardada.
+const fmtDay = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600_000).toISOString().slice(0, 10).split('-').reverse().join('/');
 
 function timeAgo(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -56,16 +60,15 @@ function Thumb({ ad, className, hoverPlay }: { ad: Ad; className: string; hoverP
   );
 }
 
-function CampaignLabel({ ad }: { ad: Ad }) {
-  if (hasNoCampaign(ad)) {
+function ClientLabel({ ad }: { ad: Ad }) {
+  if (hasNoClient(ad)) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300"
-        title={ad.campaign?.deletedAt ? `La campaña "${ad.campaign.name}" está archivada` : undefined}>
-        Sin campaña
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
+        Sin empresa
       </span>
     );
   }
-  return <span className="truncate" style={{ color: 'var(--text-muted)' }}>{ad.campaign?.name}</span>;
+  return <span className="truncate" style={{ color: 'var(--text-muted)' }}>{ad.client?.name}</span>;
 }
 
 function StatusBadge({ ad }: { ad: Ad }) {
@@ -100,7 +103,7 @@ function DeliveryInfo({ ad }: { ad: Ad }) {
       ) : (
         <p style={{ color: 'var(--text-xs)' }}>Sin reproducciones</p>
       )}
-      {issue && issue.code !== 'no_campaign' ? (
+      {issue && issue.code !== 'no_client' ? (
         <p className={`mt-0.5 truncate ${issue.level === 'error' ? 'text-red-600 dark:text-red-400' : ''}`}
           style={issue.level === 'info' ? { color: 'var(--text-muted)' } : undefined} title={issue.label}>
           {issue.level === 'error' ? 'No pasa: ' : ''}{issue.label}
@@ -194,7 +197,7 @@ export function AdList({ ads, h, selection }: { ads: Ad[]; h: AdActionHandlers; 
   return (
     <ul className="card divide-y overflow-hidden" style={{ borderColor: 'var(--border-md)' }}>
       {ads.map((ad) => {
-        const warn = hasNoCampaign(ad) || neverPlayed(ad);
+        const warn = hasNoClient(ad) || neverPlayed(ad);
         const checked = !!selection?.selected.has(ad.id);
         return (
           <li key={ad.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 ${warn ? 'border-l-4 border-l-red-400' : 'border-l-4 border-l-transparent'} ${checked ? 'bg-red-50/70 dark:bg-red-950/30' : ''}`}
@@ -212,7 +215,7 @@ export function AdList({ ads, h, selection }: { ads: Ad[]; h: AdActionHandlers; 
                 <StatusBadge ad={ad} />
               </div>
               <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
-                <CampaignLabel ad={ad} />
+                <ClientLabel ad={ad} />
                 <span style={{ color: 'var(--text-xs)' }}>
                   · {ad.type === 'video' ? 'Video' : 'Imagen'} · {ad.durationS}s{formatBytes(ad.fileSize) ? ` · ${formatBytes(ad.fileSize)}` : ''}
                 </span>
@@ -263,7 +266,7 @@ export function AdViewer({ ad, onClose }: { ad: Ad; onClose: () => void }) {
           <div className="mb-3 flex items-start justify-between gap-2">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold leading-tight">{ad.name}</h2>
-              <div className="mt-1 flex items-center gap-1.5 text-sm"><CampaignLabel ad={ad} /></div>
+              <div className="mt-1 flex items-center gap-1.5 text-sm"><ClientLabel ad={ad} /></div>
             </div>
             <button type="button" onClick={onClose} aria-label="Cerrar" className="text-2xl leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
           </div>
@@ -276,6 +279,8 @@ export function AdViewer({ ad, onClose }: { ad: Ad; onClose: () => void }) {
           )}
           <div className="divide-y" style={{ borderColor: 'var(--border-md)' }}>
             <Row k="Estado" v={<StatusBadge ad={ad} />} />
+            <Row k="En el portal" v={ad.publicName || <span style={{ color: 'var(--text-muted)' }}>Anuncio N (sin nombre público)</span>} />
+            {(ad.startsAt || ad.endsAt) && <Row k="Fechas" v={`${ad.startsAt ? fmtDay(ad.startsAt) : '…'} → ${ad.endsAt ? fmtDay(ad.endsAt) : '…'}`} />}
             <Row k="Tipo" v={ad.type === 'video' ? 'Video' : 'Imagen'} />
             <Row k="Duración" v={`${ad.durationS} s`} />
             {formatBytes(ad.fileSize) && <Row k="Peso" v={formatBytes(ad.fileSize)} />}
@@ -290,7 +295,7 @@ export function AdViewer({ ad, onClose }: { ad: Ad; onClose: () => void }) {
                 <ul className="space-y-1 text-sm">
                   {d.playlists.map((p) => (
                     <li key={p.id} className="flex justify-between gap-2">
-                      <span className="truncate">{p.name}</span>
+                      <span className="truncate">{p.name}{!p.active && <span style={{ color: 'var(--text-muted)' }}> (pausada)</span>}</span>
                       <span className={p.tablets ? '' : 'text-red-600 dark:text-red-400'} style={p.tablets ? { color: 'var(--text-muted)' } : undefined}>
                         {p.tablets} tablet{p.tablets === 1 ? '' : 's'}
                       </span>
