@@ -10,6 +10,8 @@ const prisma = require('./prisma');
 // como está; 'info' = es esperado (pendiente, pausado, programado).
 function blockingIssue(ad, playlists, now) {
   if (!ad.clientId) return { code: 'no_client', level: 'error', label: 'Sin empresa asignada' };
+  if (ad.client?.deletedAt) return { code: 'client_off', level: 'error', label: 'La empresa está desactivada' };
+  if (ad.client && ad.client.active === false) return { code: 'client_paused', level: 'info', label: 'La empresa está pausada' };
   if (ad.approvalStatus === 'pending') return { code: 'pending', level: 'info', label: 'Pendiente de aprobación' };
   if (ad.approvalStatus === 'rejected') return { code: 'rejected', level: 'info', label: 'Rechazado' };
   if (!ad.active) return { code: 'paused', level: 'info', label: 'Anuncio pausado' };

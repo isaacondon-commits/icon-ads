@@ -70,7 +70,8 @@ router.post('/login', authLimiter, async (req, res, next) => {
       where: { email },
       include: { client: { select: { active: true, deletedAt: true } } },
     });
-    const usable = cu && cu.active && cu.passwordHash && cu.client?.active && !cu.client?.deletedAt;
+    // Empresa pausada: entra igual (sus anuncios no salen, pero ve sus datos).
+    const usable = cu && cu.active && cu.passwordHash && cu.client && !cu.client.deletedAt;
     const locked = usable && cu.lockedUntil && cu.lockedUntil > new Date();
     // Siempre se compara un hash (aunque la cuenta no exista o esté frenada),
     // así todas las respuestas tardan lo mismo y dicen lo mismo.
@@ -117,7 +118,7 @@ async function setPasswordWithToken(req, res, next, kind) {
       where, include: { client: { select: { active: true, deletedAt: true } } },
     });
     const expiresAt = kind === 'invite' ? cu?.inviteExpiresAt : cu?.resetExpiresAt;
-    if (!cu || !cu.active || !cu.client?.active || cu.client?.deletedAt || !expiresAt || expiresAt < new Date()) {
+    if (!cu || !cu.active || !cu.client || cu.client.deletedAt || !expiresAt || expiresAt < new Date()) {
       return res.status(400).json({ error: 'El enlace venció o ya se usó. Pedí uno nuevo.' });
     }
     const problem = passwordProblem(parsed.data.password, cu.email);
@@ -152,7 +153,7 @@ router.post('/password/forgot', authLimiter, async (req, res, next) => {
     const cu = await prisma.clientUser.findUnique({
       where: { email: parsed.data }, include: { client: { select: { active: true, deletedAt: true } } },
     });
-    if (!cu || !cu.active || !cu.passwordHash || !cu.client?.active || cu.client?.deletedAt) return reply();
+    if (!cu || !cu.active || !cu.passwordHash || !cu.client || cu.client.deletedAt) return reply();
     const recentlySent = cu.resetExpiresAt && cu.resetExpiresAt.getTime() - RESET_TTL_MS > Date.now() - 5 * 60 * 1000;
     if (recentlySent) return reply();
     const { token, hash } = newOneTimeToken();

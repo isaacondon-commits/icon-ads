@@ -213,7 +213,7 @@ router.get('/playlist/:id/media-check', apiKeyOrAuth, async (req, res, next) => 
     const id = Number(req.params.id);
     const pl = await prisma.playlist.findUnique({
       where: { id },
-      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
+      include: { playlistAds: { include: { ad: { include: { client: { select: { active: true, deletedAt: true } } } } }, orderBy: { order: 'asc' } } },
     });
     if (!pl) return res.status(404).json({ error: 'No existe' });
     const ads = pl.playlistAds
@@ -362,7 +362,7 @@ router.get('/fleet-health', apiKeyOrAuth, async (req, res, next) => {
       prisma.playlist.findMany({
         select: {
           id: true, name: true, version: true,
-          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true } } } },
+          playlistAds: { select: { ad: { select: { id: true, active: true, approvalStatus: true, deletedAt: true, startsAt: true, endsAt: true, client: { select: { active: true, deletedAt: true } } } } } },
         },
       }),
       prisma.metric.count(),

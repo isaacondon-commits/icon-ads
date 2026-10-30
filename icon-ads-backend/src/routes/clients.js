@@ -5,6 +5,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { audit } = require('../lib/auditLog');
 const pdf = require('../lib/pdfHelper');
 const { inviteClient, revokeClient } = require('../lib/portalInvite');
+const { bumpPlaylistsForAdIds } = require('../lib/bumpPlaylists');
 
 router.use(requireAuth);
 
@@ -63,10 +64,44 @@ async function freeEmail(email, exceptId) {
 
 const emailTaken = (name) => ({ error: `Ya existe un cliente con ese email (${name}).` });
 
+// Estados de una empresa:
+//  - activa:      active=true,  deletedAt=null
+//  - pausada:     active=false, deletedAt=null -> sus anuncios no salen en las
+//                 tablets; el portal sigue abierto (ve sus estadísticas).
+//  - desactivada: deletedAt != null -> anuncios fuera del aire y portal cortado.
+// Cada cambio sube la versión de las playlists con anuncios de la empresa, así
+// las tablets re-descargan sin ellos (o con ellos de vuelta).
+const STATE_ACTIONS = {
+  pause:      { where: { active: true, deletedAt: null }, data: { active: false }, audit: 'PAUSE', label: 'pausada' },
+  resume:     { where: { active: false, deletedAt: null }, data: { active: true }, audit: 'RESUME', label: 'reanudada' },
+  deactivate: { where: { deletedAt: null }, data: { active: false }, audit: 'DELETE', label: 'desactivada' },
+  reactivate: { where: { NOT: { deletedAt: null } }, data: { active: true, deletedAt: null }, audit: 'REACTIVATE', label: 'reactivada' },
+};
+
+async function setClientsState(req, ids, action) {
+  const spec = STATE_ACTIONS[action];
+  const targets = await prisma.client.findMany({ where: { id: { in: ids }, ...spec.where }, select: { id: true, name: true } });
+  if (!targets.length) return [];
+  const targetIds = targets.map((c) => c.id);
+  const data = action === 'deactivate' ? { ...spec.data, deletedAt: new Date() } : spec.data;
+  await prisma.client.updateMany({ where: { id: { in: targetIds } }, data });
+  if (action === 'deactivate') for (const id of targetIds) await revokeClient(id);
+  // Al reactivar vuelve el acceso al portal que tenía (tiene que volver a entrar).
+  if (action === 'reactivate') {
+    await prisma.clientUser.updateMany({ where: { clientId: { in: targetIds }, passwordHash: { not: null } }, data: { active: true } });
+  }
+  const ads = await prisma.ad.findMany({ where: { clientId: { in: targetIds }, deletedAt: null }, select: { id: true } });
+  await bumpPlaylistsForAdIds(ads.map((a) => a.id));
+  for (const c of targets) await audit(req, spec.audit, 'client', c.id, `"${c.name}" ${spec.label}`);
+  return targetIds;
+}
+
+// GET /?all=1 incluye las desactivadas (pantalla Clientes); sin eso, sólo las
+// vigentes (activas y pausadas), que es lo que usan los selectores.
 router.get('/', async (req, res, next) => {
   try {
     const clients = await prisma.client.findMany({
-      where: { deletedAt: null },
+      where: req.query.all === '1' ? {} : { deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     res.json(clients);
@@ -95,6 +130,19 @@ router.post('/', requireAdmin, async (req, res, next) => {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
     next(err);
   }
+});
+
+// POST /bulk — { ids, action: pause | resume | deactivate | reactivate }
+router.post('/bulk', requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = z.object({
+      ids: z.array(z.number().int().positive()).min(1).max(500),
+      action: z.enum(Object.keys(STATE_ACTIONS)),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Datos inválidos.' });
+    const changed = await setClientsState(req, [...new Set(parsed.data.ids)], parsed.data.action);
+    res.json({ changed: changed.length, ids: changed });
+  } catch (err) { next(err); }
 });
 
 // GET /:id/proposal — proposal PDF (#32)
@@ -197,17 +245,10 @@ router.put('/:id', requireAdmin, async (req, res, next) => {
 // DELETE — soft delete (#33)
 router.delete('/:id', requireAdmin, async (req, res, next) => {
   try {
-    const client = await prisma.client.update({
-      where: { id: Number(req.params.id), deletedAt: null },
-      data: { active: false, deletedAt: new Date() },
-    });
-    await revokeClient(client.id);
-    await audit(req, 'DELETE', 'client', client.id, `Deleted "${client.name}"`);
+    const changed = await setClientsState(req, [Number(req.params.id)], 'deactivate');
+    if (!changed.length) return res.status(404).json({ error: 'Client not found' });
     res.status(204).send();
-  } catch (err) {
-    if (err.code === 'P2025') return res.status(404).json({ error: 'Client not found' });
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 // ── Acceso al portal de estadísticas ────────────────────────────────────────
@@ -256,13 +297,12 @@ router.post('/:id/portal/revoke', requireAdmin, async (req, res, next) => {
 // PATCH /:id/reactivate (#34)
 router.patch('/:id/reactivate', requireAdmin, async (req, res, next) => {
   try {
-    const client = await prisma.client.update({ where: { id: Number(req.params.id) }, data: { active: true, deletedAt: null } });
-    await audit(req, 'REACTIVATE', 'client', client.id, `Reactivated "${client.name}"`);
+    const id = Number(req.params.id);
+    await setClientsState(req, [id], 'reactivate');
+    const client = await prisma.client.findUnique({ where: { id } });
+    if (!client) return res.status(404).json({ error: 'Client not found' });
     res.json(client);
-  } catch (err) {
-    if (err.code === 'P2025') return res.status(404).json({ error: 'Client not found' });
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

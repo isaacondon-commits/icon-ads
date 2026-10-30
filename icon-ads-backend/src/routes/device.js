@@ -391,7 +391,7 @@ router.get('/package/:version', requireDevice, async (req, res, next) => {
 
     const playlist = await prisma.playlist.findUnique({
       where: { id: tablet.playlistId },
-      include: { playlistAds: { include: { ad: true }, orderBy: { order: 'asc' } } },
+      include: { playlistAds: { include: { ad: { include: { client: { select: { active: true, deletedAt: true } } } } }, orderBy: { order: 'asc' } } },
     });
     if (!playlist) return res.status(404).json({ error: 'Playlist not found' });
 

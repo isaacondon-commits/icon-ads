@@ -97,7 +97,10 @@ export const api = {
   getTabletMonitor: () => request<TabletMonitorEntry[]>('/api/tablets/monitor'),
 
   // Clients
-  getClients: () => request<Client[]>('/api/clients'),
+  /** all=true incluye las desactivadas (pantalla Clientes). */
+  getClients: (all = false) => request<Client[]>(`/api/clients${all ? '?all=1' : ''}`),
+  bulkClients: (ids: number[], action: ClientBulkAction) =>
+    request<{ changed: number; ids: number[] }>('/api/clients/bulk', { method: 'POST', body: JSON.stringify({ ids, action }) }),
   createClient: (data: Partial<Client>) =>
     request<Client & { portalInvite?: PortalInviteResult }>('/api/clients', { method: 'POST', body: JSON.stringify(data) }),
   updateClient: (id: number, data: Partial<Client>) =>
@@ -563,6 +566,13 @@ export interface Client {
   rut?: string | null; address?: string | null; color?: string | null;
   contactName?: string | null; contactPhone?: string | null;
   active: boolean; deletedAt?: string; createdAt: string; updatedAt: string;
+}
+export type ClientBulkAction = 'pause' | 'resume' | 'deactivate' | 'reactivate';
+export type ClientState = 'active' | 'paused' | 'off';
+/** Activa / pausada (sus anuncios no salen, el portal sigue) / desactivada. */
+export function clientState(c: Pick<Client, 'active' | 'deletedAt'>): ClientState {
+  if (c.deletedAt) return 'off';
+  return c.active ? 'active' : 'paused';
 }
 export interface ClientProfile extends Client {
   ads: (Ad & { stats: { plays: number; totalSeconds: number } })[];

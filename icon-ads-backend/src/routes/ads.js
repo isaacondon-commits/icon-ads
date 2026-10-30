@@ -87,7 +87,7 @@ router.get('/archived', async (req, res, next) => {
   try {
     const ads = await prisma.ad.findMany({
       where: { NOT: { deletedAt: null } },
-      include: { client: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
       orderBy: { deletedAt: 'desc' },
     });
     res.json(ads);
@@ -101,7 +101,7 @@ router.get('/', async (req, res, next) => {
     const tag = req.query.tag ? String(req.query.tag) : undefined;
     const ads = await prisma.ad.findMany({
       where: { deletedAt: null, ...(tag ? { tags: { has: tag } } : {}) },
-      include: { client: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
       orderBy: { createdAt: 'desc' },
     });
     const delivery = await adDeliveryInfo(ads);
@@ -211,7 +211,7 @@ router.post('/confirm', async (req, res, next) => {
       data: { clientId, name, publicName: publicName ?? null, type, fileUrl: publicUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
-      include: { client: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
     });
     await placeInPlaylists(ad, playlistIds);
     await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" via direct upload (${approvalStatus})`);
@@ -268,7 +268,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       data: { clientId, name, publicName: publicName ?? null, type, fileUrl, thumbnailUrl: thumbnailUrl ?? null, filename, durationS, approvalStatus, fileSize: fileBuffer.length,
               priority: priority ?? 0, targetUrl: targetUrl ?? null, tags: tags ?? [],
               startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
-      include: { client: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
     });
     await placeInPlaylists(ad, playlistIds);
     await audit(req, 'UPLOAD', 'ad', ad.id, `Uploaded "${ad.name}" (${approvalStatus}) via ${storage}`);
@@ -302,7 +302,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const ad = await prisma.ad.findUnique({
       where: { id: Number(req.params.id), deletedAt: null },
-      include: { client: { select: { id: true, name: true } } },
+      include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
     });
     if (!ad) return res.status(404).json({ error: 'Ad not found' });
     res.json(ad);
@@ -315,7 +315,7 @@ router.put('/:id', async (req, res, next) => {
   try {
     const { playlistIds, ...data } = adSchema.partial().parse(req.body);
     if (data.clientId != null && !(await clientExists(data.clientId))) return res.status(400).json({ error: 'La empresa no existe' });
-    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data, include: { client: { select: { id: true, name: true } } } });
+    const ad = await prisma.ad.update({ where: { id: Number(req.params.id), deletedAt: null }, data, include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } } });
     // Primero se suben las playlists donde ya estaba (por si cambió algo que
     // se ve en pantalla); después se ajusta en cuáles está y se suben ésas.
     await bumpPlaylistsForAdIds([ad.id]);

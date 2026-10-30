@@ -460,7 +460,7 @@ router.get('/occupancy', async (req, res, next) => {
                 ad: {
                   select: {
                     durationS: true, clientId: true, active: true, deletedAt: true,
-                    approvalStatus: true, startsAt: true, endsAt: true,
+                    approvalStatus: true, startsAt: true, endsAt: true, client: { select: { active: true, deletedAt: true } },
                   },
                 },
               },

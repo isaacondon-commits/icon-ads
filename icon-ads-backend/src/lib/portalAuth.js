@@ -146,7 +146,7 @@ async function requirePortalSession(req, res, next) {
       include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
     });
     if (!cu || !cu.active || !cu.passwordHash || cu.clientId !== payload.c || cu.sessionVersion !== payload.v
-      || !cu.client || !cu.client.active || cu.client.deletedAt) {
+      || !cu.client || cu.client.deletedAt) {
       clearSessionCookie(res);
       return res.status(401).json({ error: 'Sesión vencida. Ingresá de nuevo.' });
     }
@@ -197,7 +197,7 @@ async function requireUploadTicket(req, res, next) {
       include: { client: { select: { id: true, name: true, active: true, deletedAt: true } } },
     });
     if (!cu || !cu.active || !cu.passwordHash || cu.clientId !== p.c || cu.sessionVersion !== p.v
-      || !cu.client || !cu.client.active || cu.client.deletedAt) {
+      || !cu.client || cu.client.deletedAt) {
       return res.status(401).json({ error: 'Sesión vencida. Ingresá de nuevo.' });
     }
     req.portal = { clientUserId: cu.id, clientId: cu.clientId, clientName: cu.client.name, email: cu.email, sessionVersion: cu.sessionVersion };

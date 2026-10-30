@@ -8,9 +8,18 @@
 const prisma = require('./prisma');
 const { bumpPlaylistsForAdIds } = require('./bumpPlaylists');
 
-/** Anuncio reproducible: aprobado, activo, no archivado y dentro de su ventana. */
+/** Empresa al aire: ni pausada ni desactivada. Sin datos de la empresa (consulta
+ * que no la trae) o anuncio sin empresa, no frena. */
+function clientOnAir(ad) {
+  return !ad.client || (ad.client.active !== false && !ad.client.deletedAt);
+}
+
+/** Anuncio reproducible: aprobado, activo, no archivado, dentro de su ventana y
+ * con la empresa al aire. Las consultas que arman lo que pasa en las tablets
+ * tienen que traer ad.client { active, deletedAt }. */
 function isAdPlayable(ad, now = new Date()) {
-  return ad.active
+  return clientOnAir(ad)
+    && ad.active
     && !ad.deletedAt
     && ad.approvalStatus === 'approved'
     && (!ad.startsAt || new Date(ad.startsAt) <= now)
@@ -52,4 +61,4 @@ async function checkAdSchedule() {
   }
 }
 
-module.exports = { isAdPlayable, checkAdSchedule };
+module.exports = { isAdPlayable, clientOnAir, checkAdSchedule };
